@@ -65,6 +65,17 @@ describe('TouchBackend joystick', () => {
     expect(backend.sample().move.y).toBeCloseTo(0);
   });
 
+  it('uses the rendered ring size as the radius when layout is available', () => {
+    // Like a real browser, a hidden element has no layout box.
+    Object.defineProperty(joystick(), 'offsetWidth', {
+      get: () => (joystick().hidden ? 0 : 200),
+      configurable: true,
+    });
+    fire(backend.element, 'pointerdown', { pointerId: 1, clientX: 200, clientY: 400 });
+    fire(backend.element, 'pointermove', { pointerId: 1, clientX: 250, clientY: 400 });
+    expect(backend.sample().move.x).toBeCloseTo(0.5); // 50 px of a 100 px radius
+  });
+
   it('maps screen-up to positive y and clamps to unit length', () => {
     fire(backend.element, 'pointerdown', { pointerId: 1, clientX: 200, clientY: 400 });
     fire(backend.element, 'pointermove', { pointerId: 1, clientX: 200, clientY: 100 });

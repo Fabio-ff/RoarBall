@@ -66,6 +66,16 @@ describe('tick', () => {
     expect(tick(paused, new Map([['p', moveRight]]), court).state).toBe(paused);
   });
 
+  it('never finishes with an infinite duration', () => {
+    let state = createMatch({ ...settings, durationMs: Number.POSITIVE_INFINITY }, court, [
+      { id: 'p', team: 0, characterId: 'placeholder' },
+    ]);
+    for (let i = 0; i < 200; i++) state = tick(state, new Map([['p', moveRight]]), court).state;
+    expect(state.phase).toBe('live');
+    expect(state.clockMs).toBe(Number.POSITIVE_INFINITY);
+    expect(findPlayer(state, 'p')?.vel.x).toBeGreaterThan(0);
+  });
+
   it('is deterministic: same seed and intents give identical states', () => {
     const intents = new Map([['p', moveRight]]);
     let a = fresh();

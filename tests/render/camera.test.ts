@@ -9,6 +9,12 @@ describe('computeCameraPose', () => {
     expect(pose.lookAt.z).toBe(0);
   });
 
+  it('stays finite for a degenerate aspect ratio', () => {
+    const pose = computeCameraPose({ x: 0, y: 0, z: 0 }, 0);
+    expect(Number.isFinite(pose.position.y)).toBe(true);
+    expect(Number.isFinite(pose.position.z)).toBe(true);
+  });
+
   it('follows the target along X with damping', () => {
     const left = computeCameraPose({ x: -10, y: 0, z: 0 }, 16 / 9);
     const right = computeCameraPose({ x: 10, y: 0, z: 0 }, 16 / 9);

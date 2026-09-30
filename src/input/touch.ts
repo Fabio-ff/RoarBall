@@ -132,11 +132,12 @@ export class TouchBackend implements InputBackend {
     this.joystickPointer = e.pointerId;
     this.origin = { x: e.clientX, y: e.clientY };
     this.move = { x: 0, y: 0 };
-    this.radius = this.joystick.offsetWidth / 2 || (this.options.joystickRadius ?? 60);
     this.joystick.style.left = `${e.clientX - rect.left}px`;
     this.joystick.style.top = `${e.clientY - rect.top}px`;
-    this.knob.style.transform = 'translate(0px, 0px)';
+    // Reveal before measuring: a hidden element has no layout box, so offsetWidth would be 0.
     this.joystick.hidden = false;
+    this.radius = this.joystick.offsetWidth / 2 || (this.options.joystickRadius ?? 60);
+    this.knob.style.transform = 'translate(0px, 0px)';
     e.preventDefault();
   };
 

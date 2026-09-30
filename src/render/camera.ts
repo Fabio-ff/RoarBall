@@ -17,7 +17,7 @@ const FOLLOW = 0.5;
  * In portrait the distance and height grow with 1/aspect so the court fits.
  */
 export function computeCameraPose(target: Vec3, aspect: number): CameraPose {
-  const portraitFactor = Math.max(1, 1 / aspect);
+  const portraitFactor = Math.max(1, 1 / Math.max(aspect, 0.1));
   const x = target.x * FOLLOW;
   return {
     position: { x, y: HEIGHT * portraitFactor, z: DISTANCE * portraitFactor },
