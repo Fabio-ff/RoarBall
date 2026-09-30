@@ -149,6 +149,8 @@ export function giveBall(state: MatchState, player: PlayerState, events: SimEven
   events.push({ type: 'pickup', playerId: player.id });
   if (state.possession !== player.team) {
     state.possession = player.team;
+    // Spec A.5: a fresh shot clock for the team that just won the ball.
+    state.shotClockMs = state.settings.shotClockMs;
     events.push({ type: 'possessionChange', team: player.team });
   }
 }

@@ -83,6 +83,7 @@ export function inbound(state: MatchState, court: CourtDef, events: SimEvent[]):
     state.ball.holder = null;
     state.ball.pos = { x: 0, y: state.ball.radius, z: 0 };
     state.ball.vel = { x: 0, y: 0, z: 0 };
+    state.ball.freeTicks = 0;
   }
   state.shotClockMs = state.settings.shotClockMs;
   setPhase(state, 'live', events);

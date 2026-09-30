@@ -121,6 +121,28 @@ describe('phases', () => {
     expect(state.phase).toBe('live');
   });
 
+  it('the team that wins a loose ball after the clock expired gets a fresh shot clock', () => {
+    const s = run(createMatch(base, court, roster), 1).state;
+    const away = findPlayer(s, 'away1');
+    if (!away) throw new Error('no player');
+    // Home let the clock expire while the ball is loose; away picks it up.
+    s.possession = 0;
+    s.shotClockMs = 0;
+    s.ball = {
+      ...s.ball,
+      mode: 'free',
+      holder: null,
+      flight: null,
+      pos: { x: away.pos.x + 0.3, y: s.ball.radius, z: away.pos.z },
+      vel: { x: 0, y: 0, z: 0 },
+    };
+    const { state, events } = run(s, 2);
+    expect(events.some((e) => e.type === 'possessionChange' && e.team === 1)).toBe(true);
+    expect(events.some((e) => e.type === 'shotClockViolation')).toBe(false);
+    expect(state.ball.holder).toBe('away1');
+    expect(state.shotClockMs).toBeGreaterThan(base.shotClockMs - 100);
+  });
+
   it('the shot clock resets on a rim hit', () => {
     const s = run(createMatch(base, court, roster), 1).state;
     s.shotClockMs = 300;
