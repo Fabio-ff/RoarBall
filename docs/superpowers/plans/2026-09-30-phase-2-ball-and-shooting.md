@@ -2005,7 +2005,7 @@ Refs #<issue>"
 
 **Files:**
 - Create: `src/sim/phases.ts`, `src/sim/rules.ts`
-- Modify: `src/sim/match.ts` (phase `tipoff`, ruleIds validation), `src/sim/tick.ts`, `src/sim/index.ts`
+- Modify: `src/sim/match.ts` (phase `tipoff`, ruleIds validation, `ball.freeTicks`), `src/sim/types.ts` (`BallState.freeTicks`), `src/sim/ball.ts` (contact-event threshold, `freeTicks`), `src/sim/tick.ts`, `src/sim/index.ts`
 - Modify tests: `tests/sim/match.test.ts` (starts in `tipoff`), `tests/sim/tick.test.ts`
 - Test: `tests/sim/rules.test.ts`, `tests/sim/phases.test.ts`, `tests/sim/determinism.test.ts`
 
@@ -2013,7 +2013,7 @@ Refs #<issue>"
 - Consumes: Tasks 1–3.
 - Produces:
   - rules: `interface Violation { ruleId: string; team: TeamIndex }`, `interface Rule { id: string; check(state: MatchState): Violation | null }`, `shotClockRule`, `RULES: Record<string, Rule>`, `applyRules(state): Violation[]`
-  - phases: `SCORED_PAUSE_TICKS = 90`, `setPhase(state, to, events)`, `receivingTeam(state, scoringTeam): TeamIndex`, `inboundPosition(court, team): Vec3`, `shootaroundPosition(court, hoop: HoopIndex): Vec3`, `inbound(state, court, events)`, `handleTipoff(state, court, events)`, `stepPhases(state, court, events, basket: BasketInfo | null)`, `stepClocks(state, events, rimHitThisTick: boolean)`
+  - phases: `SCORED_PAUSE_TICKS = 90`, `LOOSE_BALL_TIMEOUT_TICKS = 360`, `setPhase(state, to, events)`, `receivingTeam(state, scoringTeam): TeamIndex`, `inboundPosition(court, team): Vec3`, `shootaroundPosition(court, hoop: HoopIndex): Vec3`, `inbound(state, court, events)`, `handleTipoff(state, court, events)`, `stepPhases(state, court, events, basket: BasketInfo | null)`, `stepClocks(state, events, rimHitThisTick: boolean)`
 
 - [ ] **Step 1: Write the failing rules test**
 
@@ -2526,6 +2526,52 @@ Update tests that assumed a match starts `live`:
 - `tests/sim/tick.test.ts`: the first test's `createMatch` now starts in `tipoff`, which becomes `live` on the first tick; `expect(state.clockMs).toBeCloseTo(1000 - TICK_MS)` still holds because `stepClocks` runs after the phase change in the same tick. The "finishes when the clock runs out" test now needs unequal scores to finish (a tie goes to overtime): set `state.score = [2, 0]` on the fresh state before looping.
 - `tests/sim/shooting.test.ts` `ready()`: after `giveBall(state, p, [])`, complete the tip-off before the press: `return tick(state, new Map(), court).state;` (a press during `tipoff` is ignored and the held button would never produce an edge).
 - `tests/sim/ball.test.ts` "a nearby free ball is picked up": set `state.phase = 'live';` right after `createMatch`, so the pickup happens by proximity rather than by the tip-off hand-out. Add `export * from './rules'; export * from './phases';` to the barrel.
+
+- [ ] **Step 5b: Stuck-ball recovery and contact-event thresholds**
+
+The Task 2 review showed a ball can come to rest on top of the rim or the backboard: it then emits `rimHit`/`boardHit` every tick (which would reset the shot clock forever) and sits above pickup height where nobody can reach it.
+
+1. In `src/sim/ball.ts`, emit `rimHit` and `boardHit` only for real impacts: compute `const approach = -v3Dot(ball.vel, contact.normal)` **before** `reflect` and push the event only when `approach > CONTACT_EVENT_SPEED` (a new constant, `0.5` m/s). Import `v3Dot` from `./math`.
+2. Add `freeTicks: number` to `BallState` in `src/sim/types.ts` (ticks the ball has been free and untouched), initialise it to `0` in `createMatch`, reset it to `0` in `giveBall`, and increment it in `stepFreeBall`.
+3. In `src/sim/phases.ts` add `export const LOOSE_BALL_TIMEOUT_TICKS = 360;` (6 s) and, inside `stepPhases`' `live` case before the basket check:
+
+```ts
+      if (state.ball.mode === 'free' && state.ball.freeTicks >= LOOSE_BALL_TIMEOUT_TICKS) {
+        state.pendingInbound = state.settings.mode === 'shootaround' ? 0 : (state.possession ?? 0);
+        setPhase(state, 'inbound', events);
+        return;
+      }
+```
+
+4. Tests — append to `tests/sim/ball.test.ts`:
+
+```ts
+describe('contact events', () => {
+  it('a ball resting on the rim does not spam rimHit', () => {
+    const rim = hoopGeometry(court, 1).rimCenter;
+    const ball = freeBall({ x: rim.x + RIM_RADIUS, y: rim.y + 0.16, z: rim.z });
+    const events = drop(ball, 600);
+    expect(events.filter((e) => e.type === 'rimHit').length).toBeLessThan(10);
+  });
+});
+```
+
+and to `tests/sim/phases.test.ts`:
+
+```ts
+  it('a loose ball nobody reaches is inbounded after the timeout', () => {
+    let s = run(createMatch(base, court, roster), 1).state;
+    s.ball = { ...s.ball, mode: 'free', holder: null, flight: null, pos: { x: 0, y: 5, z: 0 }, vel: { x: 0, y: 0, z: 0 }, freeTicks: 0 };
+    // Park the ball on top of the backboard so nobody can pick it up.
+    const board = hoopGeometry(court, 1);
+    s.ball.pos = { x: board.boardCenter.x, y: board.boardCenter.y + board.boardHalf.y + 0.13, z: 0 };
+    const { state, events } = run(s, 420);
+    expect(events.some((e) => e.type === 'phaseChange' && e.to === 'inbound')).toBe(true);
+    expect(state.ball.mode).toBe('held');
+  });
+```
+
+(The golden determinism test below is written after this step, so its pinned hash includes `freeTicks`.)
 
 - [ ] **Step 6: Golden determinism test**
 
