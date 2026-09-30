@@ -1360,6 +1360,8 @@ export function giveBall(state: MatchState, player: PlayerState, events: SimEven
   events.push({ type: 'pickup', playerId: player.id });
   if (state.possession !== player.team) {
     state.possession = player.team;
+    // Spec A.5: a fresh shot clock for the team that just won the ball.
+    state.shotClockMs = state.settings.shotClockMs;
     events.push({ type: 'possessionChange', team: player.team });
   }
 }
@@ -2384,6 +2386,21 @@ describe('phases', () => {
     expect(state.phase).toBe('live');
   });
 
+  it('the team that wins a loose ball after the clock expired gets a fresh shot clock', () => {
+    const s = run(createMatch(base, court, roster), 1).state;
+    const away = findPlayer(s, 'away1');
+    if (!away) throw new Error('no player');
+    // Home let the clock expire while the ball is loose; away picks it up.
+    s.possession = 0;
+    s.shotClockMs = 0;
+    s.ball = { ...s.ball, mode: 'free', holder: null, flight: null, pos: { x: away.pos.x + 0.3, y: s.ball.radius, z: away.pos.z }, vel: { x: 0, y: 0, z: 0 } };
+    const { state, events } = run(s, 2);
+    expect(events.some((e) => e.type === 'possessionChange' && e.team === 1)).toBe(true);
+    expect(events.some((e) => e.type === 'shotClockViolation')).toBe(false);
+    expect(state.ball.holder).toBe('away1');
+    expect(state.shotClockMs).toBeGreaterThan(base.shotClockMs - 100);
+  });
+
   it('the shot clock resets on a rim hit', () => {
     let s = run(createMatch(base, court, roster), 1).state;
     s.shotClockMs = 300;
@@ -2497,6 +2514,7 @@ export function inbound(state: MatchState, court: CourtDef, events: SimEvent[]):
     state.ball.holder = null;
     state.ball.pos = { x: 0, y: state.ball.radius, z: 0 };
     state.ball.vel = { x: 0, y: 0, z: 0 };
+    state.ball.freeTicks = 0;
   }
   state.shotClockMs = state.settings.shotClockMs;
   setPhase(state, 'live', events);
