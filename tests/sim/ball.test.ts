@@ -145,6 +145,36 @@ describe('holding and pickup', () => {
     expect(state.ball.lastShot).toBeNull();
   });
 
+  it('a contested loose ball goes to the nearest player, then to the lower id', () => {
+    const roster = [
+      { id: 'b-home', team: 0 as const, characterId: 'placeholder' },
+      { id: 'a-away', team: 1 as const, characterId: 'placeholder' },
+    ];
+    const state = createMatch(settings, court, roster);
+    const home = findPlayer(state, 'b-home');
+    const away = findPlayer(state, 'a-away');
+    if (!home || !away) throw new Error('no players');
+    state.ball.pos = { x: 0, y: 0.8, z: 0 };
+    // Both overlap the ball; team 1 is nearer although team 0 comes first in roster order.
+    home.pos = { x: -0.4, y: 0, z: 0 };
+    away.pos = { x: 0.2, y: 0, z: 0 };
+    tryPickup(state, []);
+    expect(state.ball.holder).toBe('a-away');
+
+    const tie = createMatch(settings, court, [
+      { id: 'b', team: 0, characterId: 'placeholder' },
+      { id: 'a', team: 1, characterId: 'placeholder' },
+    ]);
+    const b = findPlayer(tie, 'b');
+    const a = findPlayer(tie, 'a');
+    if (!a || !b) throw new Error('no players');
+    tie.ball.pos = { x: 0, y: 0.8, z: 0 };
+    b.pos = { x: -0.3, y: 0, z: 0 };
+    a.pos = { x: 0.3, y: 0, z: 0 };
+    tryPickup(tie, []);
+    expect(tie.ball.holder).toBe('a');
+  });
+
   it('a ball above shoulder height is not picked up', () => {
     const state = createMatch(settings, court, [{ id: 'p', team: 0, characterId: 'placeholder' }]);
     const p = findPlayer(state, 'p');

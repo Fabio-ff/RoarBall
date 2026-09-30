@@ -1,7 +1,7 @@
 import { reflect, sphereVsBox, sphereVsCapsule, sphereVsFloor, sphereVsRing } from './collision';
 import { TICK_DT } from './constants';
 import { hoopGeometry, RIM_RADIUS, RIM_TUBE } from './hoop';
-import { clamp, moveTowards, type Vec3 } from './math';
+import { clamp, moveTowards, v3DistanceXZ, type Vec3 } from './math';
 import { allPlayers, findPlayer } from './match';
 import type { BallState, CourtDef, MatchState, PlayerState, SimEvent } from './types';
 
@@ -121,19 +121,28 @@ export function stepBall(state: MatchState, court: CourtDef, events: SimEvent[])
   if (ball.mode === 'free') stepFreeBall(ball, court, events);
 }
 
-/** Spec A.3: any player touching a low free ball takes it, except the shooter during the cooldown. */
+/**
+ * Spec A.3: a player touching a low free ball takes it, except the shooter during the cooldown.
+ * Contested balls go to the nearest player (XZ distance to the ball), ties to the lower id, so
+ * roster order never decides (steals and interceptions reuse this in phase 3).
+ */
 export function tryPickup(state: MatchState, events: SimEvent[]): void {
   const { ball } = state;
   if (ball.mode !== 'free' || ball.pos.y > PICKUP_MAX_HEIGHT) return;
+  let best: PlayerState | null = null;
+  let bestDistance = Infinity;
   for (const player of allPlayers(state)) {
     if (player.shotCooldownTicks > 0 && ball.lastShot?.shooter === player.id) continue;
     const bottom = { x: player.pos.x, y: player.pos.y + PLAYER_CAPSULE_BOTTOM, z: player.pos.z };
     const top = { x: player.pos.x, y: player.pos.y + PLAYER_CAPSULE_TOP, z: player.pos.z };
-    if (sphereVsCapsule(ball.pos, ball.radius, bottom, top, PICKUP_RADIUS)) {
-      giveBall(state, player, events);
-      return;
+    if (!sphereVsCapsule(ball.pos, ball.radius, bottom, top, PICKUP_RADIUS)) continue;
+    const distance = v3DistanceXZ(player.pos, ball.pos);
+    if (distance < bestDistance || (distance === bestDistance && best && player.id < best.id)) {
+      best = player;
+      bestDistance = distance;
     }
   }
+  if (best) giveBall(state, best, events);
 }
 
 export function giveBall(state: MatchState, player: PlayerState, events: SimEvent[]): void {
