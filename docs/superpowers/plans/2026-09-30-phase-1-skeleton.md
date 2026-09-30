@@ -1237,9 +1237,14 @@ describe('stepPlayer', () => {
     const p = makePlayer();
     run(p, intent({ turbo: true }), 60);
     expect(p.turbo).toBe(1);
-    run(p, intent({ move: { x: 1, y: 0 }, turbo: true }), 60 * 4);
+    // Start near the left wall so 3 s of turbo (~24 m) does not reach the right wall.
+    p.pos.x = -court.playArea.length / 2 + 1;
+    run(p, intent({ move: { x: 1, y: 0 }, turbo: true }), 60 * 3);
+    expect(p.turbo).toBeCloseTo(0, 10);
+    // Empty turbo: reverse (wall now far away) and confirm the speed falls back to run speed.
+    run(p, intent({ move: { x: -1, y: 0 }, turbo: true }), 60);
     expect(p.turbo).toBe(0);
-    expect(p.vel.x).toBeCloseTo(p.stats.runSpeed);
+    expect(p.vel.x).toBeCloseTo(-p.stats.runSpeed);
   });
 
   it('counts ticks in the current action and resets on change', () => {
