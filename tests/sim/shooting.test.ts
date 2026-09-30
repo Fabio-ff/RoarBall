@@ -7,6 +7,7 @@ import { createRng, nextFloat } from '../../src/sim/rng';
 import {
   chooseShotType,
   distanceFactor,
+  JUMPSHOT_MAX_DRIFT,
   launchShot,
   MISS_JITTER_LATERAL,
   MISS_JITTER_VERTICAL,
@@ -391,5 +392,52 @@ describe('shot geometry with forced outcomes', () => {
     const shooter = findPlayer(state, 'p');
     expect(shooter?.pos.x).toBeLessThan(hoop.rimCenter.x);
     expect(Math.hypot(shooter?.vel.x ?? 0, shooter?.vel.z ?? 0)).toBe(0);
+  });
+});
+
+describe('shooting on the run', () => {
+  const sprint: PlayerIntent = { ...NO_INTENT, move: { x: 1, y: 0 }, turbo: true };
+
+  /** Runs at 8 m/s towards hoop 1 from `distance` m, presses on the first tick, runs to release. */
+  function runAndShoot(distance: number) {
+    const start = ready(distance);
+    const p = findPlayer(start, 'p');
+    if (!p) throw new Error('no player');
+    p.vel = { x: 8, y: 0, z: 0 };
+    let s = tick(start, new Map([['p', { ...sprint, action: true }]]), court).state;
+    const shotType = findPlayer(s, 'p')?.shot?.type;
+    const { state, events } = runUntil(s, sprint, (ev) =>
+      ev.some((e) => e.type === 'shotReleased'),
+    );
+    s = state;
+    const released = events.find((e) => e.type === 'shotReleased');
+    const shooter = findPlayer(s, 'p');
+    if (!shooter || released?.type !== 'shotReleased') throw new Error('no release');
+    return { shotType, released, shooter };
+  }
+
+  it('a fast break pressed 3 m out becomes a drive and never passes the rim', () => {
+    const { shotType, released, shooter } = runAndShoot(3);
+    expect(['dunk', 'layup']).toContain(released.shotType);
+    expect(shotType).toBe(released.shotType);
+    expect(shooter.pos.x).toBeLessThan(hoop.rimCenter.x - 0.5);
+  });
+
+  it('a jump shot pressed 5 m out at full speed releases at least 1 m in front of the rim', () => {
+    const { released, shooter } = runAndShoot(5);
+    expect(released.shotType).toBe('jumpshot');
+    expect(shooter.pos.x).toBeLessThan(hoop.rimCenter.x - 1);
+    expect(Math.hypot(shooter.vel.x, shooter.vel.z)).toBeLessThanOrEqual(JUMPSHOT_MAX_DRIFT + 1e-9);
+  });
+
+  it('drive ranges widen with speed towards the rim, not away from it', () => {
+    const s = ready(3);
+    const p = findPlayer(s, 'p');
+    if (!p) throw new Error('no player');
+    expect(chooseShotType(p, hoop)).toBe('jumpshot');
+    p.vel = { x: 8, y: 0, z: 0 };
+    expect(chooseShotType(p, hoop)).toBe('dunk');
+    p.vel = { x: -8, y: 0, z: 0 };
+    expect(chooseShotType(p, hoop)).toBe('jumpshot');
   });
 });

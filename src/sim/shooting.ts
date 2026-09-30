@@ -40,6 +40,11 @@ export const SHOT_TIMING: Readonly<Record<ShotType, ShotTiming>> = {
 
 export const DUNK_RANGE = 2.0;
 export const LAYUP_RANGE = 2.5;
+/** Extra drive range, in metres per m/s of speed towards the rim. */
+const DUNK_RANGE_PER_APPROACH_SPEED = 0.2;
+const LAYUP_RANGE_PER_APPROACH_SPEED = 0.15;
+/** A jump shot keeps at most this horizontal speed through the windup (no drifting under the rim). */
+export const JUMPSHOT_MAX_DRIFT = 2;
 export const THREE_POINT_DISTANCE = 6.75;
 export const SHOOTER_PICKUP_COOLDOWN_TICKS = 30;
 /** Release point relative to the shooter's feet: arms raised. */
@@ -84,10 +89,23 @@ function movingTowards(player: PlayerState, target: Vec3): boolean {
   return (player.vel.x * dx + player.vel.z * dz) / (speed * len) > 0.3;
 }
 
+/** Horizontal speed component towards `target`, never negative. */
+function speedTowards(player: PlayerState, target: Vec3): number {
+  const dx = target.x - player.pos.x;
+  const dz = target.z - player.pos.z;
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-6) return 0;
+  return Math.max(0, (player.vel.x * dx + player.vel.z * dz) / len);
+}
+
+/** Drives reach further at speed, so a fast break becomes a drive instead of a runaway jump shot. */
 export function chooseShotType(player: PlayerState, hoop: HoopGeometry): ShotType {
   const d = v3DistanceXZ(player.pos, hoop.rimCenter);
-  if (d <= DUNK_RANGE && movingTowards(player, hoop.rimCenter)) return 'dunk';
-  if (d <= LAYUP_RANGE) return 'layup';
+  const approach = speedTowards(player, hoop.rimCenter);
+  const dunkRange = DUNK_RANGE + DUNK_RANGE_PER_APPROACH_SPEED * approach;
+  const layupRange = LAYUP_RANGE + LAYUP_RANGE_PER_APPROACH_SPEED * approach;
+  if (d <= dunkRange && movingTowards(player, hoop.rimCenter)) return 'dunk';
+  if (d <= layupRange) return 'layup';
   return 'jumpshot';
 }
 
@@ -265,6 +283,13 @@ export function startShot(state: MatchState, player: PlayerState, court: CourtDe
     );
     player.vel.x = (dx / len) * speed;
     player.vel.z = (dz / len) * speed;
+  } else {
+    // 27 ticks of windup at full run speed would carry the shooter under or past the rim.
+    const speed = Math.hypot(player.vel.x, player.vel.z);
+    if (speed > JUMPSHOT_MAX_DRIFT) {
+      player.vel.x *= JUMPSHOT_MAX_DRIFT / speed;
+      player.vel.z *= JUMPSHOT_MAX_DRIFT / speed;
+    }
   }
   startJump(player, SHOT_TIMING[type].jumpSpeed);
 }
