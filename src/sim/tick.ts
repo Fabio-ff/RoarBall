@@ -3,6 +3,7 @@ import { buttonsOf, justPressed } from './buttons';
 import { TICK_DT, TICK_MS } from './constants';
 import { allPlayers } from './match';
 import { isActionLocked, startJump, stepPlayer, stepTurbo } from './player-movement';
+import { detectBasket, startShot, stepFlight, stepShotAction } from './shooting';
 import { NO_INTENT } from './types';
 import type { CourtDef, MatchState, PlayerId, PlayerIntent, PlayerState, SimEvent } from './types';
 
@@ -42,16 +43,32 @@ export function tick(
   const intentFor = (player: PlayerState): PlayerIntent => intents.get(player.id) ?? NO_INTENT;
 
   // 3. resolve intents → actions
-  for (const player of players) resolveAction(next, player, intentFor(player));
+  for (const player of players) resolveAction(next, player, intentFor(player), court, events);
 
   // 4. move players
   for (const player of players) stepPlayer(player, intentFor(player), court, TICK_DT);
 
-  // 5. move ball (held follows the holder; free balls fly and bounce)
-  stepBall(next, court, events);
+  // 5. move ball (held follows the holder; flights follow their arc; free balls fly and bounce)
+  const prevBallPos = { ...next.ball.pos };
+  if (next.ball.mode === 'flight') stepFlight(next.ball, court);
+  else stepBall(next, court, events);
 
   // 6. collisions with players: loose-ball pickup
   tryPickup(next, events);
+
+  // 8. scoring (phase transitions arrive in task 4)
+  const basket = detectBasket(next, court, prevBallPos);
+  if (basket) {
+    next.score[basket.team] += basket.points;
+    next.ball.lastShot = null;
+    events.push({
+      type: 'basket',
+      playerId: basket.shooter,
+      team: basket.team,
+      points: basket.points,
+      shotType: basket.shotType,
+    });
+  }
 
   // 9. timers
   if (next.phase === 'live') {
@@ -71,10 +88,19 @@ export function tick(
   return { state: next, events };
 }
 
-function resolveAction(state: MatchState, player: PlayerState, intent: PlayerIntent): void {
-  if (isActionLocked(player)) return;
-  const hasBall = state.ball.holder === player.id;
-  if (!hasBall && player.onGround && justPressed(player.prevButtons, intent, 'action')) {
-    startJump(player, player.stats.jumpSpeed);
+function resolveAction(
+  state: MatchState,
+  player: PlayerState,
+  intent: PlayerIntent,
+  court: CourtDef,
+  events: SimEvent[],
+): void {
+  if (isActionLocked(player)) {
+    stepShotAction(state, player, court, events);
+    return;
   }
+  const hasBall = state.ball.holder === player.id;
+  if (!player.onGround || !justPressed(player.prevButtons, intent, 'action')) return;
+  if (hasBall && state.phase === 'live') startShot(state, player, court);
+  else if (!hasBall) startJump(player, player.stats.jumpSpeed);
 }
