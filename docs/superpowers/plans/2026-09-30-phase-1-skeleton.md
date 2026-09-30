@@ -1719,7 +1719,8 @@ describe('InputManager', () => {
     ]);
     const i = m.sample();
     expect(i.action).toBe(true);
-    expect(i.move).toEqual({ x: 0, y: 1 });
+    expect(i.move.x).toBeCloseTo(0);
+    expect(i.move.y).toBeCloseTo(-1); // stick up → −Z after stickToCourt at yaw 0
   });
 
   it('tracks the active backend kind and notifies on change', () => {
