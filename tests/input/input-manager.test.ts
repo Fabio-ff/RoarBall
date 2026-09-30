@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InputManager, isNeutral, mergeIntents } from '../../src/input/input-manager';
+import { InputManager, isNeutral, mergeIntents, stickToCourt } from '../../src/input/input-manager';
 import type { InputBackend } from '../../src/input/types';
 import { NO_INTENT, type PlayerIntent } from '../../src/sim/types';
 
@@ -23,7 +23,8 @@ describe('InputManager', () => {
     ]);
     const i = m.sample();
     expect(i.action).toBe(true);
-    expect(i.move).toEqual({ x: 0, y: 1 });
+    expect(i.move.x).toBeCloseTo(0);
+    expect(i.move.y).toBeCloseTo(-1); // stick up → −Z after stickToCourt at yaw 0
   });
 
   it('tracks the active backend kind and notifies on change', () => {
@@ -42,12 +43,38 @@ describe('InputManager', () => {
     expect(seen).toEqual(['touch']);
   });
 
-  it('rotates the move vector by the camera yaw', () => {
-    const m = new InputManager([fake('keyboard', () => ({ ...NO_INTENT, move: { x: 1, y: 0 } }))]);
-    m.cameraYaw = Math.PI / 2;
-    const i = m.sample();
-    expect(i.move.x).toBeCloseTo(0);
-    expect(i.move.y).toBeCloseTo(1);
+  it('maps stick space to court space for the +Z broadcast camera (yaw 0)', () => {
+    const right = new InputManager([
+      fake('keyboard', () => ({ ...NO_INTENT, move: { x: 1, y: 0 } })),
+    ]);
+    const r = right.sample().move;
+    expect(r.x).toBeCloseTo(1); // stick right → +X, which is screen right for a camera on +Z
+    expect(r.y).toBeCloseTo(0);
+    const up = new InputManager([fake('keyboard', () => ({ ...NO_INTENT, move: { x: 0, y: 1 } }))]);
+    const u = up.sample().move;
+    expect(u.x).toBeCloseTo(0);
+    expect(u.y).toBeCloseTo(-1); // stick up → −Z, away from the camera
+  });
+
+  it('follows the camera yaw: at yaw PI the camera is on −Z and both axes flip', () => {
+    const m = new InputManager([fake('keyboard', () => ({ ...NO_INTENT, move: { x: 1, y: 1 } }))]);
+    m.cameraYaw = Math.PI;
+    const i = m.sample().move;
+    expect(i.x).toBeCloseTo(-1);
+    expect(i.y).toBeCloseTo(1);
+  });
+});
+
+describe('stickToCourt', () => {
+  it('is a reflection of y at yaw 0', () => {
+    const c = stickToCourt({ x: 0.6, y: 0.8 }, 0);
+    expect(c.x).toBeCloseTo(0.6);
+    expect(c.y).toBeCloseTo(-0.8);
+  });
+
+  it('preserves length', () => {
+    const c = stickToCourt({ x: 0.6, y: 0.8 }, 1.234);
+    expect(Math.hypot(c.x, c.y)).toBeCloseTo(1);
   });
 });
 
