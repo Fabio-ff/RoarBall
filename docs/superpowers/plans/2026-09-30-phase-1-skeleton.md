@@ -19,7 +19,7 @@ Copied from the spec; every task's requirements include these.
 - `src/content/` may import only types from `src/sim/` (ESLint-enforced).
 - No `Math.random`, `Date.now` or `performance.now` inside `src/sim/`. Only the seeded RNG.
 - Same seed + same intents ⇒ same `MatchState` (determinism test required).
-- `PlayerIntent.move` is a unit-or-zero vector in **court space**: `x` → court X (along the length, hoop to hoop), `y` → court Z (across the width, away from the camera is positive).
+- `PlayerIntent.move` is a unit-or-zero vector in **court space**: `x` → court X (along the length, hoop to hoop), `y` → court Z (across the width). Input backends produce **stick space** (x right, y up); `InputManager` converts it with `stickToCourt(move, cameraYaw)`. Yaw 0 is the broadcast camera on the **+Z sideline** looking towards −Z (Three.js' default orientation): stick right = +X (screen right), stick up = −Z (away from the camera). The XZ plane seen from above mirrors stick space, so the conversion is a reflection followed by a rotation, never a rotation alone.
 - Player facing is a yaw in radians such that the facing direction is `(sin(facing), 0, cos(facing))`.
 - Court coordinates: origin at centre court, X along the length, Z along the width, Y up; play area 28 m × 15 m.
 - Pixel ratio capped at **2**; render scale adjustable independently of DOM size.
@@ -1680,12 +1680,12 @@ Refs #<issue>"
 - Test: `tests/input/input-manager.test.ts`, `tests/input/keyboard.test.ts`
 
 **Interfaces:**
-- Consumes: `PlayerIntent`, `NO_INTENT` (Task 2); `v2Length`, `v2Normalize`, `v2Rotate` (Task 2).
+- Consumes: `PlayerIntent`, `NO_INTENT` (Task 2); `v2Length`, `v2Normalize`, `Vec2` (Task 2).
 - Produces:
   - `type BackendKind = 'keyboard' | 'gamepad' | 'touch'`
   - `interface InputBackend { readonly kind: BackendKind; sample(): PlayerIntent; dispose(): void }`
   - `class InputManager { constructor(backends: readonly InputBackend[]); cameraYaw: number; readonly activeKind: BackendKind | null; onActiveKindChange: ((kind: BackendKind) => void) | null; sample(): PlayerIntent; dispose(): void }`
-  - `isNeutral(intent: PlayerIntent): boolean`, `mergeIntents(a: PlayerIntent, b: PlayerIntent): PlayerIntent`
+  - `isNeutral(intent: PlayerIntent): boolean`, `mergeIntents(a: PlayerIntent, b: PlayerIntent): PlayerIntent`, `stickToCourt(move: Vec2, yaw: number): Vec2`
   - `interface KeyMap { up: string[]; down: string[]; left: string[]; right: string[]; action: string[]; pass: string[]; special: string[]; turbo: string[] }`, `DEFAULT_KEY_MAP`
   - `class KeyboardBackend implements InputBackend { constructor(target?: Window, map?: KeyMap) }`
 
@@ -1695,7 +1695,7 @@ Refs #<issue>"
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { InputManager, isNeutral, mergeIntents } from '../../src/input/input-manager';
+import { InputManager, isNeutral, mergeIntents, stickToCourt } from '../../src/input/input-manager';
 import type { InputBackend } from '../../src/input/types';
 import { NO_INTENT, type PlayerIntent } from '../../src/sim/types';
 
@@ -1738,12 +1738,36 @@ describe('InputManager', () => {
     expect(seen).toEqual(['touch']);
   });
 
-  it('rotates the move vector by the camera yaw', () => {
-    const m = new InputManager([fake('keyboard', () => ({ ...NO_INTENT, move: { x: 1, y: 0 } }))]);
-    m.cameraYaw = Math.PI / 2;
-    const i = m.sample();
-    expect(i.move.x).toBeCloseTo(0);
-    expect(i.move.y).toBeCloseTo(1);
+  it('maps stick space to court space for the +Z broadcast camera (yaw 0)', () => {
+    const right = new InputManager([fake('keyboard', () => ({ ...NO_INTENT, move: { x: 1, y: 0 } }))]);
+    const r = right.sample().move;
+    expect(r.x).toBeCloseTo(1); // stick right → +X, which is screen right for a camera on +Z
+    expect(r.y).toBeCloseTo(0);
+    const up = new InputManager([fake('keyboard', () => ({ ...NO_INTENT, move: { x: 0, y: 1 } }))]);
+    const u = up.sample().move;
+    expect(u.x).toBeCloseTo(0);
+    expect(u.y).toBeCloseTo(-1); // stick up → −Z, away from the camera
+  });
+
+  it('follows the camera yaw: at yaw PI the camera is on −Z and both axes flip', () => {
+    const m = new InputManager([fake('keyboard', () => ({ ...NO_INTENT, move: { x: 1, y: 1 } }))]);
+    m.cameraYaw = Math.PI;
+    const i = m.sample().move;
+    expect(i.x).toBeCloseTo(-1);
+    expect(i.y).toBeCloseTo(1);
+  });
+});
+
+describe('stickToCourt', () => {
+  it('is a reflection of y at yaw 0', () => {
+    const c = stickToCourt({ x: 0.6, y: 0.8 }, 0);
+    expect(c.x).toBeCloseTo(0.6);
+    expect(c.y).toBeCloseTo(-0.8);
+  });
+
+  it('preserves length', () => {
+    const c = stickToCourt({ x: 0.6, y: 0.8 }, 1.234);
+    expect(Math.hypot(c.x, c.y)).toBeCloseTo(1);
   });
 });
 
@@ -1782,7 +1806,7 @@ export interface InputBackend {
 `src/input/input-manager.ts`:
 
 ```ts
-import { v2Length, v2Rotate } from '../sim/math';
+import { v2Length, type Vec2 } from '../sim/math';
 import { NO_INTENT, type PlayerIntent } from '../sim/types';
 import type { BackendKind, InputBackend } from './types';
 
@@ -1808,12 +1832,27 @@ export function mergeIntents(a: PlayerIntent, b: PlayerIntent): PlayerIntent {
 }
 
 /**
+ * Converts a stick-space move (x right, y up) into court space (x → X, y → Z) for a camera
+ * rotated `yaw` radians about Y. Yaw 0 is the broadcast camera on the +Z sideline looking
+ * towards −Z (Three.js' default orientation): stick right = +X, stick up = away = −Z.
+ * The XZ plane seen from above is a mirror image of stick space, so this is a reflection
+ * of y followed by a rotation — a rotation alone would swap left and right.
+ */
+export function stickToCourt(move: Vec2, yaw: number): Vec2 {
+  const x = move.x;
+  const z = -move.y;
+  const c = Math.cos(yaw);
+  const s = Math.sin(yaw);
+  return { x: x * c + z * s, y: -x * s + z * c };
+}
+
+/**
  * Merges all backends into one PlayerIntent per tick, converts the stick-space move into
  * court space using the camera yaw (spec §8 "Camera-relative movement") and remembers which
  * kind of device was used last so the UI can show or hide touch controls.
  */
 export class InputManager {
-  /** Rotation of the camera around Y; 0 means the camera sits on -Z looking towards +Z. */
+  /** Rotation of the camera about Y; 0 = broadcast camera on the +Z sideline (see stickToCourt). */
   cameraYaw = 0;
   onActiveKindChange: ((kind: BackendKind) => void) | null = null;
   private active: BackendKind | null = null;
@@ -1835,7 +1874,7 @@ export class InputManager {
       }
       merged = mergeIntents(merged, intent);
     }
-    merged.move = v2Rotate(merged.move, this.cameraYaw);
+    merged.move = stickToCourt(merged.move, this.cameraYaw);
     return merged;
   }
 
@@ -1848,7 +1887,7 @@ export class InputManager {
 - [ ] **Step 4: Run the manager test**
 
 Run: `npx vitest run tests/input/input-manager.test.ts`
-Expected: PASS (5 tests).
+Expected: PASS (8 tests).
 
 - [ ] **Step 5: Write the failing keyboard test (jsdom)**
 
@@ -2025,7 +2064,7 @@ git commit -m "feat(input): add InputManager with camera-relative merge and Keyb
 Refs #<issue>"
 ```
 
-**Acceptance criteria:** keyboard produces normalized moves; Space's default is prevented; blur clears state; manager reports the active backend kind.
+**Acceptance criteria:** keyboard produces normalized moves; Space's default is prevented; blur clears state; manager reports the active backend kind; stick right maps to +X and stick up to −Z at yaw 0 (screen right / away for the +Z broadcast camera).
 
 ---
 
@@ -2512,9 +2551,9 @@ import { describe, expect, it } from 'vitest';
 import { computeCameraPose } from '../../src/render/camera';
 
 describe('computeCameraPose', () => {
-  it('sits on the -Z sideline, elevated, looking at the court', () => {
+  it('sits on the +Z sideline, elevated, looking at the court', () => {
     const pose = computeCameraPose({ x: 0, y: 0, z: 0 }, 16 / 9);
-    expect(pose.position.z).toBeLessThan(0);
+    expect(pose.position.z).toBeGreaterThan(0);
     expect(pose.position.y).toBeGreaterThan(5);
     expect(pose.lookAt.z).toBe(0);
   });
@@ -2531,7 +2570,7 @@ describe('computeCameraPose', () => {
   it('pulls back and rises in portrait so the court still fits', () => {
     const landscape = computeCameraPose({ x: 0, y: 0, z: 0 }, 16 / 9);
     const portrait = computeCameraPose({ x: 0, y: 0, z: 0 }, 9 / 16);
-    expect(-portrait.position.z).toBeGreaterThan(-landscape.position.z);
+    expect(portrait.position.z).toBeGreaterThan(landscape.position.z);
     expect(portrait.position.y).toBeGreaterThan(landscape.position.y);
   });
 });
@@ -2576,20 +2615,21 @@ const DISTANCE = 20;
 const FOLLOW = 0.5;
 
 /**
- * Broadcast-style side camera (spec §9 "Camera"): on the -Z sideline, elevated, fixed
- * orientation. In portrait the distance and height grow with 1/aspect so the court fits.
+ * Broadcast-style side camera (spec §9 "Camera"): on the +Z sideline, elevated, fixed
+ * orientation, looking towards −Z (Three.js' default orientation, so screen right is +X).
+ * In portrait the distance and height grow with 1/aspect so the court fits.
  */
 export function computeCameraPose(target: Vec3, aspect: number): CameraPose {
   const portraitFactor = Math.max(1, 1 / aspect);
   const x = target.x * FOLLOW;
   return {
-    position: { x, y: HEIGHT * portraitFactor, z: -DISTANCE * portraitFactor },
+    position: { x, y: HEIGHT * portraitFactor, z: DISTANCE * portraitFactor },
     lookAt: { x, y: 1, z: 0 },
   };
 }
 
 export class BroadcastCamera {
-  /** The camera sits on -Z looking towards +Z, so stick space equals court space (yaw 0). */
+  /** Yaw 0 = camera on the +Z sideline; InputManager.stickToCourt maps stick space accordingly. */
   readonly yaw = 0;
   private position: Vec3 | null = null;
 
