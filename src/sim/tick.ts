@@ -1,3 +1,4 @@
+import { stepBall, tryPickup } from './ball';
 import { buttonsOf, justPressed } from './buttons';
 import { TICK_DT, TICK_MS } from './constants';
 import { allPlayers } from './match';
@@ -45,6 +46,12 @@ export function tick(
 
   // 4. move players
   for (const player of players) stepPlayer(player, intentFor(player), court, TICK_DT);
+
+  // 5. move ball (held follows the holder; free balls fly and bounce)
+  stepBall(next, court, events);
+
+  // 6. collisions with players: loose-ball pickup
+  tryPickup(next, events);
 
   // 9. timers
   if (next.phase === 'live') {

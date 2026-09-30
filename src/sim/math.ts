@@ -66,3 +66,28 @@ export function wrapAngle(a: number): number {
   const twoPi = Math.PI * 2;
   return ((((a + Math.PI) % twoPi) + twoPi) % twoPi) - Math.PI;
 }
+
+export function v3Add(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+}
+
+export function v3Sub(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.x - b.x, y: a.y - b.y, z: a.z - b.z };
+}
+
+export function v3Scale(a: Vec3, s: number): Vec3 {
+  return { x: a.x * s, y: a.y * s, z: a.z * s };
+}
+
+export function v3Dot(a: Vec3, b: Vec3): number {
+  return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+export function v3Length(a: Vec3): number {
+  return Math.hypot(a.x, a.y, a.z);
+}
+
+/** Distance on the court plane, ignoring height. */
+export function v3DistanceXZ(a: Vec3, b: Vec3): number {
+  return Math.hypot(a.x - b.x, a.z - b.z);
+}

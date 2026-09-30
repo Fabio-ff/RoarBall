@@ -7,3 +7,6 @@ export * from './match';
 export * from './player-movement';
 export * from './tick';
 export * from './buttons';
+export * from './hoop';
+export * from './collision';
+export * from './ball';
