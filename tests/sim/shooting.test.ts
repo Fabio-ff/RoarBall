@@ -441,3 +441,38 @@ describe('shooting on the run', () => {
     expect(chooseShotType(p, hoop)).toBe('jumpshot');
   });
 });
+
+describe('basket scope', () => {
+  /** A live match with a loose ball dropped straight through the ring of `hoopIndex`. */
+  function dropThrough(hoopIndex: 0 | 1, lastShotHoop: 0 | 1): SimEvent[] {
+    const state = createMatch(settings, court, [{ id: 'p', team: 0, characterId: 'placeholder' }]);
+    state.phase = 'live';
+    const rim = hoopGeometry(court, hoopIndex).rimCenter;
+    state.ball.pos = { x: rim.x, y: rim.y + 0.5, z: rim.z };
+    state.ball.lastShot = {
+      shooter: 'p',
+      team: 0,
+      hoop: lastShotHoop,
+      shotType: 'jumpshot',
+      points: 2,
+      made: false,
+    };
+    return runUntil(state, NO_INTENT, (ev) => ev.some((e) => e.type === 'basket'), 60).events;
+  }
+
+  it('a made flight records its hoop and scores there', () => {
+    const s = ready(5);
+    const p = findPlayer(s, 'p');
+    if (!p) throw new Error('no player');
+    startShot(s, p, court);
+    launchShot(s, p, court, [], { quality: 1, made: true, missType: null, jitter: null });
+    expect(s.ball.lastShot?.hoop).toBe(1);
+    const { events } = runUntil(s, NO_INTENT, (ev) => ev.some((e) => e.type === 'basket'));
+    expect(events.some((e) => e.type === 'basket')).toBe(true);
+  });
+
+  it('a loose ball counts only through the hoop its shot aimed at', () => {
+    expect(dropThrough(0, 0).some((e) => e.type === 'basket')).toBe(true);
+    expect(dropThrough(0, 1).some((e) => e.type === 'basket')).toBe(false);
+  });
+});

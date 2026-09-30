@@ -114,9 +114,12 @@ export interface ShotFlight {
   elapsedTicks: number;
 }
 
+/** The shot the loose ball came from; cleared on any pickup and after a basket. */
 export interface LastShot {
   shooter: PlayerId;
   team: TeamIndex;
+  /** The hoop it was aimed at: only this hoop can count a basket for it. */
+  hoop: HoopIndex;
   shotType: ShotType;
   points: 2 | 3;
   made: boolean;

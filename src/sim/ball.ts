@@ -144,6 +144,9 @@ export function giveBall(state: MatchState, player: PlayerState, events: SimEven
   ball.freeTicks = 0;
   ball.touchingRim = false;
   ball.touchingBoard = false;
+  // Any pickup ends the shot: a later fumble or deflection must not score for the old shooter.
+  // (The shooter's pickup cooldown keys off lastShot, so it no longer matters either.)
+  ball.lastShot = null;
   ball.vel = { x: 0, y: 0, z: 0 };
   ball.pos = holdPosition(player);
   events.push({ type: 'pickup', playerId: player.id });

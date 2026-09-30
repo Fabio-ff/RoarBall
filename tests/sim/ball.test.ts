@@ -112,7 +112,14 @@ describe('holding and pickup', () => {
     const p = findPlayer(state, 'p');
     if (!p) throw new Error('no player');
     state.ball.pos = { x: p.pos.x + 0.3, y: BALL_RADIUS, z: p.pos.z };
-    state.ball.lastShot = { shooter: 'p', team: 0, shotType: 'jumpshot', points: 2, made: false };
+    state.ball.lastShot = {
+      shooter: 'p',
+      team: 0,
+      hoop: 1,
+      shotType: 'jumpshot',
+      points: 2,
+      made: false,
+    };
     p.shotCooldownTicks = 5;
     const events: SimEvent[] = [];
     tryPickup(state, events);
@@ -120,6 +127,22 @@ describe('holding and pickup', () => {
     p.shotCooldownTicks = 0;
     tryPickup(state, events);
     expect(state.ball.mode).toBe('held');
+  });
+
+  it('a pickup clears the last shot', () => {
+    const state = createMatch(settings, court, [{ id: 'p', team: 0, characterId: 'placeholder' }]);
+    const p = findPlayer(state, 'p');
+    if (!p) throw new Error('no player');
+    state.ball.lastShot = {
+      shooter: 'q',
+      team: 1,
+      hoop: 0,
+      shotType: 'jumpshot',
+      points: 3,
+      made: false,
+    };
+    giveBall(state, p, []);
+    expect(state.ball.lastShot).toBeNull();
   });
 
   it('a ball above shoulder height is not picked up', () => {

@@ -377,6 +377,7 @@ export function launchShot(
   ball.lastShot = {
     shooter: player.id,
     team: player.team,
+    hoop: shot.hoop,
     shotType: shot.type,
     points,
     made: outcome.made,
@@ -454,8 +455,9 @@ export function stepFlight(ball: BallState, court: CourtDef): void {
 }
 
 /**
- * A basket is the ball centre crossing the rim plane downwards inside the ring. Made shots are
- * scripted to do exactly that; a lucky bounce after a miss counts too.
+ * A basket is the ball centre crossing the rim plane downwards inside the ring of the hoop the
+ * last shot aimed at. Made shots are scripted to do exactly that; a lucky bounce after a miss
+ * counts too. A loose ball with no shot behind it (lastShot cleared by a pickup) never scores.
  */
 export function detectBasket(
   state: MatchState,
@@ -464,14 +466,10 @@ export function detectBasket(
 ): BasketInfo | null {
   const { ball } = state;
   if (ball.mode === 'held' || ball.vel.y >= 0 || !ball.lastShot) return null;
-  for (const index of [0, 1] as const) {
-    const rim = hoopGeometry(court, index).rimCenter;
-    const crossed = prevBallPos.y > rim.y && ball.pos.y <= rim.y;
-    if (!crossed) continue;
-    if (v3DistanceXZ(ball.pos, rim) < RIM_RADIUS - RIM_TUBE - ball.radius * 0.5) {
-      const { team, points, shooter, shotType } = ball.lastShot;
-      return { team, points, shooter, shotType };
-    }
-  }
-  return null;
+  const rim = hoopGeometry(court, ball.lastShot.hoop).rimCenter;
+  const crossed = prevBallPos.y > rim.y && ball.pos.y <= rim.y;
+  if (!crossed) return null;
+  if (v3DistanceXZ(ball.pos, rim) >= RIM_RADIUS - RIM_TUBE - ball.radius * 0.5) return null;
+  const { team, points, shooter, shotType } = ball.lastShot;
+  return { team, points, shooter, shotType };
 }
