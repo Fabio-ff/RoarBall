@@ -29,7 +29,7 @@ describe('createMatch', () => {
 
   it('starts live with the full clock, zero score and the seeded rng', () => {
     const state = createMatch(settings, getCourt('gym'), []);
-    expect(state.phase).toBe('live');
+    expect(state.phase).toBe('tipoff');
     expect(state.tick).toBe(0);
     expect(state.clockMs).toBe(180_000);
     expect(state.score).toEqual([0, 0]);

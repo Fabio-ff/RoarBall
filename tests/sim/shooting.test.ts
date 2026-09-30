@@ -45,7 +45,7 @@ function ready(distance: number, seed = 1): MatchState {
   p.pos = { x: hoop.rimCenter.x - distance, y: 0, z: 0 };
   p.facing = Math.PI / 2;
   giveBall(state, p, []);
-  return state;
+  return tick(state, new Map(), court).state;
 }
 
 function runUntil(

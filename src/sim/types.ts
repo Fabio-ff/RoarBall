@@ -130,6 +130,11 @@ export interface BallState {
   holder: PlayerId | null;
   flight: ShotFlight | null;
   lastShot: LastShot | null;
+  /** Ticks the ball has been free and untouched. */
+  freeTicks: number;
+  /** Contact flags so resting on the rim or board reports one hit (rising edge). */
+  touchingRim: boolean;
+  touchingBoard: boolean;
 }
 
 export type MatchMode = 'match' | 'shootaround';

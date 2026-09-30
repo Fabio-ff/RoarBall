@@ -37,6 +37,7 @@ export function stepHeldBall(ball: BallState, holder: PlayerState): void {
 /** Gravity, drag, floor/rim/backboard bounces and the invisible boundary (spec A.2). */
 export function stepFreeBall(ball: BallState, court: CourtDef, events: SimEvent[]): void {
   const { gravity, restitution, friction, airDrag } = court.physics;
+  ball.freeTicks += 1;
   ball.vel.y -= gravity * TICK_DT;
   const dragKeep = Math.max(0, 1 - airDrag * TICK_DT);
   ball.vel.x *= dragKeep;
@@ -62,21 +63,27 @@ export function stepFreeBall(ball: BallState, court: CourtDef, events: SimEvent[
     }
   }
 
+  let rimContact = false;
+  let boardContact = false;
   for (const index of [0, 1] as const) {
     const hoop = hoopGeometry(court, index);
     const board = sphereVsBox(ball.pos, ball.radius, hoop.boardCenter, hoop.boardHalf);
     if (board) {
+      boardContact = true;
       pushOut(ball, board.normal, board.depth);
       ball.vel = reflect(ball.vel, board.normal, restitution);
-      events.push({ type: 'boardHit' });
+      if (!ball.touchingBoard) events.push({ type: 'boardHit' });
     }
     const rim = sphereVsRing(ball.pos, ball.radius, hoop.rimCenter, RIM_RADIUS, RIM_TUBE);
     if (rim) {
+      rimContact = true;
       pushOut(ball, rim.normal, rim.depth);
       ball.vel = reflect(ball.vel, rim.normal, restitution * 0.9);
-      events.push({ type: 'rimHit' });
+      if (!ball.touchingRim) events.push({ type: 'rimHit' });
     }
   }
+  ball.touchingRim = rimContact;
+  ball.touchingBoard = boardContact;
 
   const maxX = court.playArea.length / 2 - ball.radius;
   const maxZ = court.playArea.width / 2 - ball.radius;
@@ -134,11 +141,16 @@ export function giveBall(state: MatchState, player: PlayerState, events: SimEven
   ball.mode = 'held';
   ball.holder = player.id;
   ball.flight = null;
+  ball.freeTicks = 0;
+  ball.touchingRim = false;
+  ball.touchingBoard = false;
   ball.vel = { x: 0, y: 0, z: 0 };
   ball.pos = holdPosition(player);
   events.push({ type: 'pickup', playerId: player.id });
   if (state.possession !== player.team) {
     state.possession = player.team;
+    // Spec A.5: a fresh shot clock for the team that just won the ball.
+    state.shotClockMs = state.settings.shotClockMs;
     events.push({ type: 'possessionChange', team: player.team });
   }
 }

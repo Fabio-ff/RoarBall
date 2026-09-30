@@ -1,5 +1,6 @@
 import { BALL_RADIUS } from './constants';
 import { createRng } from './rng';
+import { RULES } from './rules';
 import { DEFAULT_STATS } from './stats';
 import { NO_BUTTONS } from './types';
 import type {
@@ -17,12 +18,15 @@ export interface RosterEntry {
   characterId: string;
 }
 
-/** Builds the initial state. Phase 1 starts directly in 'live' (tip-off arrives with the ball in phase 2). */
+/** Builds the initial state. Every match starts in 'tipoff'. */
 export function createMatch(
   settings: MatchSettings,
   court: CourtDef,
   roster: readonly RosterEntry[],
 ): MatchState {
+  for (const id of settings.ruleIds) {
+    if (!(id in RULES)) throw new Error(`Unknown rule: ${id}`);
+  }
   const teams: MatchState['teams'] = [{ players: [] }, { players: [] }];
   for (const entry of roster) {
     const team = teams[entry.team];
@@ -33,8 +37,7 @@ export function createMatch(
     clockMs: settings.durationMs,
     shotClockMs: settings.shotClockMs,
     score: [0, 0],
-    // Task 4 switches this to 'tipoff'.
-    phase: 'live',
+    phase: 'tipoff',
     phaseTicks: 0,
     possession: null,
     pendingInbound: null,
@@ -47,6 +50,9 @@ export function createMatch(
       holder: null,
       flight: null,
       lastShot: null,
+      freeTicks: 0,
+      touchingRim: false,
+      touchingBoard: false,
     },
     teams,
     rng: createRng(settings.seed),

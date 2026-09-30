@@ -50,6 +50,7 @@ describe('tick', () => {
 
   it('finishes when the clock runs out and emits a phaseChange event once', () => {
     let state = fresh();
+    state.score = [2, 0];
     const seen: string[] = [];
     for (let i = 0; i < 70; i++) {
       const r = tick(state, new Map(), court);
@@ -58,7 +59,7 @@ describe('tick', () => {
     }
     expect(state.phase).toBe('finished');
     expect(state.clockMs).toBe(0);
-    expect(seen).toEqual(['live->finished']);
+    expect(seen).toEqual(['tipoff->live', 'live->finished']);
   });
 
   it('does not advance while paused or finished', () => {

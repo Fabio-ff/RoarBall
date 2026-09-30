@@ -26,6 +26,9 @@ function freeBall(pos: { x: number; y: number; z: number }, vel = { x: 0, y: 0, 
     holder: null,
     flight: null,
     lastShot: null,
+    freeTicks: 0,
+    touchingRim: false,
+    touchingBoard: false,
   };
 }
 
@@ -91,6 +94,7 @@ describe('holding and pickup', () => {
 
   it('a nearby free ball is picked up and possession changes', () => {
     const state = createMatch(settings, court, [{ id: 'p', team: 0, characterId: 'placeholder' }]);
+    state.phase = 'live';
     const p = findPlayer(state, 'p');
     if (!p) throw new Error('no player');
     state.ball.pos = { x: p.pos.x + 0.3, y: BALL_RADIUS, z: p.pos.z };
@@ -145,5 +149,14 @@ describe('holding and pickup', () => {
     const holder = findPlayer(s, 'p');
     expect(s.ball.mode).toBe('held');
     expect(s.ball.pos.x).toBeCloseTo(holder ? holdPosition(holder).x : NaN);
+  });
+});
+
+describe('contact events', () => {
+  it('a ball resting on the rim does not spam rimHit', () => {
+    const rim = hoopGeometry(court, 1).rimCenter;
+    const ball = freeBall({ x: rim.x + RIM_RADIUS, y: rim.y + 0.16, z: rim.z });
+    const events = drop(ball, 600);
+    expect(events.filter((e) => e.type === 'rimHit').length).toBeLessThan(10);
   });
 });
