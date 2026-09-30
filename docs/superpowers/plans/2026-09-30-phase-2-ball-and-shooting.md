@@ -1599,7 +1599,8 @@ describe('shooting through the tick', () => {
     expect(released).toBeDefined();
     expect(state.ball.mode).toBe('flight');
     expect(state.ball.holder).toBeNull();
-    expect(findPlayer(state, 'p')?.shotCooldownTicks).toBe(30);
+    // Set to 30 at release (step 3), then decremented once by the timers step of the same tick.
+    expect(findPlayer(state, 'p')?.shotCooldownTicks).toBe(29);
   });
 
   it('holding the button does not shoot again after landing', () => {
