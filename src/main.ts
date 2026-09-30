@@ -1,4 +1,7 @@
-const app = document.getElementById('app');
-if (app) {
-  app.innerHTML = '<h1 style="margin:16px">RoarBall</h1>';
-}
+import { startGame } from './app';
+
+const root = document.getElementById('app');
+if (!root) throw new Error('#app not found');
+
+const debug = new URLSearchParams(window.location.search).has('debug');
+startGame(root, { debug });
