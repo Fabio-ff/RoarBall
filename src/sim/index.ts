@@ -10,3 +10,5 @@ export * from './buttons';
 export * from './hoop';
 export * from './collision';
 export * from './ball';
+export * from './arc';
+export * from './shooting';
