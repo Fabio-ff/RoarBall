@@ -32,7 +32,14 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   const runner = new MatchRunner(
     court,
     createMatch(
-      { durationMs: 180_000, shotClockMs: 14_000, seed: 1, ruleIds: [], courtId: court.id },
+      // No clock until phase 2 adds match phases and a results screen.
+      {
+        durationMs: Number.POSITIVE_INFINITY,
+        shotClockMs: 14_000,
+        seed: 1,
+        ruleIds: [],
+        courtId: court.id,
+      },
       court,
       [{ id: HUMAN_ID, team: 0, characterId: 'placeholder' }],
     ),
@@ -67,7 +74,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   observer.observe(root);
 
   const overlay = options.debug ? new DebugOverlay(root) : null;
-  let tickCount = 0;
+  let lastTickNumber = runner.current.tick;
   let frameCount = 0;
   let statsWindowStart = performance.now();
   let fps = 0;
@@ -79,7 +86,6 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
     () => {
       intents.set(HUMAN_ID, input.sample());
       runner.step(intents);
-      tickCount += 1;
     },
     (alpha, frameMs) => {
       const prev = runner.previous;
@@ -97,9 +103,9 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
       const now = performance.now();
       if (now - statsWindowStart >= 1000) {
         fps = (frameCount * 1000) / (now - statsWindowStart);
-        ticksPerSecond = (tickCount * 1000) / (now - statsWindowStart);
+        ticksPerSecond = ((next.tick - lastTickNumber) * 1000) / (now - statsWindowStart);
+        lastTickNumber = next.tick;
         frameCount = 0;
-        tickCount = 0;
         statsWindowStart = now;
       }
       if (overlay && human) {
