@@ -8,6 +8,9 @@ export interface DebugData {
   speed: number;
   turbo: number;
   inputKind: string;
+  phase: string;
+  ballMode: string;
+  shotClockMs: number;
 }
 
 /** `?debug` overlay (spec §10.3). Updates its text at most 4× per second. */
@@ -35,6 +38,8 @@ export class DebugOverlay {
       `speed  ${data.speed.toFixed(2)} m/s`,
       `turbo  ${(data.turbo * 100).toFixed(0)}%`,
       `input  ${data.inputKind}`,
+      `phase  ${data.phase}  ball ${data.ballMode}`,
+      `shot   ${(data.shotClockMs / 1000).toFixed(1)} s`,
     ].join('\n');
   }
 

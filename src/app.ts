@@ -4,13 +4,17 @@ import { getCourt } from './content/courts';
 import { InputManager } from './input/input-manager';
 import { KeyboardBackend } from './input/keyboard';
 import { TouchBackend } from './input/touch';
+import { BallView } from './render/ball-view';
 import { BroadcastCamera } from './render/camera';
 import { buildCourtView } from './render/court-view';
+import { EffectsView } from './render/effects-view';
+import { lerpVec3 } from './render/interpolate';
 import { PlayerView } from './render/player-view';
 import { GameScene } from './render/scene';
 import { createMatch, findPlayer } from './sim/match';
 import type { PlayerId, PlayerIntent } from './sim/types';
 import { DebugOverlay } from './ui/debug-overlay';
+import { Hud } from './ui/hud';
 
 export interface GameOptions {
   debug: boolean;
@@ -19,7 +23,7 @@ export interface GameOptions {
 const HUMAN_ID: PlayerId = 'home1';
 const TEAM_COLORS = [0x2f80ed, 0xeb5757] as const;
 
-/** Phase 1 entry point: one human-controlled placeholder on the gym court, no menus yet. */
+/** Phase 2 entry point: shootaround with one human on the gym court (spec A.1). */
 export function startGame(root: HTMLElement, options: GameOptions): { stop(): void } {
   const canvas = document.createElement('canvas');
   root.appendChild(canvas);
@@ -32,14 +36,13 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   const runner = new MatchRunner(
     court,
     createMatch(
-      // No clock until phase 2 adds match phases and a results screen.
       {
-        durationMs: Number.POSITIVE_INFINITY,
+        durationMs: 180_000,
         shotClockMs: 14_000,
         seed: 1,
-        ruleIds: [],
-        mode: 'match',
+        ruleIds: ['shotClock'],
         courtId: court.id,
+        mode: 'shootaround',
       },
       court,
       [{ id: HUMAN_ID, team: 0, characterId: 'placeholder' }],
@@ -54,11 +57,14 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
       playerViews.set(player.id, view);
     }
   }
+  const ballView = new BallView();
+  scene.scene.add(ballView.group);
+  const effects = new EffectsView();
+  scene.scene.add(effects.group);
 
   const touch = new TouchBackend(root);
   const input = new InputManager([new KeyboardBackend(window), touch]);
   input.onActiveKindChange = (kind) => (kind === 'touch' ? touch.show() : touch.hide());
-  // Show the touch controls on the very first touch, before any joystick movement exists.
   const onFirstTouch = (e: PointerEvent): void => {
     if (e.pointerType === 'touch') touch.show();
   };
@@ -66,6 +72,8 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
 
   const broadcastCamera = new BroadcastCamera(scene.camera);
   input.cameraYaw = broadcastCamera.yaw;
+
+  const hud = new Hud(root);
 
   const resize = (): void => {
     scene.resize(root.clientWidth, root.clientHeight, window.devicePixelRatio);
@@ -81,14 +89,21 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   let fps = 0;
   let ticksPerSecond = 0;
 
+  // One controller per player; AI controllers join in phase 4 (spec A.6).
+  const controllers = new Map<PlayerId, () => PlayerIntent>([[HUMAN_ID, () => input.sample()]]);
   const intents = new Map<PlayerId, PlayerIntent>();
 
   const loop = new GameLoop(
     () => {
-      intents.set(HUMAN_ID, input.sample());
-      runner.step(intents);
+      for (const [id, controller] of controllers) intents.set(id, controller());
+      const events = runner.step(intents);
+      hud.handleEvents(events);
+      for (const event of events) {
+        if (event.type === 'basket') effects.spawnFlash(runner.current.ball.pos);
+      }
     },
     (alpha, frameMs) => {
+      const dt = frameMs / 1000;
       const prev = runner.previous;
       const next = runner.current;
       for (const [id, view] of playerViews) {
@@ -96,8 +111,12 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
         const b = findPlayer(next, id);
         if (a && b) view.update(a, b, alpha);
       }
-      const human = findPlayer(next, HUMAN_ID);
-      if (human) broadcastCamera.update(human.pos, frameMs / 1000);
+      const holder = next.ball.holder === null ? undefined : findPlayer(next, next.ball.holder);
+      ballView.update(prev.ball, next.ball, alpha, dt, holder?.action === 'run', next.tick);
+      broadcastCamera.update(lerpVec3(prev.ball.pos, next.ball.pos, alpha), dt);
+      effects.update(dt);
+      hud.update(next);
+      hud.tick(dt);
       scene.render();
 
       frameCount += 1;
@@ -109,6 +128,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
         frameCount = 0;
         statsWindowStart = now;
       }
+      const human = findPlayer(next, HUMAN_ID);
       if (overlay && human) {
         overlay.update({
           fps,
@@ -118,6 +138,9 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
           speed: Math.hypot(human.vel.x, human.vel.z),
           turbo: human.turbo,
           inputKind: input.activeKind ?? '-',
+          phase: next.phase,
+          ballMode: next.ball.mode,
+          shotClockMs: next.shotClockMs,
         });
       }
     },
@@ -130,6 +153,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
       observer.disconnect();
       root.removeEventListener('pointerdown', onFirstTouch);
       input.dispose();
+      hud.dispose();
       overlay?.dispose();
       scene.dispose();
       canvas.remove();

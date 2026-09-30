@@ -1,0 +1,84 @@
+.hud {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+  font-family: system-ui, sans-serif;
+  color: #fff;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+.hud-score {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: clamp(20px, 4vmin, 32px);
+  font-weight: 700;
+}
+
+.hud-team {
+  min-width: 1.6em;
+  text-align: center;
+}
+
+.hud-home {
+  color: #7fb2ff;
+}
+
+.hud-away {
+  color: #ff8c8c;
+}
+
+.hud-clock {
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-clock[hidden] {
+  display: none;
+}
+
+.hud-shotclock {
+  position: absolute;
+  top: calc(max(8px, env(safe-area-inset-top)) + 3.4em);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(14px, 2.6vmin, 20px);
+  opacity: 0.85;
+}
+
+.hud-shotclock.is-low {
+  color: #ffd166;
+}
+
+.hud-banner {
+  position: absolute;
+  top: 32%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: clamp(28px, 8vmin, 72px);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  animation: hud-pop 0.25s ease-out;
+}
+
+.hud-banner[hidden] {
+  display: none;
+}
+
+@keyframes hud-pop {
+  from {
+    transform: translateX(-50%) scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(-50%) scale(1);
+    opacity: 1;
+  }
+}
