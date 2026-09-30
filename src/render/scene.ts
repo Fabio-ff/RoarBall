@@ -17,9 +17,10 @@ export class GameScene {
   }
 
   resize(width: number, height: number, devicePixelRatio: number): void {
+    if (width <= 0 || height <= 0) return;
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, MAX_PIXEL_RATIO) * this.renderScale);
     this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / Math.max(height, 1);
+    this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
   }
 
