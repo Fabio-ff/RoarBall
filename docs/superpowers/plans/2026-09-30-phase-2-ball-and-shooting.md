@@ -1709,15 +1709,35 @@ describe('shot geometry with forced outcomes', () => {
     );
   }
 
-  for (const distance of [3, 5, 7, 10]) {
+  const distances = [3, 5, 7, 10];
+  for (const distance of distances) {
     for (const missType of missTypes) {
-      it(`a ${missType} miss from ${distance} m touches the hoop and does not score`, () => {
+      it(`a ${missType} miss from ${distance} m touches the hoop`, () => {
         const { events } = forced(distance, { made: false, missType });
         expect(events.some((e) => e.type === 'rimHit' || e.type === 'boardHit')).toBe(true);
+      });
+    }
+    for (const missType of ['frontRim', 'sideRim'] as const) {
+      it(`a ${missType} miss from ${distance} m never scores`, () => {
+        const { events } = forced(distance, { made: false, missType });
         expect(events.some((e) => e.type === 'basket')).toBe(false);
       });
     }
   }
+
+  it('rattles (back-rim and board misses) go in only occasionally', () => {
+    // These bounce off the far tube and the board; physics decides. Systematic bounce-ins
+    // would show up here and in the basket-rate test.
+    let baskets = 0;
+    let cases = 0;
+    for (const distance of distances) {
+      for (const missType of ['backRim', 'board'] as const) {
+        cases += 1;
+        if (forced(distance, { made: false, missType }).events.some((e) => e.type === 'basket')) baskets += 1;
+      }
+    }
+    expect(baskets).toBeLessThanOrEqual(cases / 4);
+  });
 
   for (const distance of [3, 5, 7, 10, 14, 18]) {
     it(`a made shot from ${distance} m scores without touching the rim`, () => {
@@ -1848,7 +1868,7 @@ export function pointsFor(distance: number): 2 | 3 {
 
 export function pickMissType(rng: RngState): MissType {
   const r = nextFloat(rng);
-  if (r < 0.4) return 'frontRim';
+  if (r < 0.5) return 'frontRim';
   if (r < 0.7) return 'backRim';
   if (r < 0.85) return 'sideRim';
   return 'board';
@@ -1871,9 +1891,11 @@ export function missTarget(hoop: HoopGeometry, shooterPos: Vec3, missType: MissT
     case 'frontRim':
       return { x: rim.x - ux * outer, y, z: rim.z - uz * outer };
     case 'backRim': {
-      // Top-outer side of the far tube: the bounce continues away from the ring.
-      const farOuter = RIM_RADIUS + ballRadius * 0.5;
-      return { x: rim.x + ux * farOuter, y: rim.y + RIM_TUBE + ballRadius * 0.6, z: rim.z + uz * farOuter };
+      // Top of the far tube. The board face is only 0.35 m behind the rim centre, so a ball
+      // cannot sit outside the far tube without touching the board: back-rim misses are rattles
+      // and the free physics decides where they end up.
+      const farTop = RIM_RADIUS - ballRadius * 0.2;
+      return { x: rim.x + ux * farTop, y: rim.y + RIM_TUBE + ballRadius * 0.85, z: rim.z + uz * farTop };
     }
     case 'sideRim':
       return { x: rim.x - uz * outer, y, z: rim.z + ux * outer };
