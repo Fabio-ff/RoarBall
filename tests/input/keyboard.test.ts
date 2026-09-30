@@ -62,4 +62,12 @@ describe('KeyboardBackend', () => {
     press('KeyW');
     expect(backend.sample().move).toEqual({ x: 0, y: 0 });
   });
+
+  it('latches a press that starts and ends between two samples', () => {
+    backend = new KeyboardBackend(window);
+    press('Space');
+    release('Space');
+    expect(backend.sample().action).toBe(true);
+    expect(backend.sample().action).toBe(false);
+  });
 });

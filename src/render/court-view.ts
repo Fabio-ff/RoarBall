@@ -6,12 +6,13 @@ import {
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  ConeGeometry,
   PlaneGeometry,
   TorusGeometry,
 } from 'three';
-import type { CourtDef, HoopDef } from '../sim/types';
+import { BOARD_HALF, hoopGeometry, RIM_RADIUS, type HoopGeometry } from '../sim/hoop';
+import type { CourtDef } from '../sim/types';
 
-const RIM_RADIUS = 0.225;
 const LINE_WIDTH = 0.05;
 
 /**
@@ -47,7 +48,7 @@ export function buildCourtView(court: CourtDef): Group {
     line(LINE_WIDTH, width, 0, 0),
   );
 
-  for (const hoop of court.hoops) group.add(buildHoop(hoop, Math.sign(hoop.pos.x) || 1));
+  for (const index of [0, 1] as const) group.add(buildHoop(hoopGeometry(court, index)));
 
   const { lighting } = court;
   const sun = new DirectionalLight(lighting.sunColor, 2.5);
@@ -80,41 +81,45 @@ function line(sizeX: number, sizeZ: number, x: number, z: number): Mesh {
   return mesh;
 }
 
-/** `side` is +1 for the hoop at +X and -1 for the hoop at -X; the backboard sits behind the rim. */
-function buildHoop(hoop: HoopDef, side: number): Group {
+function buildHoop(hoop: HoopGeometry): Group {
   const group = new Group();
-  const { x, z } = hoop.pos;
-  const y = hoop.rimHeight;
+  const { rimCenter, boardCenter, side } = hoop;
 
   const rim = new Mesh(
     new TorusGeometry(RIM_RADIUS, 0.02, 8, 24),
     new MeshStandardMaterial({ color: 0xff5a1f }),
   );
   rim.rotation.x = Math.PI / 2;
-  rim.position.set(x, y, z);
+  rim.position.set(rimCenter.x, rimCenter.y, rimCenter.z);
 
-  const boardX = x + side * (RIM_RADIUS + 0.15);
+  const net = new Mesh(
+    new ConeGeometry(RIM_RADIUS, 0.45, 12, 1, true),
+    new MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.6 }),
+  );
+  net.rotation.x = Math.PI; // wide end up, under the rim
+  net.position.set(rimCenter.x, rimCenter.y - 0.225, rimCenter.z);
+
   const board = new Mesh(
-    new BoxGeometry(0.05, 1.05, 1.8),
+    new BoxGeometry(BOARD_HALF.x * 2, BOARD_HALF.y * 2, BOARD_HALF.z * 2),
     new MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.7 }),
   );
-  board.position.set(boardX, y + 0.3, z);
+  board.position.set(boardCenter.x, boardCenter.y, boardCenter.z);
 
-  const poleX = boardX + side * 1.2;
-  const poleHeight = y + 0.6;
+  const poleX = boardCenter.x + side * 1.2;
+  const poleHeight = rimCenter.y + 0.6;
   const pole = new Mesh(
     new BoxGeometry(0.15, poleHeight, 0.15),
     new MeshStandardMaterial({ color: 0x444444 }),
   );
-  pole.position.set(poleX, poleHeight / 2, z);
+  pole.position.set(poleX, poleHeight / 2, rimCenter.z);
 
   const arm = new Mesh(
     new BoxGeometry(1.2, 0.1, 0.1),
     new MeshStandardMaterial({ color: 0x444444 }),
   );
-  arm.position.set((boardX + poleX) / 2, y + 0.6, z);
+  arm.position.set((boardCenter.x + poleX) / 2, rimCenter.y + 0.6, rimCenter.z);
 
   for (const m of [rim, board, pole, arm]) m.castShadow = true;
-  group.add(rim, board, pole, arm);
+  group.add(rim, net, board, pole, arm);
   return group;
 }

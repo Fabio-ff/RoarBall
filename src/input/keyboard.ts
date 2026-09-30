@@ -28,6 +28,7 @@ export const DEFAULT_KEY_MAP: KeyMap = {
 export class KeyboardBackend implements InputBackend {
   readonly kind = 'keyboard' as const;
   private readonly down = new Set<string>();
+  private readonly latched = new Set<string>();
   private readonly mapped: Set<string>;
 
   constructor(
@@ -43,13 +44,15 @@ export class KeyboardBackend implements InputBackend {
   sample(): PlayerIntent {
     const x = (this.any(this.map.right) ? 1 : 0) - (this.any(this.map.left) ? 1 : 0);
     const y = (this.any(this.map.up) ? 1 : 0) - (this.any(this.map.down) ? 1 : 0);
-    return {
+    const intent = {
       move: v2Normalize({ x, y }),
       action: this.any(this.map.action),
       pass: this.any(this.map.pass),
       special: this.any(this.map.special),
       turbo: this.any(this.map.turbo),
     };
+    this.latched.clear();
+    return intent;
   }
 
   dispose(): void {
@@ -57,16 +60,18 @@ export class KeyboardBackend implements InputBackend {
     this.target.removeEventListener('keyup', this.onKeyUp);
     this.target.removeEventListener('blur', this.onBlur);
     this.down.clear();
+    this.latched.clear();
   }
 
   private any(codes: string[]): boolean {
-    return codes.some((c) => this.down.has(c));
+    return codes.some((c) => this.down.has(c) || this.latched.has(c));
   }
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (!this.mapped.has(e.code)) return;
     e.preventDefault();
     this.down.add(e.code);
+    this.latched.add(e.code);
   };
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
@@ -75,5 +80,6 @@ export class KeyboardBackend implements InputBackend {
 
   private readonly onBlur = (): void => {
     this.down.clear();
+    this.latched.clear();
   };
 }

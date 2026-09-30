@@ -127,6 +127,13 @@ describe('TouchBackend buttons', () => {
     expect(backend.sample().move.x).toBeCloseTo(1);
   });
 
+  it('latches a tap that starts and ends between two samples', () => {
+    fire(button('action'), 'pointerdown', { pointerId: 7, clientX: 900, clientY: 550 });
+    fire(window, 'pointerup', { pointerId: 7, clientX: 900, clientY: 550 });
+    expect(backend.sample().action).toBe(true);
+    expect(backend.sample().action).toBe(false);
+  });
+
   it('has all four buttons', () => {
     for (const name of ['special', 'pass', 'action', 'turbo']) expect(button(name)).toBeTruthy();
   });

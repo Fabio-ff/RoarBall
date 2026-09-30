@@ -27,6 +27,7 @@ export class TouchBackend implements InputBackend {
   private readonly joystick: HTMLDivElement;
   private readonly knob: HTMLDivElement;
   private readonly buttons = new Map<ButtonName, { el: HTMLDivElement; pointers: Set<number> }>();
+  private readonly latched = new Set<ButtonName>();
   private joystickPointer: number | null = null;
   private origin = { x: 0, y: 0 };
   private move = { x: 0, y: 0 };
@@ -81,6 +82,7 @@ export class TouchBackend implements InputBackend {
   hide(): void {
     this.element.hidden = true;
     this.resetJoystick();
+    this.latched.clear();
     for (const b of this.buttons.values()) {
       b.pointers.clear();
       b.el.classList.remove('is-pressed');
@@ -88,13 +90,15 @@ export class TouchBackend implements InputBackend {
   }
 
   sample(): PlayerIntent {
-    return {
+    const intent = {
       move: { ...this.move },
       action: this.pressed('action'),
       pass: this.pressed('pass'),
       special: this.pressed('special'),
       turbo: this.pressed('turbo'),
     };
+    this.latched.clear();
+    return intent;
   }
 
   dispose(): void {
@@ -102,11 +106,12 @@ export class TouchBackend implements InputBackend {
     this.element.removeEventListener('pointermove', this.onPointerMove);
     window.removeEventListener('pointerup', this.onPointerEnd);
     window.removeEventListener('pointercancel', this.onPointerEnd);
+    this.latched.clear();
     this.element.remove();
   }
 
   private pressed(name: ButtonName): boolean {
-    return (this.buttons.get(name)?.pointers.size ?? 0) > 0;
+    return (this.buttons.get(name)?.pointers.size ?? 0) > 0 || this.latched.has(name);
   }
 
   private buttonFromTarget(target: EventTarget | null): ButtonName | null {
@@ -121,6 +126,7 @@ export class TouchBackend implements InputBackend {
       const button = this.buttons.get(name);
       if (!button) return;
       button.pointers.add(e.pointerId);
+      this.latched.add(name);
       button.el.classList.add('is-pressed');
       e.preventDefault();
       return;
