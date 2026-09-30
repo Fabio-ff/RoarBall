@@ -3,13 +3,18 @@ import { getCourt } from '../../src/content/courts';
 import { giveBall } from '../../src/sim/ball';
 import { hoopGeometry } from '../../src/sim/hoop';
 import { createMatch, findPlayer } from '../../src/sim/match';
-import { createRng } from '../../src/sim/rng';
+import { createRng, nextFloat } from '../../src/sim/rng';
 import {
   chooseShotType,
   distanceFactor,
+  JUMPSHOT_MAX_DRIFT,
   launchShot,
+  MISS_JITTER_LATERAL,
+  MISS_JITTER_VERTICAL,
+  missTarget,
   pickMissType,
   pointsFor,
+  resolveShotOutcome,
   shotQuality,
   startShot,
 } from '../../src/sim/shooting';
@@ -117,6 +122,72 @@ describe('shot selection and quality', () => {
   });
 });
 
+describe('miss targets and the outcome roll', () => {
+  const zero = { lateral: 0, vertical: 0 };
+  const rim = hoop.rimCenter;
+
+  it('a board miss hits the board on the side away from the shooter', () => {
+    const fromPlusZ = missTarget(hoop, { x: rim.x - 5, y: 0, z: 4 }, 'board', 0.12, zero);
+    const fromMinusZ = missTarget(hoop, { x: rim.x - 5, y: 0, z: -4 }, 'board', 0.12, zero);
+    expect(fromPlusZ.z).toBeLessThan(rim.z);
+    expect(fromMinusZ.z).toBeGreaterThan(rim.z);
+    // Straight on, the lateral jitter picks the side.
+    const left = missTarget(hoop, { x: rim.x - 5, y: 0, z: 0 }, 'board', 0.12, {
+      lateral: -0.5,
+      vertical: 0,
+    });
+    const right = missTarget(hoop, { x: rim.x - 5, y: 0, z: 0 }, 'board', 0.12, {
+      lateral: 0.5,
+      vertical: 0,
+    });
+    expect(Math.sign(left.z - rim.z)).toBe(-1);
+    expect(Math.sign(right.z - rim.z)).toBe(1);
+  });
+
+  it('jitter moves the target across the shot line and vertically, within its scale', () => {
+    const shooter = { x: rim.x - 6, y: 0, z: 0 };
+    const base = missTarget(hoop, shooter, 'frontRim', 0.12, zero);
+    const moved = missTarget(hoop, shooter, 'frontRim', 0.12, { lateral: 1, vertical: -1 });
+    expect(moved.x).toBeCloseTo(base.x, 9); // straight on: across the line is along z
+    expect(moved.z - base.z).toBeCloseTo(MISS_JITTER_LATERAL, 9);
+    expect(moved.y - base.y).toBeCloseTo(-MISS_JITTER_VERTICAL, 9);
+  });
+
+  it('long front-rim misses aim lower, down to about rim height', () => {
+    const at = (d: number) =>
+      missTarget(hoop, { x: rim.x - d, y: 0, z: 0 }, 'frontRim', 0.12, zero);
+    expect(at(8).y).toBeCloseTo(rim.y + 0.12 * 0.6, 9);
+    expect(at(14).y).toBeLessThan(at(8).y);
+    expect(at(20).y).toBeCloseTo(rim.y + 0.12 * 0.1, 9);
+    expect(at(26).y).toBeCloseTo(at(20).y, 9);
+  });
+
+  it('draws make roll, miss type, lateral and vertical jitter in that order', () => {
+    const s = ready(8);
+    const p = findPlayer(s, 'p');
+    if (!p) throw new Error('no player');
+    startShot(s, p, court);
+    for (let seed = 1; seed < 100; seed++) {
+      s.rng = createRng(seed);
+      const mirror = createRng(seed);
+      const outcome = resolveShotOutcome(s, p, court);
+      const roll = nextFloat(mirror);
+      expect(outcome.made).toBe(roll < outcome.quality);
+      if (outcome.made) {
+        expect(outcome.jitter).toBeNull();
+        expect(s.rng).toEqual(mirror);
+        continue;
+      }
+      expect(outcome.missType).toBe(pickMissType(mirror));
+      expect(outcome.jitter).toEqual({
+        lateral: nextFloat(mirror) * 2 - 1,
+        vertical: nextFloat(mirror) * 2 - 1,
+      });
+      expect(s.rng).toEqual(mirror);
+    }
+  });
+});
+
 describe('shooting through the tick', () => {
   it('a press with the ball starts a locked shot and releases the ball at the release tick', () => {
     const start = ready(4);
@@ -164,12 +235,18 @@ describe('shooting through the tick', () => {
 
   it('a missed shot never emits a basket by itself and leaves the ball free', () => {
     for (let seed = 1; seed < 50; seed++) {
-      const { state, events } = runUntil(ready(4, seed), press, () => false, 240);
-      const released = events.find((e) => e.type === 'shotReleased');
+      // Up to the first hoop contact: the ball is loose there. (Later the shooter may catch
+      // their own rebound once the pickup cooldown is over.)
+      const hit = runUntil(ready(4, seed), press, (ev) =>
+        ev.some((e) => e.type === 'rimHit' || e.type === 'boardHit'),
+      );
+      const released = hit.events.find((e) => e.type === 'shotReleased');
       if (released?.type === 'shotReleased' && !released.made) {
-        expect(events.some((e) => e.type === 'rimHit' || e.type === 'boardHit')).toBe(true);
-        expect(state.ball.mode).toBe('free');
-        expect(state.score).toEqual([0, 0]);
+        expect(hit.events.some((e) => e.type === 'rimHit' || e.type === 'boardHit')).toBe(true);
+        expect(hit.state.ball.mode).toBe('free');
+        const rest = runUntil(hit.state, press, () => false, 240);
+        expect([...hit.events, ...rest.events].some((e) => e.type === 'basket')).toBe(false);
+        expect(rest.state.score).toEqual([0, 0]);
         return;
       }
     }
@@ -228,14 +305,22 @@ describe('shooting through the tick', () => {
 describe('shot geometry with forced outcomes', () => {
   const missTypes: MissType[] = ['frontRim', 'backRim', 'sideRim', 'board'];
 
-  /** Starts the shot and launches it immediately with a forced outcome; runs the ball out. */
+  /**
+   * Starts the shot and launches it with a forced outcome from the real jump-shot release height
+   * (the shooter's feet are 0.99 m up at the release tick); runs the ball out.
+   */
   function forced(distance: number, outcome: { made: boolean; missType: MissType | null }) {
     const s = ready(distance);
     const p = findPlayer(s, 'p');
     if (!p) throw new Error('no player');
     startShot(s, p, court);
+    p.pos.y = 0.99;
     const events: SimEvent[] = [];
-    launchShot(s, p, court, events, { quality: 0.5, ...outcome });
+    launchShot(s, p, court, events, {
+      quality: 0.5,
+      jitter: outcome.made ? null : { lateral: 0, vertical: 0 },
+      ...outcome,
+    });
     return runUntil(
       s,
       NO_INTENT,
@@ -276,6 +361,14 @@ describe('shot geometry with forced outcomes', () => {
     expect(baskets).toBeLessThanOrEqual(cases / 4);
   });
 
+  for (const distance of [16, 20, 24]) {
+    it(`a long frontRim miss from ${distance} m hits the rim and stays out`, () => {
+      const { events } = forced(distance, { made: false, missType: 'frontRim' });
+      expect(events.some((e) => e.type === 'rimHit')).toBe(true);
+      expect(events.some((e) => e.type === 'basket')).toBe(false);
+    });
+  }
+
   for (const distance of [3, 5, 7, 10, 14, 18]) {
     it(`a made shot from ${distance} m scores without touching the rim`, () => {
       const { events } = forced(distance, { made: true, missType: null });
@@ -299,5 +392,103 @@ describe('shot geometry with forced outcomes', () => {
     const shooter = findPlayer(state, 'p');
     expect(shooter?.pos.x).toBeLessThan(hoop.rimCenter.x);
     expect(Math.hypot(shooter?.vel.x ?? 0, shooter?.vel.z ?? 0)).toBe(0);
+  });
+});
+
+describe('shooting on the run', () => {
+  const sprint: PlayerIntent = { ...NO_INTENT, move: { x: 1, y: 0 }, turbo: true };
+
+  /** Runs at 8 m/s towards hoop 1 from `distance` m, presses on the first tick, runs to release. */
+  function runAndShoot(distance: number) {
+    const start = ready(distance);
+    const p = findPlayer(start, 'p');
+    if (!p) throw new Error('no player');
+    p.vel = { x: 8, y: 0, z: 0 };
+    let s = tick(start, new Map([['p', { ...sprint, action: true }]]), court).state;
+    const shotType = findPlayer(s, 'p')?.shot?.type;
+    const { state, events } = runUntil(s, sprint, (ev) =>
+      ev.some((e) => e.type === 'shotReleased'),
+    );
+    s = state;
+    const released = events.find((e) => e.type === 'shotReleased');
+    const shooter = findPlayer(s, 'p');
+    if (!shooter || released?.type !== 'shotReleased') throw new Error('no release');
+    return { shotType, released, shooter };
+  }
+
+  it('a fast break pressed 3 m out becomes a drive and never passes the rim', () => {
+    const { shotType, released, shooter } = runAndShoot(3);
+    expect(['dunk', 'layup']).toContain(released.shotType);
+    expect(shotType).toBe(released.shotType);
+    expect(shooter.pos.x).toBeLessThan(hoop.rimCenter.x - 0.5);
+  });
+
+  it('a jump shot pressed 5 m out at full speed releases at least 1 m in front of the rim', () => {
+    const { released, shooter } = runAndShoot(5);
+    expect(released.shotType).toBe('jumpshot');
+    expect(shooter.pos.x).toBeLessThan(hoop.rimCenter.x - 1);
+    expect(Math.hypot(shooter.vel.x, shooter.vel.z)).toBeLessThanOrEqual(JUMPSHOT_MAX_DRIFT + 1e-9);
+  });
+
+  it('a running jump shot is penalised for the run-up, not the damped wind-up', () => {
+    const start = ready(4);
+    const p = findPlayer(start, 'p');
+    if (!p) throw new Error('no player');
+    p.vel = { x: 8, y: 0, z: 0 };
+    const prePress = structuredClone(p);
+    const { released, shooter } = runAndShoot(4);
+    expect(released.shotType).toBe('jumpshot');
+    // Same motion penalty as the pre-press state; only the capped drift (~0.9 m closer) differs.
+    const atRelease = { ...prePress, pos: { ...shooter.pos } };
+    expect(released.quality).toBeCloseTo(shotQuality(atRelease, 'jumpshot', hoop), 2);
+    const damped = { ...atRelease, vel: { ...shooter.vel } };
+    expect(released.quality).toBeLessThan(shotQuality(damped, 'jumpshot', hoop) - 0.1);
+    expect(released.quality).toBeLessThan(shotQuality(prePress, 'jumpshot', hoop) + 0.05);
+  });
+
+  it('drive ranges widen with speed towards the rim, not away from it', () => {
+    const s = ready(3);
+    const p = findPlayer(s, 'p');
+    if (!p) throw new Error('no player');
+    expect(chooseShotType(p, hoop)).toBe('jumpshot');
+    p.vel = { x: 8, y: 0, z: 0 };
+    expect(chooseShotType(p, hoop)).toBe('dunk');
+    p.vel = { x: -8, y: 0, z: 0 };
+    expect(chooseShotType(p, hoop)).toBe('jumpshot');
+  });
+});
+
+describe('basket scope', () => {
+  /** A live match with a loose ball dropped straight through the ring of `hoopIndex`. */
+  function dropThrough(hoopIndex: 0 | 1, lastShotHoop: 0 | 1): SimEvent[] {
+    const state = createMatch(settings, court, [{ id: 'p', team: 0, characterId: 'placeholder' }]);
+    state.phase = 'live';
+    const rim = hoopGeometry(court, hoopIndex).rimCenter;
+    state.ball.pos = { x: rim.x, y: rim.y + 0.5, z: rim.z };
+    state.ball.lastShot = {
+      shooter: 'p',
+      team: 0,
+      hoop: lastShotHoop,
+      shotType: 'jumpshot',
+      points: 2,
+      made: false,
+    };
+    return runUntil(state, NO_INTENT, (ev) => ev.some((e) => e.type === 'basket'), 60).events;
+  }
+
+  it('a made flight records its hoop and scores there', () => {
+    const s = ready(5);
+    const p = findPlayer(s, 'p');
+    if (!p) throw new Error('no player');
+    startShot(s, p, court);
+    launchShot(s, p, court, [], { quality: 1, made: true, missType: null, jitter: null });
+    expect(s.ball.lastShot?.hoop).toBe(1);
+    const { events } = runUntil(s, NO_INTENT, (ev) => ev.some((e) => e.type === 'basket'));
+    expect(events.some((e) => e.type === 'basket')).toBe(true);
+  });
+
+  it('a loose ball counts only through the hoop its shot aimed at', () => {
+    expect(dropThrough(0, 0).some((e) => e.type === 'basket')).toBe(true);
+    expect(dropThrough(0, 1).some((e) => e.type === 'basket')).toBe(false);
   });
 });
