@@ -6,6 +6,12 @@ import {
   v2Length,
   v2Normalize,
   v2Rotate,
+  v3Add,
+  v3DistanceXZ,
+  v3Dot,
+  v3Length,
+  v3Scale,
+  v3Sub,
   wrapAngle,
 } from '../../src/sim/math';
 
@@ -42,5 +48,16 @@ describe('math', () => {
     expect(wrapAngle(3 * Math.PI)).toBeCloseTo(-Math.PI);
     expect(wrapAngle(-3 * Math.PI)).toBeCloseTo(-Math.PI);
     expect(wrapAngle(Math.PI / 2)).toBeCloseTo(Math.PI / 2);
+  });
+});
+
+describe('vec3', () => {
+  it('adds, subtracts, scales, dots and measures', () => {
+    expect(v3Add({ x: 1, y: 2, z: 3 }, { x: 1, y: 1, z: 1 })).toEqual({ x: 2, y: 3, z: 4 });
+    expect(v3Sub({ x: 1, y: 2, z: 3 }, { x: 1, y: 1, z: 1 })).toEqual({ x: 0, y: 1, z: 2 });
+    expect(v3Scale({ x: 1, y: 2, z: 3 }, 2)).toEqual({ x: 2, y: 4, z: 6 });
+    expect(v3Dot({ x: 1, y: 2, z: 3 }, { x: 4, y: 5, z: 6 })).toBe(32);
+    expect(v3Length({ x: 2, y: 3, z: 6 })).toBe(7);
+    expect(v3DistanceXZ({ x: 0, y: 5, z: 0 }, { x: 3, y: 0, z: 4 })).toBe(5);
   });
 });

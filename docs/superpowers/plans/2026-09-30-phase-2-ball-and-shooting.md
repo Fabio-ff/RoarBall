@@ -1131,7 +1131,8 @@ describe('free ball', () => {
   it('bounces off the rim and reports it', () => {
     const rim = hoopGeometry(court, 1).rimCenter;
     const ball = freeBall({ x: rim.x + RIM_RADIUS, y: rim.y + 0.6, z: rim.z });
-    const events = drop(ball, 40);
+    // Hits the rim at about tick 17 and is still rising at tick 25 (apex near tick 29).
+    const events = drop(ball, 25);
     expect(events.some((e) => e.type === 'rimHit')).toBe(true);
     expect(ball.vel.y).toBeGreaterThan(0);
   });
