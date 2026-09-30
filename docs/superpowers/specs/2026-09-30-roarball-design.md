@@ -514,3 +514,78 @@ Each phase ends with something playable.
 Online multiplayer, tournament/unlocks/persistence, difficulty levels and
 extra rules, court hazards, pickups, player switching, beast characters,
 control remapping UI, WebGPU renderer.
+
+## Appendix A — Phase 2 decisions (2026-09-30)
+
+Decisions taken when planning Phase 2 (ball, shooting, scoring, match phases, HUD)
+that the main text leaves open. They refine, never contradict, §4.
+
+### A.1 Solo play: shootaround mode
+
+Until AI opponents exist (phase 4), the playable build runs in **shootaround**:
+`MatchSettings.mode = 'shootaround' | 'match'`. In shootaround there is no clock,
+either hoop scores, and after a basket or a shot-clock reset the ball is handed
+straight back to the human at their baseline. The full phase machine of §4.3 is
+implemented and tested headless regardless of mode; `match` mode is what phase 4
+switches to by changing settings, not code.
+
+### A.2 Ball
+
+`BallState` gains `radius` (0.12 m) and `mode: 'held' | 'flight' | 'free'`.
+Held: follows the holder's hand offset (dribbling is presentation only).
+Flight: follows a solved ballistic arc exactly (§A.4). Free: gravity, air drag
+and restitution from `CourtDef.physics`, colliding with floor, backboard (box),
+rim (torus: closest point on the ring circle, then sphere test) and players
+(capsules). Balls are clamped to the play area like players.
+
+### A.3 Loose-ball pickup
+
+A free ball below shoulder height is picked up by any player whose capsule
+overlaps it, except the last shooter during a short post-release cooldown
+(0.5 s). Steals and interceptions (phase 3) reuse this hook.
+
+### A.4 Shooting details
+
+- Shot type is chosen at the press: **dunk** within 2 m of the hoop while moving
+  towards it; **layup** within 2.5 m otherwise; else **jump shot**. The shooter
+  is animation-locked; the ball leaves at a fixed tick of the animation.
+- `shotQuality(state, shooter)` in phase 2 uses distance, `stats.shooting` and
+  movement speed at release; defender terms are added in phase 3 to the same
+  function. No timing mechanic: a press is a shot (a release-timing bonus at the
+  top of the jump is a **future enhancement**, see §12).
+- Target hoop: the team's attacking hoop; in shootaround, the nearer hoop.
+- Points: 3 beyond the FIBA 6.75 m arc (measured from the rim centre at release),
+  otherwise 2. Dunks always score.
+- Miss: the arc targets a rim or backboard point from a small table of miss
+  types (front rim, back rim, side rim, board), then the ball goes free.
+- Arc solver: given release point, target point and a flight time derived from
+  distance (longer shots arc higher and take longer), solve the initial velocity
+  under the court's gravity. Pure function; the arc must pass within 1 mm of the
+  target in tests.
+
+### A.5 Match flow defaults
+
+`durationMs` 180 000, `shotClockMs` 14 000, `scored` pause 1.5 s, sudden-death
+overtime on a tie. Shot clock resets on possession change and on a rim hit.
+Tip-off awards the ball to a seeded random team and, until a jump-ball
+animation exists, transitions to `live` immediately.
+
+### A.6 Input edges and controllers
+
+`PlayerState.prevButtons` stores last tick's buttons so the simulation detects
+presses (§8). Backends latch a press that began and ended between two samples so
+one-tick taps are never lost. The app holds a `controllers` map
+(`PlayerId → () => PlayerIntent`) instead of a single human id; the camera
+follows the ball.
+
+### A.7 Content and the RNG
+
+§3 says content may import only types from `sim/`. Court modifiers (§7.1) and
+abilities (§5.3) that need randomness or math must receive them through their
+hook context (`{ rng, math }` passed by the simulation), not by importing values.
+Phase 5 implements this; the boundary lint stays as is.
+
+### A.8 Future enhancements (not scheduled)
+
+- Release-timing bonus: a small quality bonus when the shot button is released at
+  the top of the jump.
