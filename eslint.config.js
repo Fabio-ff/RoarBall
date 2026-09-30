@@ -9,6 +9,10 @@ const presentationDirs = [
   '**/input/**',
   '**/audio/**',
   '**/app/**',
+  '**/render',
+  '**/ui',
+  '**/input',
+  '**/audio',
   '**/app',
 ];
 const threeModules = ['three', 'three/**'];
@@ -52,12 +56,18 @@ export default defineConfig([
     // Spec §3: content may only import types from sim.
     files: ['src/content/**/*.ts'],
     rules: {
-      'no-restricted-imports': [
+      'no-restricted-imports': 'off',
+      '@typescript-eslint/no-restricted-imports': [
         'error',
         {
           patterns: [
             { group: threeModules, message: 'src/content must not depend on Three.js' },
             { group: presentationDirs, message: 'src/content may only import from src/sim' },
+            {
+              group: ['**/sim', '**/sim/**'],
+              allowTypeImports: true,
+              message: 'src/content may only import types from src/sim',
+            },
           ],
         },
       ],
