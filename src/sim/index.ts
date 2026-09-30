@@ -6,3 +6,4 @@ export * from './stats';
 export * from './match';
 export * from './player-movement';
 export * from './tick';
+export * from './buttons';

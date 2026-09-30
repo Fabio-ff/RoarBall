@@ -4,3 +4,6 @@ export const TICK_RATE = 60;
 export const TICK_MS = 1000 / TICK_RATE;
 /** Seconds per tick, used for all physics integration. */
 export const TICK_DT = 1 / TICK_RATE;
+
+/** Ball radius in metres (spec A.2). */
+export const BALL_RADIUS = 0.12;

@@ -1,5 +1,7 @@
+import { BALL_RADIUS } from './constants';
 import { createRng } from './rng';
 import { DEFAULT_STATS } from './stats';
+import { NO_BUTTONS } from './types';
 import type {
   CourtDef,
   MatchSettings,
@@ -31,11 +33,24 @@ export function createMatch(
     clockMs: settings.durationMs,
     shotClockMs: settings.shotClockMs,
     score: [0, 0],
+    // Task 4 switches this to 'tipoff'.
     phase: 'live',
-    ball: { pos: { x: 0, y: 0, z: 0 }, vel: { x: 0, y: 0, z: 0 }, holder: null },
+    phaseTicks: 0,
+    possession: null,
+    pendingInbound: null,
+    overtime: false,
+    ball: {
+      pos: { x: 0, y: BALL_RADIUS, z: 0 },
+      vel: { x: 0, y: 0, z: 0 },
+      radius: BALL_RADIUS,
+      mode: 'free',
+      holder: null,
+      flight: null,
+      lastShot: null,
+    },
     teams,
     rng: createRng(settings.seed),
-    settings,
+    settings: { ...settings, ruleIds: [...settings.ruleIds] },
   };
 }
 
@@ -55,6 +70,11 @@ function createPlayer(entry: RosterEntry, indexInTeam: number, court: CourtDef):
     action: 'idle',
     actionTicks: 0,
     turbo: 1,
+    turboRequested: false,
+    turboActive: false,
+    prevButtons: { ...NO_BUTTONS },
+    shot: null,
+    shotCooldownTicks: 0,
     stats: { ...DEFAULT_STATS },
   };
 }
