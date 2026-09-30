@@ -38,6 +38,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
         shotClockMs: 14_000,
         seed: 1,
         ruleIds: [],
+        mode: 'match',
         courtId: court.id,
       },
       court,

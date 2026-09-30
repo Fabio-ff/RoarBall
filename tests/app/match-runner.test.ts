@@ -7,7 +7,14 @@ import { NO_INTENT } from '../../src/sim/types';
 function runner(): MatchRunner {
   const court = getCourt('gym');
   const state = createMatch(
-    { durationMs: 60_000, shotClockMs: 14_000, seed: 5, ruleIds: [], courtId: 'gym' },
+    {
+      durationMs: 60_000,
+      shotClockMs: 14_000,
+      seed: 5,
+      ruleIds: [],
+      courtId: 'gym',
+      mode: 'match',
+    },
     court,
     [{ id: 'p', team: 0, characterId: 'placeholder' }],
   );

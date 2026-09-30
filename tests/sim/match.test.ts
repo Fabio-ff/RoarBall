@@ -8,6 +8,7 @@ const settings: MatchSettings = {
   shotClockMs: 14_000,
   seed: 1,
   ruleIds: [],
+  mode: 'match',
   courtId: 'gym',
 };
 

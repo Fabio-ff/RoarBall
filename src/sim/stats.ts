@@ -11,4 +11,6 @@ export const DEFAULT_STATS: Readonly<ResolvedStats> = Object.freeze({
   deceleration: 40,
   turboDrainPerTick: 1 / 180,
   turboRegenPerTick: 1 / 360,
+  shooting: 0.75,
+  jumpSpeed: 4.5,
 });

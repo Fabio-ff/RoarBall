@@ -16,6 +16,7 @@ const settings: MatchSettings = {
   shotClockMs: 14_000,
   seed: 3,
   ruleIds: [],
+  mode: 'match',
   courtId: 'gym',
 };
 
@@ -53,7 +54,7 @@ describe('tick', () => {
     for (let i = 0; i < 70; i++) {
       const r = tick(state, new Map(), court);
       state = r.state;
-      for (const e of r.events) seen.push(`${e.from}->${e.to}`);
+      for (const e of r.events) if (e.type === 'phaseChange') seen.push(`${e.from}->${e.to}`);
     }
     expect(state.phase).toBe('finished');
     expect(state.clockMs).toBe(0);
@@ -85,5 +86,36 @@ describe('tick', () => {
       b = tick(b, intents, court).state;
     }
     expect(a).toEqual(b);
+  });
+});
+
+describe('tick: buttons and jumping', () => {
+  const press: PlayerIntent = { ...NO_INTENT, action: true };
+
+  it('records last tick buttons in prevButtons', () => {
+    const { state } = tick(fresh(), new Map([['p', press]]), court);
+    expect(findPlayer(state, 'p')?.prevButtons.action).toBe(true);
+    const { state: s2 } = tick(state, new Map(), court);
+    expect(findPlayer(s2, 'p')?.prevButtons.action).toBe(false);
+  });
+
+  it('jumps once per press without the ball, even when the button is held', () => {
+    let state = fresh();
+    const jumps: number[] = [];
+    for (let i = 0; i < 120; i++) {
+      const before = findPlayer(state, 'p')?.onGround;
+      state = tick(state, new Map([['p', press]]), court).state;
+      if (before && !findPlayer(state, 'p')?.onGround) jumps.push(i);
+    }
+    expect(jumps).toEqual([0]);
+    expect(findPlayer(state, 'p')?.onGround).toBe(true);
+  });
+
+  it('drains turbo through the timers step', () => {
+    let state = fresh();
+    for (let i = 0; i < 60; i++) {
+      state = tick(state, new Map([['p', { ...moveRight, turbo: true }]]), court).state;
+    }
+    expect(findPlayer(state, 'p')?.turbo).toBeCloseTo(1 - 60 / 180, 5);
   });
 });
