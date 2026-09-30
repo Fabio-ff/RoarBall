@@ -1,0 +1,516 @@
+# RoarBall — Design Spec
+
+Date: 2026-09-30
+Status: approved design, pre-implementation
+
+## 1. Summary
+
+RoarBall is a browser-based 3D arcade basketball game in the spirit of NBA Jam:
+2v2 matches on spectacular courts, over-the-top moves, one signature ability per
+character, and no real-world rules to get in the way. It runs as a static web
+app, responsive across desktops, tablets and phones, with tablets and desktops
+as the primary targets.
+
+The first release is a **quick match against AI**. The simulation is designed
+from day one so that online multiplayer, tournaments, difficulty levels and new
+content (characters, courts, abilities) can be added without restructuring.
+
+The game is built primarily for the author and his son; design directions are
+validated with him before being extended.
+
+## 2. Decisions
+
+| Topic | Decision | Deferred / future |
+|---|---|---|
+| Core game | Arcade 2v2 with passing, alley-oops, dunks, blocks, steals, shoves | — |
+| Opponents | AI teammate and AI opponents | Online multiplayer (sim is deterministic and input-driven) |
+| Courts | Spectacular locations; each has one *light* gameplay modifier | Active hazards/events |
+| Theme | Human athletes at launch | Beast characters as a content pack |
+| Special moves | One signature ability per character, charged by play | Court pickups on the same ability system |
+| Controls | Keyboard, gamepad, context-sensitive touch (tablet-first) | Player switching, remapping UI |
+| Rules | Pure arcade: shot clock + invisible boundary only | Difficulty levels that enable more rules (out of bounds, goaltending, travelling) |
+| Art | Low-poly stylized, placeholders first, per-asset upgrades | Detailed toon style |
+| Modes | Quick match only, nothing persisted | Tournament ladder, unlocks |
+| Physics | Custom lightweight physics; shot outcome decided at release | — |
+
+### Stack
+
+| Layer | Choice | Reason |
+|---|---|---|
+| Rendering | Three.js (WebGL) | Small bundle, best mobile coverage, huge ecosystem; WebGPU opt-in later |
+| Physics | Custom (sphere vs plane/box/torus/capsule; kinematic players) | Deterministic, no WASM, ~300 lines we own; arcade shooting is outcome-based anyway |
+| Language / build | TypeScript (strict) + Vite | Fast iteration, static deploy |
+| UI / HUD | Plain DOM + CSS overlaid on the canvas | Free responsiveness, crisp at any DPI |
+| Input | Pointer Events, Gamepad API, keyboard → one `PlayerIntent` type | Device-agnostic simulation |
+| Audio | Howler.js | Mobile audio unlock, sprites |
+| Assets | glTF + Draco meshes + KTX2 textures via gltf-transform | Small downloads |
+| Tests | Vitest (headless simulation), headless Chrome smoke test | — |
+| Hosting | GitHub Pages via GitHub Actions on push to `main` | Free, sufficient without a server |
+
+Rejected: Babylon.js (heavier, we'd use a fraction), React Three Fiber (render
+cycle indirection in a physics loop), Unity/Godot web export (download size,
+startup, mobile browser behaviour), PlayCanvas (editor-centric), Rapier (full
+rigid-body physics makes arcade shooting hard to tune; determinism needs a
+specific build), ECS frameworks (five moving entities don't justify the
+indirection).
+
+## 3. Architecture
+
+Four layers that only communicate downward or through plain data:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│ App shell  (DOM/CSS): menus, character/court select, HUD │
+├──────────────────────────────────────────────────────────┤
+│ Input layer: keyboard · gamepad · touch  →  PlayerIntent │
+├──────────────────────────────────────────────────────────┤
+│ Simulation (pure TS, no DOM, no Three.js)                │
+│   fixed 60 Hz tick(intents[]) → MatchState               │
+│   physics · rules · abilities · AI · court modifiers     │
+├──────────────────────────────────────────────────────────┤
+│ Presentation: Three.js scene, animation, audio, VFX      │
+│   reads MatchState, interpolates, never writes it        │
+└──────────────────────────────────────────────────────────┘
+          Content (data + assets): characters · courts · abilities
+```
+
+- **Simulation** runs at a fixed 60 ticks/s independent of frame rate. It takes
+  one `PlayerIntent` per player per tick and produces a new `MatchState`. No
+  DOM, no Three.js, no timers, no `Math.random`, no `Date.now`. AI players
+  produce intents of the same type, so the simulation cannot distinguish
+  human, AI or (later) remote players. Same seed + same intents = same match.
+- **Presentation** owns the Three.js scene. Each frame it interpolates between
+  the two latest states and updates meshes, animations, camera, audio and
+  effects. It reacts to simulation events for one-off effects. It never writes
+  game state.
+- **Input layer** turns device events into `PlayerIntent`. Three backends
+  (keyboard, gamepad, touch) implement one interface; the touch backend also
+  renders its on-screen controls in the DOM.
+- **App shell** is DOM/CSS: title, quick-match setup, pause, results, HUD.
+- **Content** is typed data plus assets. Court modifiers and ability effects
+  are the only content that includes code, through small fixed interfaces.
+
+### Folder layout
+
+```
+src/
+  sim/            state, physics, rules, abilities, ai, match
+  input/          intent types + keyboard / gamepad / touch backends
+  render/         Three.js scene, views, camera, vfx
+  audio/
+  ui/             DOM screens and HUD
+  content/
+    characters/   one folder per character (definition + model + clips)
+    courts/       one folder per court (definition + modifier + assets)
+    abilities/    one file per signature move
+  app.ts          wiring: game loop, screen flow
+tests/            headless simulation tests (Vitest)
+assets-src/       raw model/texture/sound exports (not shipped)
+public/assets/    compressed glTF, KTX2, audio
+scripts/          asset pipeline, balance harness
+docs/
+```
+
+### Boundary rules (enforced by ESLint import rules)
+
+- `sim/` must not import from `render/`, `ui/`, `input/`, `audio/`.
+- `content/` may import only types from `sim/`.
+- The single piece of data flowing from presentation to input is the camera
+  yaw, used for camera-relative movement.
+
+## 4. Simulation
+
+### 4.1 State
+
+`MatchState` is a plain, cloneable, serialisable object.
+
+```
+MatchState
+  tick, clockMs, shotClockMs
+  score: [home, away]
+  phase: 'tipoff' | 'live' | 'scored' | 'inbound' | 'paused' | 'finished'
+  ball: { pos, vel, holder: playerId | null, flight: ShotFlight | null }
+  teams: [ { players: PlayerState[] }, { players: PlayerState[] } ]
+  rng: seeded RNG state
+  settings: MatchSettings
+
+PlayerState
+  id, team, characterId
+  pos, facing, vel, onGround
+  action: 'idle' | 'run' | 'dribble' | 'shoot' | 'layup' | 'dunk' | 'pass'
+        | 'jump' | 'block' | 'steal' | 'shove' | 'stunned' | 'getup' | 'celebrate'
+  actionTicks            ticks elapsed in the current action
+  turbo                  0..1 stamina bar
+  abilityCharge          0..1
+  abilityActive: { abilityId, ticksLeft, data } | null
+  stats: ResolvedStats   character stats × court modifier × active ability
+  cooldowns: { steal, shove, block }
+
+MatchSettings
+  durationMs (default 3 min), targetScore?: number, shotClockMs (default 14 s),
+  seed, ruleIds: string[]
+```
+
+Teams are lists of players; team size is never hard-coded.
+
+### 4.2 Tick pipeline (fixed order)
+
+1. Apply court modifier `onTick` and `modifyStats` → `ResolvedStats`.
+2. Apply active ability `onTick` / `modifyStats`.
+3. Resolve each player's intent into an action, respecting what the current
+   action allows (e.g. no input during `stunned`, `dunk` is animation-locked).
+4. Move players (kinematic: velocity from stats and intent, gravity when
+   airborne, clamped to the play area).
+5. Move ball: held → follows holder's hand offset; `flight` → along the
+   computed arc; free → gravity, drag, integration.
+6. Collisions: ball vs floor/backboard/rim/net/players; player vs player
+   (shove resolution, soft separation).
+7. Rules: run every enabled `Rule.check(state)`; apply violations.
+8. Scoring and phase transitions.
+9. Cooldowns, ability timers, turbo regen/drain, charge gains.
+10. Emit events for this tick.
+
+### 4.3 Match phases
+
+- `tipoff`: ball awarded to a random team (seeded); presentation plays a jump
+  ball animation.
+- `live`: normal play.
+- `scored`: short celebration pause, then `inbound`.
+- `inbound`: scored-on team receives the ball at their baseline; shot clock
+  resets.
+- `finished`: clock reaches zero (or target score reached). Tied at zero →
+  sudden-death overtime (next basket wins).
+- `paused`: UI-only; the tick is not advanced.
+
+### 4.4 Shooting (outcome-based)
+
+Pressing action with the ball starts a `shoot` action (or `layup`/`dunk` when
+close to the hoop; see below). At release:
+
+```
+quality = shotQuality(state, shooter)   // 0..1
+  inputs: distance to hoop, shooter.stats.shooting, nearest defender distance
+          and whether that defender is jumping/blocking, shooter speed at
+          release, court modifier, active ability flags (e.g. "cannot miss")
+make = rng.next() < quality
+```
+
+- **Make**: `ShotFlight` is an arc ending at the hoop centre. The basket counts
+  when the ball crosses the rim plane inside the ring. 2 points inside the
+  arc, 3 outside.
+- **Miss**: arc targets a point on the rim or backboard chosen from a miss type
+  (front rim, back rim, side, board). On impact the ball is released into free
+  physics for a live rebound.
+- **Dunk**: shot started close to the hoop while jumping towards it.
+  Animation-locked, cannot miss, only stoppable by a block that begins before
+  the dunk begins.
+- **Layup**: close, non-jumping variant; high quality but blockable.
+- **Block**: if the ball is released within reach of a rising blocker, the
+  shot is deflected into free physics instead of following its arc.
+
+`shotQuality` is the single source of truth, shared by the simulation and the
+AI.
+
+### 4.5 Passing
+
+- Pass: fast low arc to the teammate. Intercepted if a defender's capsule
+  crosses the path.
+- Alley-oop: if the teammate is airborne near the hoop, the pass is a lob;
+  catching it converts into a `dunk`.
+- Pressing pass without the ball asks the AI teammate to pass to you.
+
+### 4.6 Defence
+
+| Move | Effect | Cost |
+|---|---|---|
+| Block | Jump with arms up; deflects a shot released within reach while rising | Airborne, can be faked |
+| Steal | Short reach; takes the ball if holder in range and not protected | Cooldown + failure animation |
+| Shove | Knocks opponent down (`stunned` → `getup`); loose ball if they held it | Cooldown, stronger with turbo |
+
+### 4.7 Turbo
+
+Holding turbo drains a stamina bar and increases speed, jump height and shove
+power. It regenerates when released. This is the pacing resource.
+
+### 4.8 Rules
+
+A `Rule` is `{ id, check(state) → Violation | null }`. `MatchSettings.ruleIds`
+selects the enabled set. Launch set: `shotClock`, `boundary` (invisible walls).
+Implemented later but designed for: `outOfBounds`, `goaltending`,
+`travelling`. Difficulty levels will be presets of rule sets + AI profiles.
+
+### 4.9 Events
+
+Per tick the simulation emits `SimEvent[]`: `shotReleased`, `basket`, `miss`,
+`rimHit`, `boardHit`, `bounce`, `block`, `steal`, `shove`, `pass`,
+`intercept`, `abilityStart`, `abilityEnd`, `phaseChange`, `violation`.
+Presentation, audio and HUD consume them; the simulation never waits on them.
+
+### 4.10 Determinism
+
+Seeded RNG only; no wall-clock; fixed pipeline order; no dependence on frame
+timing. A match is fully replayable from `seed + intents[]`. This is the basis
+for both replay tests and future networking.
+
+## 5. Characters and abilities
+
+### 5.1 Character definition
+
+```
+CharacterDef
+  id, name, description
+  stats: { speed, jump, shooting, dunking, defense, power, stamina }  // 1..10
+  abilityId
+  model: { file, scale, animationSet }
+  appearance: { primaryColor, secondaryColor }
+```
+
+A single tuning table maps 1–10 stats to simulation values (e.g. speed 5 →
+6 m/s, speed 10 → 8 m/s). Rebalancing the cast means editing that table.
+
+### 5.2 Launch cast (4 characters, human athletes)
+
+| Archetype | Strengths | Weakness | Ability |
+|---|---|---|---|
+| Dunker | dunking, power | speed, shooting | Rocket Dunk |
+| Sniper | shooting | defense, power | Hot Hand |
+| Speedster | speed, defense (steals) | power, dunking | Blur |
+| All-rounder | balanced | no standout | Earthquake |
+
+Names and looks are decided during content creation.
+
+### 5.3 Ability system
+
+```
+AbilityDef
+  id, name, description, icon
+  chargeCost (full bar)
+  durationTicks | 'instant'
+  effect: AbilityEffect
+  aiWantsToUse?(state, player) → boolean
+
+AbilityEffect
+  onActivate(state, player)
+  onTick?(state, player)
+  onEnd?(state, player)
+  modifyStats?(stats) → stats
+```
+
+Charge is earned by play: basket (+ by points), assist, steal, block. A full
+bar + special button activates. Launch abilities, chosen to exercise different
+hooks:
+
+- **Rocket Dunk** (8 s): dunks can start from anywhere inside the 3-point
+  line and cannot be blocked. `modifyStats` + flag read by dunk logic.
+- **Hot Hand**: next three shots cannot miss. `onActivate` sets a counter
+  consumed by the shot outcome.
+- **Blur** (6 s): doubled speed, unlimited turbo, steals always succeed.
+  `modifyStats` + steal flag.
+- **Earthquake** (instant): all opponents within a radius are knocked down.
+  `onActivate` only.
+
+Future court pickups reuse `AbilityDef`, activated on touch.
+
+### 5.4 Animation
+
+All humanoids share one skeleton and one animation set: idle, run, sprint,
+dribble idle, dribble run, jump shot, layup, dunk, pass, catch, block, steal,
+shove, knocked down, get up, celebrate. `model.animationSet` names the set so
+differently proportioned characters (beasts) can bring their own clips.
+Presentation maps `action` + velocity to clips and blends; the simulation only
+knows action names and durations.
+
+### 5.5 Placeholders
+
+Until models exist a character is a coloured capsule, a box head and a cone
+for facing, with the current action shown as floating debug text. Gameplay is
+tuned in this state.
+
+## 6. AI
+
+Lives in `sim/ai/`; produces `PlayerIntent` like any input backend.
+
+- **Cadence**: decision tree evaluated every 6 ticks (10 Hz) with a per-player
+  offset; steering towards the chosen goal every tick.
+- **Branches**:
+  - *Has ball*: drive if the lane is open; shoot if `shotQuality` ≥ threshold;
+    pass if the teammate has a better shot; use ability if charged and
+    `aiWantsToUse`; reset if defence is tight and the shot clock allows.
+  - *Teammate has ball*: move to an open named spot (corners, wings, top of
+    key, under basket); cut when a lane opens; jump near the rim to invite an
+    alley-oop.
+  - *Defending*: mark assigned opponent between them and the hoop; steal when
+    in range and unprotected; block when the mark starts a shot nearby; shove
+    a driving opponent when turbo allows; chase loose balls if closest.
+- **Shared judgement**: uses the same `shotQuality` function as the simulation.
+- **Profiles**: thresholds, reaction delay (ticks), steal attempt rate and
+  perception noise come from an `AiProfile`. One profile at launch; difficulty
+  levels and a slightly weaker teammate later.
+- **Teammate influence**: pass button asks for the ball; teammate favours
+  spots near where the human is heading.
+- **Court awareness**: reads `ResolvedStats` (already includes modifiers) and
+  `CourtModifier.aiHint` (e.g. `ballDrift` under gusts).
+- **No player switching** at launch.
+
+## 7. Courts
+
+### 7.1 Definition
+
+```
+CourtDef
+  id, name, description
+  scene: { file, scale }                 environment glTF (outside play area)
+  playArea: { length, width }            identical on all courts at launch
+  hoops: [ { pos, rimHeight } × 2 ]
+  physics: { gravity, friction, restitution, airDrag }
+  lighting: { skyColor, sunDirection, sunColor, ambient, fog? }
+  modifier?: CourtModifier
+
+CourtModifier
+  id, name, description
+  onTick?(state)
+  modifyStats?(stats) → stats
+  aiHint?(state, player) → { ballDrift?: Vec3 }
+```
+
+The play surface, lines, hoops, backboards and nets are generated from the
+definition so visuals always match physics. The environment never needs
+collision.
+
+### 7.2 Launch courts
+
+| Court | Setting | Modifier | Hooks used |
+|---|---|---|---|
+| Gym | plain indoor court | none (dev / tutorial / balance baseline) | — |
+| Rooftop Storm | skyscraper roof in a thunderstorm | **Gusts**: every 15–25 s a gust pushes the ball in flight and nudges airborne players for a few seconds; shown by rain and flags | `onTick`, `aiHint` |
+| Volcano Rim | cooled lava beside a glowing crater | **Heat**: turbo drains faster; shoves stronger; knock-downs last longer | `modifyStats` |
+| Frozen Lake | ice sheet under aurora | **Slick**: low friction; slower acceleration/stopping, drift on direction change | `physics.friction` + stat multiplier |
+
+### 7.3 Performance budget (per court, mid-range tablet, 60 fps)
+
+< 100 k triangles in view, < 30 environment draw calls, KTX2 textures, one
+directional shadow light limited to the play area, pixel ratio ≤ 2, render
+scale adjustable independently of DOM size.
+
+## 8. Input
+
+```
+PlayerIntent
+  move: { x, y }      unit vector or zero, camera-relative court space
+  action: boolean     shoot / layup / dunk with ball; block / steal / shove without
+  pass: boolean       pass, or call for pass
+  special: boolean
+  turbo: boolean
+```
+
+Buttons are reported as held; the simulation detects edges, so one-tick
+presses are never lost.
+
+- **Context-sensitive action** is resolved in the simulation (same on every
+  device and for AI): with ball → shoot/layup/dunk; without → block if mark is
+  shooting or near hoop, else steal if handler in reach, else shove nearest.
+- **Keyboard**: WASD/arrows, Space action, E pass, Q special, Shift turbo.
+  Remappable via settings object (no UI at launch).
+- **Gamepad**: left stick, A action, X pass, Y special, RT/B turbo; standard
+  mapping; hot-plug.
+- **Touch** (tablet-first, landscape):
+
+```
+┌──────────────────────────────────────────────┐
+│ score   ⏱ 2:41   ⚡ ability charge     ⏸     │
+│                  (3D court)                  │
+│   ╭───╮                              (SP)    │
+│   │ ◯ │  floating joystick       (PASS)      │
+│   ╰───╯                          (ACTION)    │
+│                                  (TURBO)     │
+└──────────────────────────────────────────────┘
+```
+
+  Floating joystick appears where the left thumb touches (left half). Right
+  side: three DOM buttons, action largest and lowest, min 56 px targets,
+  sized relative to viewport, tighter layout on phone widths. Turbo: start
+  with a separate button; long-press-while-moving is the alternative to test.
+  Multi-touch via Pointer Events tracked by pointer id.
+- **Camera-relative movement**: stick "up" = across the court away from the
+  camera; camera yaw is the only value flowing from render to input.
+- **Device detection**: touch controls appear on first touch, hide on
+  keyboard/gamepad use.
+
+## 9. Rendering, UI, audio
+
+- **Game loop**: accumulator; simulation ticks as many fixed steps as needed
+  (capped per frame), render once with the remainder as interpolation factor.
+- **Views**: `PlayerView` (mesh, mixer, clip selection, tint), `BallView`,
+  `CourtView` (environment + generated court geometry), `EffectsView`
+  (event-driven particles/flashes). Views map state → visuals only.
+- **Camera**: broadcast-style side view, elevated, follows the ball with
+  smoothing, zooms out as players spread; fixed orientation. Portrait: pulls
+  back and rises so the half court fits.
+- **Responsiveness**: canvas fills viewport; handles resize/orientation;
+  landscape intended, rotate hint in portrait on menus; safe-area insets.
+- **UI screens** (DOM, one module each, flow as a state machine in `app.ts`):
+  Title → Quick Match setup (character / teammate / opponents / court cards
+  with a small 3D preview) → Match (HUD + touch controls) → Pause → Results.
+  HUD: scores in team colours, clock, shot clock, ability bar per human, event
+  banners ("3 POINTS!", "BLOCKED!", "ROCKET DUNK!").
+- **Audio**: Howler.js; event-driven SFX (bounce scaled by impact, swish, rim,
+  squeaks, crowd, ability stingers); one music loop per court, menu loop,
+  results stinger; volume in `localStorage`.
+- **Loading**: per-match progress screen for selected characters, court and
+  shared sounds; Draco + KTX2 decoders shipped; placeholders load instantly.
+
+## 10. Content pipeline, testing, tooling
+
+### 10.1 Content
+
+Registries: `content/characters/index.ts`, `content/courts/index.ts`,
+`content/abilities/index.ts`. A build-time validator checks every definition
+(stat ranges, referenced ids and asset files exist). `scripts/asset-pipeline`
+compresses `assets-src/` → `public/assets/` with gltf-transform. Raw exports
+are never shipped. `docs/adding-content.md` explains how to add a character,
+court or ability (one page each).
+
+Asset sourcing plan: placeholders → CC0 low-poly packs (Quaternius, Kenney)
+with Mixamo animation → custom or AI-generated (Meshy/Tripo/Luma, cleaned in
+Blender) or Blender-Python-scripted courts and props.
+
+### 10.2 Testing (Vitest)
+
+- **Unit**: collision routines, `shotQuality`, arc solver (arc passes through
+  rim), each rule, each ability effect, each court modifier.
+- **Simulation** (headless scenarios): make-rate over 1000 seeded shots;
+  interception geometry; shove → loose ball; phase transitions; replay
+  determinism (seed + intents reproduces final state).
+- **Balance** (on demand): AI vs AI across characters and courts; assert
+  win-rate bands (no side > 60 % with equal characters) and score ranges;
+  produce a report.
+- **Smoke**: headless Chrome boots the app on placeholders, starts a match,
+  asserts frames render without console errors.
+
+### 10.3 Tooling
+
+Vite, TypeScript strict, ESLint (import boundaries), Prettier, Vitest.
+`?debug` overlay: tick rate, frame time, AI decision per player, controlled
+player's current `shotQuality`. GitHub Actions: build + deploy to GitHub Pages
+on push to `main`.
+
+## 11. Implementation phases
+
+Each phase ends with something playable.
+
+1. Skeleton: Vite/TS project, game loop, placeholder gym court, one
+   controllable capsule, keyboard + touch, deploy workflow.
+2. Ball: dribbling, outcome-based shooting with arcs, scoring, match phases,
+   HUD.
+3. Passing, defence (block/steal/shove), turbo, the four characters on
+   placeholders.
+4. AI for teammate and opponents; balance harness.
+5. Abilities and the three court modifiers.
+6. Menus, gamepad, audio, effects, polish.
+7. Real models and animations replace placeholders, court by court.
+
+## 12. Out of scope for the first release
+
+Online multiplayer, tournament/unlocks/persistence, difficulty levels and
+extra rules, court hazards, pickups, player switching, beast characters,
+control remapping UI, WebGPU renderer.
