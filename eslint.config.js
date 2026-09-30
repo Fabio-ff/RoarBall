@@ -22,7 +22,11 @@ export default defineConfig([
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
+    files: ['**/*.{ts,js}'],
+    ignores: ['src/sim/**'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
+  },
+  {
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
@@ -31,6 +35,7 @@ export default defineConfig([
   {
     // Spec §3: the simulation is pure TypeScript and never depends on presentation, input or Three.js.
     files: ['src/sim/**/*.ts'],
+    languageOptions: { globals: { ...globals.es2021 } },
     rules: {
       'no-restricted-imports': [
         'error',
@@ -44,7 +49,31 @@ export default defineConfig([
           ],
         },
       ],
-      'no-restricted-globals': ['error', 'performance'],
+      'no-restricted-globals': [
+        'error',
+        ...[
+          'window',
+          'document',
+          'navigator',
+          'location',
+          'localStorage',
+          'fetch',
+          'globalThis',
+          'self',
+          'performance',
+          'Date',
+          'setTimeout',
+          'setInterval',
+          'clearTimeout',
+          'clearInterval',
+          'requestAnimationFrame',
+          'cancelAnimationFrame',
+          'queueMicrotask',
+        ].map((name) => ({
+          name,
+          message: `${name} is not available to the simulation (spec §3: no DOM, no timers, no wall clock)`,
+        })),
+      ],
       'no-restricted-properties': [
         'error',
         { object: 'Math', property: 'random', message: 'Use the seeded RNG in src/sim/rng.ts' },
