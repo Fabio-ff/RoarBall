@@ -12,3 +12,5 @@ export * from './collision';
 export * from './ball';
 export * from './arc';
 export * from './shooting';
+export * from './rules';
+export * from './phases';

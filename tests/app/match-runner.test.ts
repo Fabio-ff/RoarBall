@@ -41,6 +41,8 @@ describe('MatchRunner', () => {
 
   it('returns the events of the step', () => {
     const r = runner();
+    const first = r.step(new Map());
+    expect(first.some((e) => e.type === 'phaseChange' && e.to === 'live')).toBe(true);
     expect(r.step(new Map())).toEqual([]);
   });
 });
