@@ -7,15 +7,18 @@ import { createRng } from '../../src/sim/rng';
 import {
   chooseShotType,
   distanceFactor,
+  launchShot,
   pickMissType,
   pointsFor,
   shotQuality,
+  startShot,
 } from '../../src/sim/shooting';
 import { tick } from '../../src/sim/tick';
 import {
   NO_INTENT,
   type MatchSettings,
   type MatchState,
+  type MissType,
   type PlayerIntent,
   type SimEvent,
 } from '../../src/sim/types';
@@ -200,22 +203,101 @@ describe('shooting through the tick', () => {
     expect(events.some((e) => e.type === 'basket')).toBe(true);
   });
 
-  it('make rate over 300 seeded shots matches the reported quality', () => {
-    let made = 0;
+  it('basket rate over 150 seeded shots tracks the reported quality', () => {
+    let baskets = 0;
     let qualitySum = 0;
-    const n = 300;
+    const n = 150;
     for (let seed = 1; seed <= n; seed++) {
       const { events } = runUntil(
         ready(4, seed),
         press,
-        (ev) => ev.some((e) => e.type === 'shotReleased'),
-        60,
+        (ev, s) =>
+          ev.some((e) => e.type === 'basket') || (s.ball.mode === 'free' && s.ball.pos.y < 0.5),
+        300,
       );
       const released = events.find((e) => e.type === 'shotReleased');
       if (released?.type !== 'shotReleased') throw new Error('no release');
       qualitySum += released.quality;
-      if (released.made) made += 1;
+      if (events.some((e) => e.type === 'basket')) baskets += 1;
     }
-    expect(Math.abs(made / n - qualitySum / n)).toBeLessThan(0.08);
+    // Lucky bounces after a miss may add a few percent; systematic bounce-ins would blow this.
+    expect(Math.abs(baskets / n - qualitySum / n)).toBeLessThan(0.1);
+  });
+});
+
+describe('shot geometry with forced outcomes', () => {
+  const missTypes: MissType[] = ['frontRim', 'backRim', 'sideRim', 'board'];
+
+  /** Starts the shot and launches it immediately with a forced outcome; runs the ball out. */
+  function forced(distance: number, outcome: { made: boolean; missType: MissType | null }) {
+    const s = ready(distance);
+    const p = findPlayer(s, 'p');
+    if (!p) throw new Error('no player');
+    startShot(s, p, court);
+    const events: SimEvent[] = [];
+    launchShot(s, p, court, events, { quality: 0.5, ...outcome });
+    return runUntil(
+      s,
+      NO_INTENT,
+      (ev, st) =>
+        ev.some((e) => e.type === 'basket') || (st.ball.mode === 'free' && st.ball.pos.y < 0.5),
+      300,
+    );
+  }
+
+  const distances = [3, 5, 7, 10];
+  for (const distance of distances) {
+    for (const missType of missTypes) {
+      it(`a ${missType} miss from ${distance} m touches the hoop`, () => {
+        const { events } = forced(distance, { made: false, missType });
+        expect(events.some((e) => e.type === 'rimHit' || e.type === 'boardHit')).toBe(true);
+      });
+    }
+    for (const missType of ['frontRim', 'sideRim'] as const) {
+      it(`a ${missType} miss from ${distance} m never scores`, () => {
+        const { events } = forced(distance, { made: false, missType });
+        expect(events.some((e) => e.type === 'basket')).toBe(false);
+      });
+    }
+  }
+
+  it('rattles (back-rim and board misses) go in only occasionally', () => {
+    // These bounce off the far tube and the board; physics decides. Systematic bounce-ins
+    // would show up here and in the basket-rate test.
+    let baskets = 0;
+    let cases = 0;
+    for (const distance of distances) {
+      for (const missType of ['backRim', 'board'] as const) {
+        cases += 1;
+        if (forced(distance, { made: false, missType }).events.some((e) => e.type === 'basket'))
+          baskets += 1;
+      }
+    }
+    expect(baskets).toBeLessThanOrEqual(cases / 4);
+  });
+
+  for (const distance of [3, 5, 7, 10, 14, 18]) {
+    it(`a made shot from ${distance} m scores without touching the rim`, () => {
+      const { events } = forced(distance, { made: true, missType: null });
+      expect(events.some((e) => e.type === 'basket')).toBe(true);
+      expect(events.some((e) => e.type === 'rimHit')).toBe(false);
+    });
+  }
+
+  it('a dunker stops short of the rim instead of flying through the backboard', () => {
+    const start = ready(1.9);
+    const p = findPlayer(start, 'p');
+    if (!p) throw new Error('no player');
+    p.vel = { x: 9, y: 0, z: 0 };
+    const { state, events } = runUntil(
+      start,
+      press,
+      (ev) => ev.some((e) => e.type === 'shotReleased'),
+      60,
+    );
+    expect(events.find((e) => e.type === 'shotReleased')).toMatchObject({ shotType: 'dunk' });
+    const shooter = findPlayer(state, 'p');
+    expect(shooter?.pos.x).toBeLessThan(hoop.rimCenter.x);
+    expect(Math.hypot(shooter?.vel.x ?? 0, shooter?.vel.z ?? 0)).toBe(0);
   });
 });

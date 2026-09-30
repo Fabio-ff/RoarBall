@@ -45,8 +45,13 @@ export const SHOOTER_PICKUP_COOLDOWN_TICKS = 30;
 /** Release point relative to the shooter's feet: arms raised. */
 const RELEASE_HEIGHT = 2.1;
 const RELEASE_FORWARD = 0.3;
-/** A made shot targets a point just above the rim plane so the basket check sees it cross. */
-const MADE_TARGET_ABOVE_RIM = 0.05;
+/**
+ * A made shot targets a point just below the rim plane so the crossing happens inside the
+ * collision-free flight, whatever the horizontal speed (long heaves included).
+ */
+const MADE_TARGET_BELOW_RIM = 0.1;
+/** Dunkers and layup drivers arrive this far short of the rim centre at release. */
+const DRIVE_STOP_SHORT = 0.6;
 /** Dunks: the ball is slammed from above the rim straight down through it. */
 const DUNK_FLIGHT_TIME = 0.1;
 const DUNK_FROM_ABOVE_RIM = 0.4;
@@ -104,7 +109,7 @@ export function pointsFor(distance: number): 2 | 3 {
 
 export function pickMissType(rng: RngState): MissType {
   const r = nextFloat(rng);
-  if (r < 0.4) return 'frontRim';
+  if (r < 0.5) return 'frontRim';
   if (r < 0.7) return 'backRim';
   if (r < 0.85) return 'sideRim';
   return 'board';
@@ -131,20 +136,25 @@ export function missTarget(
   switch (missType) {
     case 'frontRim':
       return { x: rim.x - ux * outer, y, z: rim.z - uz * outer };
-    case 'backRim':
-      // Inner side of the far tube, hit from the front.
+    case 'backRim': {
+      // Top of the far tube. The board face is only 0.35 m behind the rim centre, so a ball
+      // cannot sit outside the far tube without touching the board: back-rim misses are rattles
+      // and the free physics decides where they end up.
+      const farTop = RIM_RADIUS - ballRadius * 0.2;
       return {
-        x: rim.x + ux * (RIM_RADIUS - RIM_TUBE - ballRadius * 0.5),
-        y,
-        z: rim.z + uz * (RIM_RADIUS - RIM_TUBE - ballRadius * 0.5),
+        x: rim.x + ux * farTop,
+        y: rim.y + RIM_TUBE + ballRadius * 0.85,
+        z: rim.z + uz * farTop,
       };
+    }
     case 'sideRim':
       return { x: rim.x - uz * outer, y, z: rim.z + ux * outer };
     case 'board':
+      // High and off-centre so the rebound comes down beside the ring, not through it.
       return {
         x: hoop.boardCenter.x - hoop.side * (hoop.boardHalf.x + ballRadius),
-        y: rim.y + 0.35,
-        z: rim.z,
+        y: rim.y + 0.6,
+        z: rim.z + 0.35,
       };
   }
 }
@@ -177,22 +187,54 @@ export function startShot(state: MatchState, player: PlayerState, court: CourtDe
   player.action = ACTION_FOR_SHOT[type];
   player.actionTicks = 0;
   player.facing = Math.atan2(hoop.rimCenter.x - player.pos.x, hoop.rimCenter.z - player.pos.z);
+  if (type !== 'jumpshot') {
+    // Drive to a point just short of the rim by the release tick (no air control after this).
+    const dx = hoop.rimCenter.x - player.pos.x;
+    const dz = hoop.rimCenter.z - player.pos.z;
+    const len = Math.hypot(dx, dz) || 1;
+    const travel = Math.max(0, len - DRIVE_STOP_SHORT);
+    const speed = Math.min(
+      travel / (SHOT_TIMING[type].releaseTick * TICK_DT),
+      player.stats.turboSpeed,
+    );
+    player.vel.x = (dx / len) * speed;
+    player.vel.z = (dz / len) * speed;
+  }
   startJump(player, SHOT_TIMING[type].jumpSpeed);
 }
 
-/** Decides the outcome and launches the ball on an arc that realises it (spec §4.4). */
-export function releaseShot(
+export interface ShotOutcome {
+  quality: number;
+  made: boolean;
+  missType: MissType | null;
+}
+
+/** Rolls the seeded RNG for the outcome (spec §4.4). Consumed in a fixed order: make roll, then miss type. */
+export function resolveShotOutcome(
+  state: MatchState,
+  player: PlayerState,
+  court: CourtDef,
+): ShotOutcome {
+  const shot = player.shot;
+  if (!shot) return { quality: 0, made: false, missType: 'frontRim' };
+  const hoop = hoopGeometry(court, shot.hoop);
+  const quality = shotQuality(player, shot.type, hoop);
+  const made = nextFloat(state.rng) < quality;
+  return { quality, made, missType: made ? null : pickMissType(state.rng) };
+}
+
+/** Launches the ball on an arc that realises `outcome`; exported so tests can force each outcome. */
+export function launchShot(
   state: MatchState,
   player: PlayerState,
   court: CourtDef,
   events: SimEvent[],
+  outcome: ShotOutcome,
 ): void {
   const shot = player.shot;
   if (!shot) return;
   const hoop = hoopGeometry(court, shot.hoop);
   const { ball } = state;
-  const quality = shotQuality(player, shot.type, hoop);
-  const made = nextFloat(state.rng) < quality;
   const distance = v3DistanceXZ(player.pos, hoop.rimCenter);
   const points = pointsFor(distance);
   const rim = hoop.rimCenter;
@@ -203,8 +245,8 @@ export function releaseShot(
     : releasePoint(player);
   let target: Vec3;
   if (isDunk) target = { x: rim.x, y: rim.y - DUNK_TARGET_BELOW_RIM, z: rim.z };
-  else if (made) target = { x: rim.x, y: rim.y + MADE_TARGET_ABOVE_RIM, z: rim.z };
-  else target = missTarget(hoop, player.pos, pickMissType(state.rng), ball.radius);
+  else if (outcome.made) target = { x: rim.x, y: rim.y - MADE_TARGET_BELOW_RIM, z: rim.z };
+  else target = missTarget(hoop, player.pos, outcome.missType ?? 'frontRim', ball.radius);
   const flightTime = isDunk ? DUNK_FLIGHT_TIME : flightTimeFor(distance);
   const totalTicks = Math.max(1, Math.round(flightTime * TICK_RATE));
   const velocity = solveArcVelocity(from, target, totalTicks * TICK_DT, court.physics.gravity);
@@ -214,16 +256,40 @@ export function releaseShot(
   ball.pos = { ...from };
   ball.vel = velocity;
   ball.flight = { from, velocity, totalTicks, elapsedTicks: 0 };
-  ball.lastShot = { shooter: player.id, team: player.team, shotType: shot.type, points, made };
+  ball.lastShot = {
+    shooter: player.id,
+    team: player.team,
+    shotType: shot.type,
+    points,
+    made: outcome.made,
+  };
   player.shotCooldownTicks = SHOOTER_PICKUP_COOLDOWN_TICKS;
+  if (!isDunk && shot.type === 'layup') {
+    player.vel.x = 0;
+    player.vel.z = 0;
+  }
+  if (isDunk) {
+    player.vel.x = 0;
+    player.vel.z = 0;
+  }
   events.push({
     type: 'shotReleased',
     playerId: player.id,
     shotType: shot.type,
-    quality,
-    made,
+    quality: outcome.quality,
+    made: outcome.made,
     points,
   });
+}
+
+/** Decides the outcome and launches the ball (spec §4.4). */
+export function releaseShot(
+  state: MatchState,
+  player: PlayerState,
+  court: CourtDef,
+  events: SimEvent[],
+): void {
+  launchShot(state, player, court, events, resolveShotOutcome(state, player, court));
 }
 
 /** Per-tick bookkeeping of a locked shot: release at the release tick, unlock after landing. */
