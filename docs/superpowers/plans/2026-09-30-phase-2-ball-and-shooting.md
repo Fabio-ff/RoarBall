@@ -2396,7 +2396,9 @@ describe('phases', () => {
   it('the clock only runs in match mode and finishes when it hits zero', () => {
     const shoot = run(createMatch({ ...base, mode: 'shootaround' }, court, roster), 60).state;
     expect(shoot.clockMs).toBe(base.durationMs);
-    const { state, events } = run(createMatch({ ...base, durationMs: 500 }, court, roster), 60);
+    const leading = createMatch({ ...base, durationMs: 500 }, court, roster);
+    leading.score = [2, 0]; // not a tie, so no overtime
+    const { state, events } = run(leading, 60);
     expect(state.phase).toBe('finished');
     expect(events.some((e) => e.type === 'phaseChange' && e.to === 'finished')).toBe(true);
   });
@@ -2677,7 +2679,32 @@ Update tests that assumed a match starts `live`:
 
 The Task 2 review showed a ball can come to rest on top of the rim or the backboard: it then emits `rimHit`/`boardHit` every tick (which would reset the shot clock forever) and sits above pickup height where nobody can reach it.
 
-1. In `src/sim/ball.ts`, emit `rimHit` and `boardHit` only for real impacts: compute `const approach = -v3Dot(ball.vel, contact.normal)` **before** `reflect` and push the event only when `approach > CONTACT_EVENT_SPEED` (a new constant, `0.5` m/s). Import `v3Dot` from `./math`.
+1. In `src/sim/ball.ts`, emit `rimHit` and `boardHit` only on the **rising edge of contact**, so a ball resting on the rim or board reports one hit, not one per tick. Add `touchingRim: boolean` and `touchingBoard: boolean` to `BallState` (`src/sim/types.ts`), initialise both to `false` in `createMatch` and reset them in `giveBall`. In `stepFreeBall`, track whether any hoop's rim/board produced a contact this tick:
+
+```ts
+  let rimContact = false;
+  let boardContact = false;
+  for (const index of [0, 1] as const) {
+    const hoop = hoopGeometry(court, index);
+    const board = sphereVsBox(ball.pos, ball.radius, hoop.boardCenter, hoop.boardHalf);
+    if (board) {
+      boardContact = true;
+      pushOut(ball, board.normal, board.depth);
+      ball.vel = reflect(ball.vel, board.normal, restitution);
+      if (!ball.touchingBoard) events.push({ type: 'boardHit' });
+    }
+    const rim = sphereVsRing(ball.pos, ball.radius, hoop.rimCenter, RIM_RADIUS, RIM_TUBE);
+    if (rim) {
+      rimContact = true;
+      pushOut(ball, rim.normal, rim.depth);
+      ball.vel = reflect(ball.vel, rim.normal, restitution * 0.9);
+      if (!ball.touchingRim) events.push({ type: 'rimHit' });
+    }
+  }
+  ball.touchingRim = rimContact;
+  ball.touchingBoard = boardContact;
+```
+
 2. Add `freeTicks: number` to `BallState` in `src/sim/types.ts` (ticks the ball has been free and untouched), initialise it to `0` in `createMatch`, reset it to `0` in `giveBall`, and increment it in `stepFreeBall`.
 3. In `src/sim/phases.ts` add `export const LOOSE_BALL_TIMEOUT_TICKS = 360;` (6 s) and, inside `stepPhases`' `live` case before the basket check:
 
@@ -2707,7 +2734,7 @@ and to `tests/sim/phases.test.ts`:
 ```ts
   it('a loose ball nobody reaches is inbounded after the timeout', () => {
     let s = run(createMatch(base, court, roster), 1).state;
-    s.ball = { ...s.ball, mode: 'free', holder: null, flight: null, pos: { x: 0, y: 5, z: 0 }, vel: { x: 0, y: 0, z: 0 }, freeTicks: 0 };
+    s.ball = { ...s.ball, mode: 'free', holder: null, flight: null, pos: { x: 0, y: 5, z: 0 }, vel: { x: 0, y: 0, z: 0 }, freeTicks: 0, touchingRim: false, touchingBoard: false };
     // Park the ball on top of the backboard so nobody can pick it up.
     const board = hoopGeometry(court, 1);
     s.ball.pos = { x: board.boardCenter.x, y: board.boardCenter.y + board.boardHalf.y + 0.13, z: 0 };
