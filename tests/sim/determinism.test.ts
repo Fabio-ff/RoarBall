@@ -8,7 +8,9 @@ const court = getCourt('gym');
 const settings: MatchSettings = {
   durationMs: 60_000,
   shotClockMs: 14_000,
-  seed: 7,
+  // The script only takes long heaves (~5 %); this seed makes one, so the run covers a basket,
+  // 'scored' and the inbound. (Seed 7 relied on the heave bounce-in fixed in task 7.)
+  seed: 12,
   ruleIds: ['shotClock'],
   courtId: 'gym',
   mode: 'match',

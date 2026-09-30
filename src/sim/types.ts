@@ -175,6 +175,8 @@ export type SimEvent =
       shotType: ShotType;
       quality: number;
       made: boolean;
+      /** How a miss was scripted to miss; null for makes. */
+      missType: MissType | null;
       points: 2 | 3;
     }
   | { type: 'basket'; playerId: PlayerId; team: TeamIndex; points: 2 | 3; shotType: ShotType }

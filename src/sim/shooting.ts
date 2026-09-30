@@ -56,6 +56,16 @@ const DRIVE_STOP_SHORT = 0.6;
 const DUNK_FLIGHT_TIME = 0.1;
 const DUNK_FROM_ABOVE_RIM = 0.4;
 const DUNK_TARGET_BELOW_RIM = 0.1;
+/** Back-rim miss target, in ball radii: inward from the far tube centre line, above its top. */
+const BACK_RIM_INWARD = 0.35;
+const BACK_RIM_ABOVE = 0.55;
+/** Side-rim miss target: this many ball radii outside the tube. */
+const SIDE_RIM_OUT = 0.2;
+/**
+ * A missed shot's scripted flight ends this many ticks before its target so the target is the
+ * first point where free physics checks collisions (see launchShot).
+ */
+const MISS_HANDOVER_EARLY_TICKS = 1;
 
 export interface BasketInfo {
   team: TeamIndex;
@@ -115,47 +125,103 @@ export function pickMissType(rng: RngState): MissType {
   return 'board';
 }
 
+/** Seeded scatter of a miss target, each component in [-1, 1] (see resolveShotOutcome). */
+export interface ShotJitter {
+  lateral: number;
+  vertical: number;
+}
+
+export const NO_JITTER: Readonly<ShotJitter> = Object.freeze({ lateral: 0, vertical: 0 });
+/** Metres of miss-target scatter at |jitter| = 1, across the shot line and vertically. */
+export const MISS_JITTER_LATERAL = 0.05;
+export const MISS_JITTER_VERTICAL = 0.04;
+/** Front-rim misses are lowered onto the tube's front face as the shot gets longer (see missTarget). */
+const FRONT_RIM_LOWER_FROM = 8;
+const FRONT_RIM_LOWER_OVER = 12;
+/** The board miss hits the board face this far to the side of the rim centre, 0.6 m above it. */
+const BOARD_MISS_SIDE = 0.35;
+const BOARD_MISS_ABOVE_RIM = 0.6;
+
 /**
- * Where a missed shot's ball centre arrives. Rim misses aim at the outer side of the tube so the
- * bounce goes back out; the board miss hits the backboard face above the rim.
+ * Where a missed shot's ball centre meets the hoop: free physics takes over there (launchShot
+ * hands over one tick early). Front and side misses aim at the outer side of the tube so the
+ * bounce goes back out; the back-rim miss hits the front-top of the far tube; the board miss hits
+ * the backboard face above the rim, on the far side from the shooter. `jitter` scatters the point
+ * (seeded) so rattles are probabilistic rather than a fixed on/off switch by distance.
  */
 export function missTarget(
   hoop: HoopGeometry,
   shooterPos: Vec3,
   missType: MissType,
   ballRadius: number,
+  jitter: Readonly<ShotJitter>,
 ): Vec3 {
   const rim = hoop.rimCenter;
   const dx = rim.x - shooterPos.x;
   const dz = rim.z - shooterPos.z;
-  const len = Math.hypot(dx, dz) || 1;
+  const distance = Math.hypot(dx, dz);
+  const len = distance || 1;
   const ux = dx / len;
   const uz = dz / len;
+  const base = baseMissTarget(hoop, shooterPos, missType, ballRadius, jitter, ux, uz, distance);
+  // Scatter across the shot line (perpendicular (-uz, ux)) and vertically.
+  const side = jitter.lateral * MISS_JITTER_LATERAL;
+  return {
+    x: base.x - uz * side,
+    y: base.y + jitter.vertical * MISS_JITTER_VERTICAL,
+    z: base.z + ux * side,
+  };
+}
+
+function baseMissTarget(
+  hoop: HoopGeometry,
+  shooterPos: Vec3,
+  missType: MissType,
+  ballRadius: number,
+  jitter: Readonly<ShotJitter>,
+  ux: number,
+  uz: number,
+  distance: number,
+): Vec3 {
+  const rim = hoop.rimCenter;
   const outer = RIM_RADIUS + RIM_TUBE + ballRadius * 0.5;
-  const y = rim.y + ballRadius * 0.6;
   switch (missType) {
-    case 'frontRim':
+    case 'frontRim': {
+      // A long heave arrives fast and flat enough to carry over the tube top and drop in. Long
+      // shots aim lower, at the tube's front face (about rim height at >= 20 m).
+      const lower = clamp((distance - FRONT_RIM_LOWER_FROM) / FRONT_RIM_LOWER_OVER, 0, 1);
+      const y = rim.y + ballRadius * (0.6 - 0.5 * lower);
       return { x: rim.x - ux * outer, y, z: rim.z - uz * outer };
+    }
     case 'backRim': {
-      // Top of the far tube. The board face is only 0.35 m behind the rim centre, so a ball
-      // cannot sit outside the far tube without touching the board: back-rim misses are rattles
-      // and the free physics decides where they end up.
-      const farTop = RIM_RADIUS - ballRadius * 0.2;
+      // Front-top of the far tube. The board face is only 0.35 m behind the rim centre, so a ball
+      // cannot sit outside the far tube without touching the board: back-rim misses are rattles.
+      // Contact on the side facing the shooter reflects the ball up and back out; the jitter
+      // keeps the rare bounce-in probabilistic. A target on top of the far tube instead lodges
+      // the ball between rim and board, or drops it in at fixed distances.
+      const h = RIM_RADIUS - ballRadius * BACK_RIM_INWARD;
       return {
-        x: rim.x + ux * farTop,
-        y: rim.y + RIM_TUBE + ballRadius * 0.85,
-        z: rim.z + uz * farTop,
+        x: rim.x + ux * h,
+        y: rim.y + RIM_TUBE + ballRadius * BACK_RIM_ABOVE,
+        z: rim.z + uz * h,
       };
     }
-    case 'sideRim':
-      return { x: rim.x - uz * outer, y, z: rim.z + ux * outer };
-    case 'board':
-      // High and off-centre so the rebound comes down beside the ring, not through it.
+    case 'sideRim': {
+      // Close to the tube so the lateral jitter cannot carry the ball past it untouched.
+      const y = rim.y + ballRadius * 0.6;
+      const h = RIM_RADIUS + RIM_TUBE + ballRadius * SIDE_RIM_OUT;
+      return { x: rim.x - uz * h, y, z: rim.z + ux * h };
+    }
+    case 'board': {
+      // Off-centre on the side away from the shooter's lateral offset, so the rebound comes down
+      // beside the ring instead of banking in; straight-on shooters go either way by jitter.
+      const sign = -Math.sign(shooterPos.z - rim.z) || (jitter.lateral >= 0 ? 1 : -1);
       return {
         x: hoop.boardCenter.x - hoop.side * (hoop.boardHalf.x + ballRadius),
-        y: rim.y + 0.6,
-        z: rim.z + 0.35,
+        y: rim.y + BOARD_MISS_ABOVE_RIM,
+        z: rim.z + sign * BOARD_MISS_SIDE,
       };
+    }
   }
 }
 
@@ -207,20 +273,34 @@ export interface ShotOutcome {
   quality: number;
   made: boolean;
   missType: MissType | null;
+  /** Miss-target scatter; null for makes. */
+  jitter: ShotJitter | null;
 }
 
-/** Rolls the seeded RNG for the outcome (spec §4.4). Consumed in a fixed order: make roll, then miss type. */
+/** Maps a [0, 1) draw to [-1, 1). */
+function signedDraw(rng: RngState): number {
+  return nextFloat(rng) * 2 - 1;
+}
+
+/**
+ * Rolls the seeded RNG for the outcome (spec §4.4). Draw order is fixed and part of the
+ * determinism contract: make roll; then, on a miss only, miss type, lateral jitter, vertical jitter.
+ */
 export function resolveShotOutcome(
   state: MatchState,
   player: PlayerState,
   court: CourtDef,
 ): ShotOutcome {
   const shot = player.shot;
-  if (!shot) return { quality: 0, made: false, missType: 'frontRim' };
+  if (!shot) return { quality: 0, made: false, missType: 'frontRim', jitter: { ...NO_JITTER } };
   const hoop = hoopGeometry(court, shot.hoop);
   const quality = shotQuality(player, shot.type, hoop);
   const made = nextFloat(state.rng) < quality;
-  return { quality, made, missType: made ? null : pickMissType(state.rng) };
+  if (made) return { quality, made, missType: null, jitter: null };
+  const missType = pickMissType(state.rng);
+  const lateral = signedDraw(state.rng);
+  const vertical = signedDraw(state.rng);
+  return { quality, made, missType, jitter: { lateral, vertical } };
 }
 
 /** Launches the ball on an arc that realises `outcome`; exported so tests can force each outcome. */
@@ -246,7 +326,15 @@ export function launchShot(
   let target: Vec3;
   if (isDunk) target = { x: rim.x, y: rim.y - DUNK_TARGET_BELOW_RIM, z: rim.z };
   else if (outcome.made) target = { x: rim.x, y: rim.y - MADE_TARGET_BELOW_RIM, z: rim.z };
-  else target = missTarget(hoop, player.pos, outcome.missType ?? 'frontRim', ball.radius);
+  else {
+    target = missTarget(
+      hoop,
+      player.pos,
+      outcome.missType ?? 'frontRim',
+      ball.radius,
+      outcome.jitter ?? NO_JITTER,
+    );
+  }
   const flightTime = isDunk ? DUNK_FLIGHT_TIME : flightTimeFor(distance);
   const totalTicks = Math.max(1, Math.round(flightTime * TICK_RATE));
   const velocity = solveArcVelocity(from, target, totalTicks * TICK_DT, court.physics.gravity);
@@ -255,7 +343,12 @@ export function launchShot(
   ball.holder = null;
   ball.pos = { ...from };
   ball.vel = velocity;
-  ball.flight = { from, velocity, totalTicks, elapsedTicks: 0 };
+  // A miss hands over to free physics one tick before its target, so the first collision check
+  // happens at the target itself. Otherwise a long shot (0.2 m per tick) steps past the tube.
+  const flightTicks = outcome.made
+    ? totalTicks
+    : Math.max(1, totalTicks - MISS_HANDOVER_EARLY_TICKS);
+  ball.flight = { from, velocity, totalTicks: flightTicks, elapsedTicks: 0 };
   ball.lastShot = {
     shooter: player.id,
     team: player.team,
@@ -278,6 +371,7 @@ export function launchShot(
     shotType: shot.type,
     quality: outcome.quality,
     made: outcome.made,
+    missType: outcome.made ? null : (outcome.missType ?? 'frontRim'),
     points,
   });
 }
