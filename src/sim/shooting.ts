@@ -126,7 +126,8 @@ export function shotQuality(shooter: PlayerState, shotType: ShotType, hoop: Hoop
   const { shooting } = shooter.stats;
   if (shotType === 'layup') return clamp(0.7 + 0.25 * shooting, 0, 0.95);
   const distance = v3DistanceXZ(shooter.pos, hoop.rimCenter);
-  const speed = Math.hypot(shooter.vel.x, shooter.vel.z);
+  // The run-up, not the damped wind-up: a locked shooter carries the speed at the press.
+  const speed = shooter.shot?.approachSpeed ?? Math.hypot(shooter.vel.x, shooter.vel.z);
   const motion = 1 - 0.4 * Math.min(speed / 8, 1);
   return clamp(shooting * distanceFactor(distance) * motion, 0.02, 0.97);
 }
@@ -267,7 +268,7 @@ export function startShot(state: MatchState, player: PlayerState, court: CourtDe
   const hoopIndex = targetHoopIndex(state, player, court);
   const hoop = hoopGeometry(court, hoopIndex);
   const type = chooseShotType(player, hoop);
-  player.shot = { type, hoop: hoopIndex };
+  player.shot = { type, hoop: hoopIndex, approachSpeed: Math.hypot(player.vel.x, player.vel.z) };
   player.action = ACTION_FOR_SHOT[type];
   player.actionTicks = 0;
   player.facing = Math.atan2(hoop.rimCenter.x - player.pos.x, hoop.rimCenter.z - player.pos.z);

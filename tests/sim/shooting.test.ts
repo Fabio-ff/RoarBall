@@ -430,6 +430,22 @@ describe('shooting on the run', () => {
     expect(Math.hypot(shooter.vel.x, shooter.vel.z)).toBeLessThanOrEqual(JUMPSHOT_MAX_DRIFT + 1e-9);
   });
 
+  it('a running jump shot is penalised for the run-up, not the damped wind-up', () => {
+    const start = ready(4);
+    const p = findPlayer(start, 'p');
+    if (!p) throw new Error('no player');
+    p.vel = { x: 8, y: 0, z: 0 };
+    const prePress = structuredClone(p);
+    const { released, shooter } = runAndShoot(4);
+    expect(released.shotType).toBe('jumpshot');
+    // Same motion penalty as the pre-press state; only the capped drift (~0.9 m closer) differs.
+    const atRelease = { ...prePress, pos: { ...shooter.pos } };
+    expect(released.quality).toBeCloseTo(shotQuality(atRelease, 'jumpshot', hoop), 2);
+    const damped = { ...atRelease, vel: { ...shooter.vel } };
+    expect(released.quality).toBeLessThan(shotQuality(damped, 'jumpshot', hoop) - 0.1);
+    expect(released.quality).toBeLessThan(shotQuality(prePress, 'jumpshot', hoop) + 0.05);
+  });
+
   it('drive ranges widen with speed towards the rim, not away from it', () => {
     const s = ready(3);
     const p = findPlayer(s, 'p');

@@ -145,7 +145,7 @@ describe('jumping and action lock', () => {
   it('ignores movement input while action-locked', () => {
     const p = makePlayer();
     p.action = 'shoot';
-    p.shot = { type: 'jumpshot', hoop: 1 };
+    p.shot = { type: 'jumpshot', hoop: 1, approachSpeed: 0 };
     expect(isActionLocked(p)).toBe(true);
     run(p, intent({ move: { x: 1, y: 0 } }), 30);
     expect(p.vel.x).toBe(0);

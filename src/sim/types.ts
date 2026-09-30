@@ -68,6 +68,8 @@ export interface ResolvedStats {
 export interface ShotInProgress {
   type: ShotType;
   hoop: HoopIndex;
+  /** Horizontal speed at the press, before any wind-up damping; drives the motion penalty. */
+  approachSpeed: number;
 }
 
 export interface PlayerState {
