@@ -3182,7 +3182,7 @@ Run: `npm run dev` and open `http://localhost:5173/?debug`. Verify with Chrome D
 
 1. Desktop 1366×768: the gym court with two hoops is visible from a raised sideline camera; the blue capsule starts on the left half facing right; WASD/arrows move it, Shift makes it faster and the turbo % in the overlay drops then refills; the player cannot leave the court; overlay shows ~60 ticks/s.
 2. Tablet 1024×768 with touch emulation: touching the left half shows the joystick where the finger landed and moves the player; the four buttons on the right are visible and at least 56 px; the joystick and TURBO work at the same time; no page scroll or zoom.
-3. Phone 390×844 portrait: the whole court fits (camera pulled back); controls remain reachable.
+3. Phone 390×844 portrait: the half court around the player fits (camera pulled back and raised, spec §9); controls remain reachable.
 4. Console has no errors or warnings.
 5. Resize the window: the canvas follows without stretching.
 
