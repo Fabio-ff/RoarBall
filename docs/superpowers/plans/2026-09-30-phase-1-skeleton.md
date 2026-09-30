@@ -2758,10 +2758,13 @@ export function buildCourtView(court: CourtDef): Group {
   sun.position.set(-lighting.sunDirection.x * 30, -lighting.sunDirection.y * 30, -lighting.sunDirection.z * 30);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -length / 2 - 2;
-  sun.shadow.camera.right = length / 2 + 2;
-  sun.shadow.camera.top = width / 2 + 2;
-  sun.shadow.camera.bottom = -width / 2 - 2;
+  // The light is oblique, so light-space axes are rotated relative to the court: use a
+  // symmetric bound that covers the whole rotated play area plus tall casters (hoops).
+  const shadowRadius = Math.hypot(length / 2, width / 2) + 3;
+  sun.shadow.camera.left = -shadowRadius;
+  sun.shadow.camera.right = shadowRadius;
+  sun.shadow.camera.top = shadowRadius;
+  sun.shadow.camera.bottom = -shadowRadius;
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 80;
   group.add(sun, sun.target, new HemisphereLight(lighting.skyColor, 0x30302a, lighting.ambient));
