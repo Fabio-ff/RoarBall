@@ -18,4 +18,5 @@ export const gym: CourtDef = {
     sunColor: 0xffffff,
     ambient: 0.6,
   },
+  dressing: { floorColor: 0xc9a06a, lineColor: 0xffffff, floorRoughness: 1, weather: 'none' },
 };

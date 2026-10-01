@@ -27,10 +27,13 @@ export const ASSIST_WINDOW_TICKS = 180;
 
 /** Pipeline step 1: every player's stats from base, through the court modifier (spec D.2). */
 export function rebuildStats(state: MatchState, court: CourtDef): void {
-  for (const player of allPlayers(state)) {
-    const base: ResolvedStats = { ...player.baseStats };
-    player.stats = court.modifier?.modifyStats ? court.modifier.modifyStats(base, state) : base;
-  }
+  for (const player of allPlayers(state)) rebuildPlayerStats(state, player, court);
+}
+
+/** One player's stats from base through the court modifier (what step 1 does for everyone). */
+export function rebuildPlayerStats(state: MatchState, player: PlayerState, court: CourtDef): void {
+  const base: ResolvedStats = { ...player.baseStats };
+  player.stats = court.modifier?.modifyStats ? court.modifier.modifyStats(base, state) : base;
 }
 
 /** Pipeline step 2: the active ability's onTick, then its modifyStats. */
@@ -94,6 +97,7 @@ export function stepAbilityTimer(
   player: PlayerState,
   abilities: AbilityTable,
   ctx: HookContext,
+  court: CourtDef,
 ): void {
   const active = player.ability;
   if (active === null) return;
@@ -106,6 +110,7 @@ export function stepAbilityTimer(
   const abilityId = player.abilityId ?? '';
   player.ability = null;
   abilities[abilityId]?.effect.onEnd?.(state, player, ctx);
+  rebuildPlayerStats(state, player, court); // the ability's stats must not outlive it
   ctx.emit({ type: 'abilityEnded', playerId: player.id, abilityId });
 }
 

@@ -124,7 +124,7 @@ export function tick(
     if (player.cooldowns.shove > 0) player.cooldowns.shove -= 1;
     if (player.shoveImmunityTicks > 0) player.shoveImmunityTicks -= 1;
     if (player.callingForPassTicks > 0) player.callingForPassTicks -= 1;
-    stepAbilityTimer(next, player, abilities, ctx);
+    stepAbilityTimer(next, player, abilities, ctx, court);
     player.prevButtons = buttonsOf(intentFor(player));
   }
 

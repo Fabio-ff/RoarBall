@@ -12,6 +12,7 @@ describe('readGameOptions (spec C.1)', () => {
       aiProfile: 'fair',
       seed: 123_456,
       debug: false,
+      courtId: 'gym',
     });
   });
 
@@ -43,5 +44,12 @@ describe('readGameOptions (spec C.1)', () => {
     expect(readGameOptions('?mode=shootaround&seed=5', 777).seed).toBe(5);
     expect(readGameOptions('?mode=shootaround', 777).mode).toBe('shootaround');
     expect(readGameOptions('?mode=bogus', 777).mode).toBe('match');
+  });
+
+  it('reads ?court= and falls back to the gym (spec D.1)', () => {
+    expect(readGameOptions('?court=rooftop', 0).courtId).toBe('rooftop');
+    expect(readGameOptions('?court=frozen&seed=3', 0).courtId).toBe('frozen');
+    expect(readGameOptions('?court=moon', 0).courtId).toBe('gym');
+    expect(readGameOptions('', 0).courtId).toBe('gym');
   });
 });

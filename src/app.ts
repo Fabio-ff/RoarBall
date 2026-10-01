@@ -38,7 +38,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   const canvas = document.createElement('canvas');
   root.appendChild(canvas);
 
-  const court = getCourt('gym');
+  const court = getCourt(options.courtId);
   const scene = new GameScene(canvas);
   scene.setBackground(court.lighting.skyColor);
   scene.scene.add(buildCourtView(court));
