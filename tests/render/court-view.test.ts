@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Mesh, type MeshBasicMaterial, type MeshStandardMaterial } from 'three';
+import { Mesh, type Object3D, type MeshBasicMaterial, type MeshStandardMaterial } from 'three';
 import { getCourt } from '../../src/content/courts';
 import { buildCourtView } from '../../src/render/court-view';
 
@@ -29,5 +29,21 @@ describe('buildCourtView dressing (spec D.6)', () => {
     expect(named('volcano', 'glow-strip')).toHaveLength(2);
     expect(named('gym', 'glow-strip')).toHaveLength(0);
     expect(named('rooftop', 'glow-strip')).toHaveLength(0);
+  });
+});
+
+describe('rim handles (plan decision 24)', () => {
+  it('exposes one group per hoop at the rim centre, holding the rim and the net', () => {
+    const court = getCourt('gym');
+    const rims = buildCourtView(court).userData.rims as [Object3D, Object3D];
+    expect(rims).toHaveLength(2);
+    for (const i of [0, 1] as const) {
+      const hoop = court.hoops[i];
+      const c = { x: hoop.pos.x, y: hoop.rimHeight, z: hoop.pos.z };
+      expect(rims[i].position.x).toBeCloseTo(c.x);
+      expect(rims[i].position.y).toBeCloseTo(c.y);
+      expect(rims[i].position.z).toBeCloseTo(c.z);
+      expect(rims[i].children).toHaveLength(2);
+    }
   });
 });

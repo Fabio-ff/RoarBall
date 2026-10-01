@@ -1,10 +1,18 @@
-import { Material, Texture, type BufferGeometry, type Mesh, type Object3D } from 'three';
+import {
+  InstancedMesh,
+  Material,
+  Texture,
+  type BufferGeometry,
+  type Mesh,
+  type Object3D,
+} from 'three';
 
 /** Frees GPU resources under `root` (plan decision 28). Shared resources are disposed once. */
 export function disposeObject3D(root: Object3D): void {
   const geometries = new Set<BufferGeometry>();
   const materials = new Set<Material>();
   root.traverse((obj) => {
+    if (obj instanceof InstancedMesh) obj.dispose();
     const mesh = obj as Partial<Mesh>;
     if (mesh.geometry) geometries.add(mesh.geometry);
     const m = mesh.material;
