@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AudioEngine, MAX_VOICES } from '../../src/audio/engine';
 import { fakeAudioContext } from './fake-context';
 
@@ -40,5 +40,50 @@ describe('AudioEngine (spec E.4)', () => {
       .events;
     expect(events.some(([, v]) => v < 0.45)).toBe(true);
     expect(events.at(-1)?.[1]).toBeCloseTo(0.45);
+  });
+});
+
+describe('AudioEngine music (plan decision 23)', () => {
+  const timers = () => {
+    const fns: (() => void)[] = [];
+    return {
+      fns,
+      setInterval: vi.fn((fn: () => void) => (fns.push(fn), fns.length)),
+      clearInterval: vi.fn(),
+    };
+  };
+  const makeWith = () => {
+    const ctx = fakeAudioContext();
+    const t = timers();
+    return { ctx, t, engine: new AudioEngine(ctx as unknown as AudioContext, t) };
+  };
+
+  it('setMusic starts the player, keeps the same track, and null stops it', () => {
+    const { engine } = makeWith();
+    engine.setMusic('gym');
+    expect(engine.musicPlaying).toBe('gym');
+    engine.setMusic('gym');
+    expect(engine.musicPlaying).toBe('gym');
+    engine.setMusic(null);
+    expect(engine.musicPlaying).toBeNull();
+  });
+
+  it('with music off it remembers the wish; enabling music starts it', () => {
+    const { engine } = makeWith();
+    engine.setEnabled(true, false);
+    engine.setMusic('menu');
+    expect(engine.musicPlaying).toBeNull();
+    engine.setEnabled(true, true);
+    expect(engine.musicPlaying).toBe('menu');
+    engine.setEnabled(true, false);
+    expect(engine.musicPlaying).toBeNull();
+  });
+
+  it('dispose stops the player and clears its interval', () => {
+    const { engine, t } = makeWith();
+    engine.setMusic('gym');
+    engine.dispose();
+    expect(t.clearInterval).toHaveBeenCalled();
+    expect(engine.musicPlaying).toBeNull();
   });
 });
