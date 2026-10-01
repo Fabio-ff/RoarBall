@@ -44,6 +44,38 @@ describe('WeatherView (spec D.6)', () => {
     expect(view.tilt).toBe(0);
   });
 
+  it('the tilt follows a gust along Z, and a finished match calms the weather', () => {
+    const view = new WeatherView(getCourt('rooftop'), half);
+    view.handleEvents([{ type: 'gustStart', dir: { x: 0, y: 0, z: 1 } }]);
+    expect(view.tilt).toBeCloseTo(Math.atan2(6, 14));
+    view.update(0.016);
+    const q = instance(view, 0).rot;
+    expect(Math.abs(q.x)).toBeGreaterThan(0.1); // leaning along Z rotates about X
+    expect(Math.abs(q.z)).toBeLessThan(1e-9);
+    view.handleEvents([{ type: 'phaseChange', from: 'live', to: 'finished' }]);
+    expect(view.tilt).toBe(0);
+  });
+
+  it('a particle that leaves the box wraps to the opposite side instead of respawning at random', () => {
+    const view = new WeatherView(getCourt('rooftop'), () => 0.5);
+    const court = getCourt('rooftop');
+    const halfX = court.playArea.length / 2 + 4;
+    view.handleEvents([{ type: 'gustStart', dir: { x: 1, y: 0, z: 0 } }]);
+    // 6 m/s downwind for 10 s = 60 m: far more than the box, so every particle has wrapped.
+    for (let i = 0; i < 100; i++) view.update(0.1);
+    const xs: number[] = [];
+    for (let i = 0; i < RAIN_COUNT; i++) xs.push(instance(view, i).pos.x);
+    for (const x of xs) {
+      expect(x).toBeGreaterThanOrEqual(-halfX - 1e-6);
+      expect(x).toBeLessThan(halfX + 1e-6);
+    }
+    // Every particle spawned at x = 0 and was blown 60 m downwind: wrapped, not respawned.
+    expect(xs[0]).toBeCloseTo(
+      ((((60 + halfX) % (2 * halfX)) + 2 * halfX) % (2 * halfX)) - halfX,
+      3,
+    );
+  });
+
   it('embers rise', () => {
     const view = new WeatherView(getCourt('volcano'), half);
     expect(view.instances?.count).toBe(EMBER_COUNT);

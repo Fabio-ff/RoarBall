@@ -22,6 +22,13 @@ const TOP = 12;
 const MARGIN = 4;
 const UP = new Vector3(0, 1, 0);
 
+/** Wraps `v` into [-half, half) (modulo the box extent). */
+function wrap(v: number, half: number): number {
+  if (v >= -half && v < half) return v;
+  const size = half * 2;
+  return ((((v + half) % size) + size) % size) - half;
+}
+
 /** Rain falls at 14 m/s and is blown 6 m/s along a gust (spec D.6: streaks slant with the gust). */
 export function rainVelocity(gust: Vec3 | null): Vec3 {
   return gust
@@ -92,6 +99,7 @@ export class WeatherView {
     for (const e of events) {
       if (e.type === 'gustStart') this.gust = { ...e.dir };
       else if (e.type === 'gustEnd') this.gust = null;
+      else if (e.type === 'phaseChange' && e.to === 'finished') this.gust = null; // no gustEnd follows
     }
   }
 
@@ -110,13 +118,12 @@ export class WeatherView {
       p.x += v.x * dtSeconds;
       p.y += v.y * dtSeconds;
       p.z += v.z * dtSeconds;
-      const gone = rain ? p.y < 0 : p.y > TOP;
-      if (gone || Math.abs(p.x) > this.halfX || Math.abs(p.z) > this.halfZ) {
-        // Respawn in place: no per-frame allocation.
-        p.x = (this.random() * 2 - 1) * this.halfX;
-        p.y = rain ? TOP : 0;
-        p.z = (this.random() * 2 - 1) * this.halfZ;
-      }
+      // A particle leaving the box re-enters on the opposite side (modulo the extents), so wind
+      // never thins the upwind edge. In place: no per-frame allocation.
+      p.x = wrap(p.x, this.halfX);
+      p.z = wrap(p.z, this.halfZ);
+      if (p.y < 0) p.y += TOP;
+      else if (p.y > TOP) p.y -= TOP;
     }
     this.writeMatrices();
   }

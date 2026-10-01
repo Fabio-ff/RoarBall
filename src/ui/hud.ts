@@ -178,6 +178,7 @@ export class Hud {
     if (final) {
       this.setText(this.banner, finalBanner(state, this.humanTeam));
       if (!this.final) {
+        this.gust.hidden = true; // the sim stops ticking, so no gustEnd will come
         this.banner.classList.remove('team-0', 'team-1');
         this.banner.classList.add('is-final');
         this.banner.hidden = false;
@@ -203,7 +204,10 @@ export class Hud {
       } else if (event.type === 'gustStart') {
         this.gustArrow.style.transform = `rotate(${gustArrowDegrees(event.dir).toFixed(0)}deg)`;
         this.gust.hidden = false;
-      } else if (event.type === 'gustEnd') {
+      } else if (
+        event.type === 'gustEnd' ||
+        (event.type === 'phaseChange' && event.to === 'finished')
+      ) {
         this.gust.hidden = true;
       } else {
         const text = bannerFor(event);

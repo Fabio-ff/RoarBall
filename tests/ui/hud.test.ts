@@ -247,6 +247,8 @@ describe('Hud ability bar, ability banners and the GUST chip (spec D.6)', () => 
     expect(abilityBarView(ace, def).status).toBe('●●●');
     ace.ability.uses = 1;
     expect(abilityBarView(ace, def).status).toBe('●');
+    ace.ability.uses = 0;
+    expect(abilityBarView(ace, def).status).toBe('');
   });
 
   it('stays hidden without a human id', () => {
@@ -282,5 +284,31 @@ describe('Hud ability bar, ability banners and the GUST chip (spec D.6)', () => 
     expect(el('.hud-gust-arrow').style.transform).toBe('rotate(90deg)');
     hud.handleEvents([{ type: 'gustEnd' }]);
     expect(el('.hud-gust').hidden).toBe(true);
+  });
+
+  it('hides the GUST chip when the match ends mid-gust, and a restart clears chip, banner and bar', () => {
+    const s = fresh();
+    hud.handleEvents([{ type: 'gustStart', dir: { x: 1, y: 0, z: 0 } }]);
+    expect(el('.hud-gust').hidden).toBe(false);
+    s.phase = 'finished';
+    hud.update(s); // no gustEnd ever comes once the sim stops
+    expect(el('.hud-gust').hidden).toBe(true);
+
+    // The phaseChange event alone also hides it.
+    hud.handleEvents([{ type: 'gustStart', dir: { x: 1, y: 0, z: 0 } }]);
+    hud.handleEvents([{ type: 'phaseChange', from: 'live', to: 'finished' }]);
+    expect(el('.hud-gust').hidden).toBe(true);
+
+    // Restart: a gust and a queued banner from the old match, a charged bar.
+    hud.handleEvents([{ type: 'gustStart', dir: { x: 1, y: 0, z: 0 } }]);
+    hud.handleEvents([{ type: 'block', by: 'home1', shooter: 'away1' }]);
+    const next = fresh();
+    hud.update(next);
+    expect(el('.hud-gust').hidden).toBe(true);
+    expect(el('.hud-banner').hidden).toBe(true);
+    hud.tick(0);
+    expect(el('.hud-banner').hidden).toBe(true); // the stale queue is gone
+    expect(el('.hud-ability-fill').style.width).toBe('0%');
+    expect(el('.hud-ability-status').textContent).toBe('');
   });
 });
