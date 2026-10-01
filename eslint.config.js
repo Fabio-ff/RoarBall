@@ -22,7 +22,7 @@ export default defineConfig([
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    files: ['**/*.{ts,js}'],
+    files: ['**/*.{ts,js,mjs}'],
     ignores: ['src/sim/**'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
