@@ -3,7 +3,15 @@ import { stepBall, tryPickup } from './ball';
 import { deflectBallOffPlayers, separatePlayers } from './bodies';
 import { buttonsOf, justPressed } from './buttons';
 import { TICK_DT } from './constants';
-import { allPlayers } from './match';
+import {
+  chooseDefensiveAction,
+  nearestOpponent,
+  startBlock,
+  startShove,
+  startSteal,
+  stepDefenceAction,
+} from './defence';
+import { allPlayers, findPlayer } from './match';
 import { receivingTeam, setPhase, stepClocks, stepPhases } from './phases';
 import { isActionLocked, startJump, stepPlayer, stepTurbo } from './player-movement';
 import { callForPass, startPass, stepPassAction, stepPassFlight } from './passing';
@@ -107,6 +115,8 @@ function resolveAction(
 ): void {
   if (isActionLocked(player)) {
     if (player.action === 'pass') stepPassAction(state, player, court, events);
+    else if (player.action === 'steal' || player.action === 'shove')
+      stepDefenceAction(state, player, events);
     else stepLockedAction(state, player, court, events);
     return;
   }
@@ -120,6 +130,27 @@ function resolveAction(
     }
   }
   if (!player.onGround || !justPressed(player.prevButtons, intent, 'action')) return;
-  if (hasBall && live) startShot(state, player, court);
-  else if (!hasBall) startJump(player, player.stats.jumpSpeed);
+  if (hasBall) {
+    if (live) startShot(state, player, court);
+    return;
+  }
+  // Defensive moves only during play; a jump is always allowed.
+  switch (live ? chooseDefensiveAction(state, player, court) : 'jump') {
+    case 'block':
+      if (player.cooldowns.block === 0) startBlock(player);
+      else startJump(player, player.stats.jumpSpeed);
+      return;
+    case 'steal': {
+      const holder = state.ball.holder === null ? undefined : findPlayer(state, state.ball.holder);
+      if (holder && player.cooldowns.steal === 0) startSteal(player, holder);
+      return;
+    }
+    case 'shove': {
+      const target = nearestOpponent(state, player);
+      if (target && player.cooldowns.shove === 0) startShove(player, target);
+      return;
+    }
+    default:
+      startJump(player, player.stats.jumpSpeed);
+  }
 }

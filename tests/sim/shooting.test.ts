@@ -492,3 +492,26 @@ describe('basket scope', () => {
     expect(dropThrough(0, 1).some((e) => e.type === 'basket')).toBe(false);
   });
 });
+
+describe('defender term', () => {
+  it('a close airborne defender lowers the released quality', () => {
+    const s = ready(4);
+    const p = findPlayer(s, 'p');
+    if (!p) throw new Error('no player');
+    const x = {
+      ...p,
+      id: 'x',
+      team: 1 as const,
+      onGround: false,
+      pos: { x: hoop.rimCenter.x - 3.2, y: 0.5, z: 0 },
+    };
+    s.teams[1].players.push(x);
+    const { events } = runUntil(s, press, (ev) => ev.some((e) => e.type === 'shotReleased'), 60);
+    const released = events.find((e) => e.type === 'shotReleased');
+    const base = findPlayer(ready(4), 'p');
+    if (!base) throw new Error('no player');
+    const open = shotQuality(base, 'jumpshot', hoop);
+    // 0.8 m away and airborne: clamp(0.45 + 0.25·0.8) = 0.65, ×0.6 = 0.39.
+    expect(released?.type === 'shotReleased' ? released.quality : 1).toBeCloseTo(open * 0.39, 1);
+  });
+});

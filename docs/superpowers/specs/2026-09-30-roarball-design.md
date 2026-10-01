@@ -634,9 +634,10 @@ Until menus exist (phase 6) the human's character is chosen with `?character=<id
   is rising and whose hand (feet + 2.3 m) is at or above the release height is deflected:
   the flight is cancelled and the ball goes free, knocked down and away. Dunks are blocked
   only by a block that started before the dunk did.
-- Defender term in `shotQuality`: multiplied by `clamp(0.45 + 0.25·d, 0.45, 1)` for the
-  nearest opponent distance `d` (m), and by 0.6 more if that opponent is airborne within
-  1.5 m. The no-defender sweep contract is unchanged.
+- Defender term in `shotQuality`: for each opponent at distance `d` (m) compute
+  `clamp(0.45 + 0.25·d, 0.45, 1)`, times 0.6 if that opponent is airborne within 1.5 m;
+  the quality is multiplied by the **minimum** over opponents (the most threatening one).
+  The no-defender sweep contract is unchanged.
 - Steal: 18-tick reach, 45-tick cooldown; at tick 6, if the holder is within reach
   (0.9 m + defense bonus) the seeded roll succeeds with
   `clamp(0.2 + 0.05·defense − 0.03·holderPower, 0.1, 0.7)`, halved if the holder is moving
