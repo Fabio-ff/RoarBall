@@ -106,6 +106,8 @@ function speedTowards(player: PlayerState, target: Vec3): number {
 /** Drives reach further at speed, so a fast break becomes a drive instead of a runaway jump shot. */
 export function chooseShotType(player: PlayerState, hoop: HoopGeometry): ShotType {
   const d = v3DistanceXZ(player.pos, hoop.rimCenter);
+  // Spec D.3 Rocket Dunk: any press inside the 3-point line is a dunk.
+  if (player.stats.dunkFromArc && d < THREE_POINT_DISTANCE) return 'dunk';
   const approach = speedTowards(player, hoop.rimCenter);
   const dunkRange = DUNK_RANGE + DUNK_RANGE_PER_APPROACH_SPEED * approach;
   const layupRange = LAYUP_RANGE + LAYUP_RANGE_PER_APPROACH_SPEED * approach;
@@ -293,10 +295,10 @@ export function startShot(state: MatchState, player: PlayerState, court: CourtDe
     const dz = hoop.rimCenter.z - player.pos.z;
     const len = Math.hypot(dx, dz) || 1;
     const travel = Math.max(0, len - DRIVE_STOP_SHORT);
-    const speed = Math.min(
-      travel / (SHOT_TIMING[type].releaseTick * TICK_DT),
-      player.stats.turboSpeed,
-    );
+    const reach = travel / (SHOT_TIMING[type].releaseTick * TICK_DT);
+    // Spec D.3 Rocket Dunk: launched on a line that arrives at the release tick, whatever the speed.
+    const rocket = type === 'dunk' && player.stats.dunkFromArc;
+    const speed = rocket ? reach : Math.min(reach, player.stats.turboSpeed);
     player.vel.x = (dx / len) * speed;
     player.vel.z = (dz / len) * speed;
   } else {
@@ -318,6 +320,11 @@ export interface ShotOutcome {
   jitter: ShotJitter | null;
 }
 
+/** Spec D.3 Hot Hand: the player still has shots that cannot miss. */
+export function hasSureShot(player: PlayerState): boolean {
+  return player.ability !== null && player.ability.uses > 0;
+}
+
 /** Maps a [0, 1) draw to [-1, 1). */
 function signedDraw(rng: RngState): number {
   return nextFloat(rng) * 2 - 1;
@@ -326,6 +333,7 @@ function signedDraw(rng: RngState): number {
 /**
  * Rolls the seeded RNG for the outcome (spec §4.4). Draw order is fixed and part of the
  * determinism contract: make roll; then, on a miss only, miss type, lateral jitter, vertical jitter.
+ * A sure shot (Hot Hand, spec D.3) still takes the make roll and ignores it.
  */
 export function resolveShotOutcome(
   state: MatchState,
@@ -337,7 +345,7 @@ export function resolveShotOutcome(
   const hoop = hoopGeometry(court, shot.hoop);
   const defenders = allPlayers(state).filter((p) => p.team !== player.team);
   const quality = shotQuality(player, shot.type, hoop, defenders);
-  const made = nextFloat(state.rng) < quality;
+  const made = nextFloat(state.rng) < quality || hasSureShot(player);
   if (made) return { quality, made, missType: null, jitter: null };
   const missType = pickMissType(state.rng);
   const lateral = signedDraw(state.rng);
@@ -430,7 +438,7 @@ export function launchShot(
   });
 }
 
-/** Decides the outcome and launches the ball (spec §4.4). */
+/** Decides the outcome and launches the ball (spec §4.4). A released shot spends one sure shot (D.3). */
 export function releaseShot(
   state: MatchState,
   player: PlayerState,
@@ -438,7 +446,9 @@ export function releaseShot(
   events: SimEvent[],
 ): void {
   if (tryBlockShot(state, player, court, events)) return;
-  launchShot(state, player, court, events, resolveShotOutcome(state, player, court));
+  const outcome = resolveShotOutcome(state, player, court);
+  if (player.ability && player.ability.uses > 0) player.ability.uses -= 1;
+  launchShot(state, player, court, events, outcome);
 }
 
 /**
@@ -455,6 +465,8 @@ export function tryBlockShot(
   void court;
   const shot = shooter.shot;
   if (!shot) return false;
+  // Spec D.3 Rocket Dunk: unblockable, even by a block that started first.
+  if (shot.type === 'dunk' && shooter.stats.unblockableDunk) return false;
   const releaseHeight = shooter.pos.y + RELEASE_HEIGHT;
   for (const blocker of allPlayers(state)) {
     if (blocker.team === shooter.team || blocker.action !== 'block' || blocker.vel.y <= 0) continue;
@@ -567,7 +579,8 @@ export interface ShotEvaluation {
 /**
  * Spec C.4: the type `startShot` would pick and the quality `resolveShotOutcome` would roll
  * against, for a shot by `player` right now — without touching the player, the ball or the RNG.
- * Works for a hypothetical shooter (a teammate without the ball) too.
+ * Works for a hypothetical shooter (a teammate without the ball) too. A player with sure shots
+ * (Hot Hand) sees quality 1, which is what the roll will do.
  */
 export function evaluateShot(
   state: MatchState,
@@ -582,6 +595,6 @@ export function evaluateShot(
     type,
     hoop: hoopIndex,
     distance: v3DistanceXZ(player.pos, hoop.rimCenter),
-    quality: shotQuality(player, type, hoop, defenders),
+    quality: hasSureShot(player) ? 1 : shotQuality(player, type, hoop, defenders),
   };
 }

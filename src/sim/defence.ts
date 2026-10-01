@@ -138,7 +138,9 @@ export function resolveSteal(state: MatchState, stealer: PlayerState, events: Si
   }
   let chance = clamp(stealer.stats.stealChance - 0.03 * holder.stats.power, 0.1, 0.7);
   if (movingAway(holder, stealer)) chance *= 0.5;
-  if (nextFloat(state.rng) < chance) {
+  // Spec D.3 Blur: the draw is still taken; the result is treated as a success.
+  const roll = nextFloat(state.rng);
+  if (stealer.stats.stealAlwaysSucceeds || roll < chance) {
     giveBall(state, stealer, events);
     events.push({ type: 'steal', by: stealer.id, from: holder.id });
   } else {
