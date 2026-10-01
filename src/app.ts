@@ -1,5 +1,6 @@
 import { AudioEngine } from './audio/engine';
-import { NullAudioSink, type AudioSink } from './audio/sink';
+import { NullAudioSink, type AudioSink, type TrackId } from './audio/sink';
+import { courtTrack } from './audio/tracks';
 import type { MatchResult } from './app/box-score';
 import { MatchScreen } from './app/match-screen';
 import { transition, type ScreenId, type ShellEvent } from './app/screens';
@@ -17,7 +18,7 @@ import type { GameOptions } from './app/url-options';
 import { MenuInput, type MenuCommand, type MenuSource } from './input/menu-input';
 import { HUMAN_ID } from './app/session';
 import { HowToPlayScreen } from './ui/screens/how-to-play';
-import { ResultsScreen } from './ui/screens/results';
+import { ResultsScreen, resultHeadline } from './ui/screens/results';
 import { SetupScreen } from './ui/screens/setup';
 import { TitleScreen } from './ui/screens/title';
 
@@ -132,6 +133,24 @@ export class AppShell {
         break;
       }
     }
+    this.applyMusic();
+  }
+
+  /** The loop or jingle for the current screen (spec E.4); pausing stops it in MatchScreen. */
+  private musicFor(): TrackId | null {
+    switch (this.current) {
+      case 'match':
+        return this.options && !this.handle?.paused ? courtTrack(this.options.courtId) : null;
+      case 'results':
+        if (!this.lastResult) return null;
+        return resultHeadline(this.lastResult) !== 'YOU LOSE' ? 'win' : 'lose';
+      default:
+        return 'menu';
+    }
+  }
+
+  private applyMusic(): void {
+    this.sink.setMusic(this.musicFor());
   }
 
   /** Every START remembers the setup and builds fresh options with a fresh seed (never a previous match's). */
@@ -169,6 +188,7 @@ export class AppShell {
     }
     this.engine.setEnabled(this.settings.sound, this.settings.music);
     this.sink = this.engine;
+    this.applyMusic(); // the engine arrives after the first screen is already up
   }
 
   private onMenuCommand(command: MenuCommand, source: MenuSource): void {

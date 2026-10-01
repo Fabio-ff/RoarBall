@@ -1,5 +1,7 @@
 import { makeNoiseBuffer, SFX_PATCHES } from './sfx';
-import type { AudioSink, SfxName } from './sink';
+import { MusicPlayer, type Timers } from './sequencer';
+import type { AudioSink, SfxName, TrackId } from './sink';
+import { TRACKS } from './tracks';
 
 export const MAX_VOICES = 12;
 /** Fixed mix (spec E.2: volumes are constants until the audio overhaul). */
@@ -14,8 +16,15 @@ export class AudioEngine implements AudioSink {
   private readonly voices: { node: GainNode; end: number }[] = [];
   private sound = true;
   private music = true;
+  private readonly player: MusicPlayer;
+  private wanted: TrackId | null = null;
+  /** True once the wanted track has been started, so a finished jingle is not replayed. */
+  private started = false;
 
-  constructor(readonly context: AudioContext) {
+  constructor(
+    readonly context: AudioContext,
+    timers?: Timers,
+  ) {
     this.master = context.createGain();
     this.master.gain.value = MIX.master;
     this.master.connect(context.destination);
@@ -26,6 +35,13 @@ export class AudioEngine implements AudioSink {
     this.musicBus.gain.value = MIX.music;
     this.musicBus.connect(this.master);
     this.noise = makeNoiseBuffer(context);
+    this.player = new MusicPlayer(context, this.musicBus, this.noise, timers);
+  }
+
+  /** The track the sequencer is playing right now (null when silent or music is off). */
+  get musicPlaying(): TrackId | null {
+    const track = this.player.playing;
+    return this.wanted !== null && track === TRACKS[this.wanted] ? this.wanted : null;
   }
 
   /** Null where Web Audio is unavailable; call inside a user gesture (iOS). */
@@ -68,8 +84,20 @@ export class AudioEngine implements AudioSink {
     while (this.voices.length > MAX_VOICES) this.voices.shift()?.node.disconnect();
   }
 
-  /** Task 6 plays tracks through the MusicPlayer; until then music is silent. */
-  setMusic(): void {}
+  /** Remembers the wanted track; it plays only while music is on. */
+  setMusic(track: TrackId | null): void {
+    this.wanted = track;
+    this.started = false;
+    this.syncMusic();
+  }
+
+  private syncMusic(): void {
+    const track = this.wanted ? TRACKS[this.wanted] : null;
+    if (!this.music || !track) return this.player.play(null);
+    if (!track.loop && this.started) return; // a jingle plays once per setMusic
+    this.started = true;
+    this.player.play(track);
+  }
 
   duck(seconds: number): void {
     const g = this.musicBus.gain;
@@ -83,12 +111,18 @@ export class AudioEngine implements AudioSink {
   setEnabled(sound: boolean, music: boolean): void {
     this.sound = sound;
     this.music = music;
-    this.master.gain.setValueAtTime(sound || music ? MIX.master : 0, this.context.currentTime);
-    this.sfxBus.gain.setValueAtTime(sound ? MIX.sfx : 0, this.context.currentTime);
-    this.musicBus.gain.setValueAtTime(music ? MIX.music : 0, this.context.currentTime);
+    const t = this.context.currentTime;
+    // Cancel first so a pending duck ramp cannot raise the bus after it is switched off.
+    for (const g of [this.master.gain, this.sfxBus.gain, this.musicBus.gain])
+      g.cancelScheduledValues(t);
+    this.master.gain.setValueAtTime(sound || music ? MIX.master : 0, t);
+    this.sfxBus.gain.setValueAtTime(sound ? MIX.sfx : 0, t);
+    this.musicBus.gain.setValueAtTime(music ? MIX.music : 0, t);
+    this.syncMusic();
   }
 
   dispose(): void {
+    this.player.stop();
     for (const v of this.voices) v.node.disconnect();
     this.voices.length = 0;
     void this.context.close().catch(() => undefined);
