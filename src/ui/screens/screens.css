@@ -1,0 +1,87 @@
+.screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 3vh, 28px);
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  box-sizing: border-box;
+  background: radial-gradient(ellipse at 50% 30%, #23324a 0%, var(--bg) 70%);
+  color: var(--fg);
+  overflow-y: auto;
+  z-index: 20;
+}
+.screen.is-overlay {
+  background: rgb(10 12 16 / 0.72);
+  backdrop-filter: blur(4px);
+}
+.screen-title {
+  margin: 0;
+  font-size: clamp(40px, 9vw, 96px);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  font-style: italic;
+  color: #ffb020;
+  text-shadow:
+    0 4px 0 #b4400c,
+    0 8px 24px rgb(0 0 0 / 0.5);
+}
+.screen-heading {
+  margin: 0;
+  font-size: clamp(22px, 4vw, 36px);
+  font-weight: 800;
+}
+.menu-button {
+  min-width: 200px;
+  min-height: 56px;
+  padding: 0 28px;
+  border: 0;
+  border-radius: 14px;
+  background: #2f80ed;
+  color: #fff;
+  font:
+    800 clamp(18px, 2.6vw, 24px) / 1 system-ui,
+    sans-serif;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.menu-button.is-secondary {
+  background: #39424f;
+}
+.menu-button:focus-visible,
+.menu-button:focus {
+  outline: 4px solid #ffb020;
+  outline-offset: 3px;
+}
+.menu-button.is-primary {
+  animation: menu-pulse 1.2s ease-in-out infinite;
+}
+@keyframes menu-pulse {
+  50% {
+    transform: scale(1.05);
+  }
+}
+.menu-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+}
+.rotate-hint {
+  display: none;
+}
+@media (orientation: portrait) and (max-width: 900px) {
+  .rotate-hint {
+    display: block;
+    font-size: 14px;
+    opacity: 0.8;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .menu-button.is-primary {
+    animation: none;
+  }
+}
