@@ -296,6 +296,37 @@ describe('decide (brain)', () => {
     expect(m.lastPhase).toBe('inbound');
   });
 
+  it('both defenders re-plan on the tick possession flips, so their marks never collide', () => {
+    const s = live();
+    const holder = place(s, 'home1', 1, -1);
+    place(s, 'home2', 1, 1);
+    giveBall(s, holder, []);
+    s.possession = 1; // stale: the marks are assigned for this possession, then it flips
+    place(s, 'away1', 6, 0.02);
+    place(s, 'away2', 6, -0.02); // a near tie
+    const a = createAiMemory('away1', 1, 0, false);
+    const b = createAiMemory('away2', 1, 3, false);
+    for (let t = 0; t < 4; t++) {
+      s.tick = t;
+      decide(s, a, exact, court);
+      decide(s, b, exact, court);
+    }
+    expect(a.nextDecisionTick).toBe(6);
+    expect(b.nextDecisionTick).toBe(9);
+    s.tick = 4;
+    s.possession = 0; // team 1 now defends
+    decide(s, a, exact, court);
+    decide(s, b, exact, court);
+    expect(a.nextDecisionTick).toBe(4 + DECISION_INTERVAL_TICKS);
+    expect(b.nextDecisionTick).toBe(4 + DECISION_INTERVAL_TICKS);
+    expect(a.goal.kind).toBe('mark');
+    expect(b.goal.kind).toBe('mark');
+    const marks = assignMarks(s, 1);
+    expect(a.markId).toBe(marks.get('away1'));
+    expect(b.markId).toBe(marks.get('away2'));
+    expect(a.markId).not.toBe(b.markId);
+  });
+
   it('never touches the simulation RNG', () => {
     const s = live();
     const memories = roster.map((e, i) => createAiMemory(e.id, 1, i, e.id === 'home2'));

@@ -1,6 +1,6 @@
 import { giveBall } from './ball';
 import { TICK_MS } from './constants';
-import { hoopGeometry } from './hoop';
+import { attackingHoopIndex, hoopGeometry } from './hoop';
 import type { Vec3 } from './math';
 import { nextInt } from './rng';
 import type { BasketInfo } from './shooting';
@@ -50,6 +50,11 @@ export function shootaroundPosition(court: CourtDef, hoop: HoopIndex): Vec3 {
   return { x: g.rimCenter.x - g.side * SHOOTAROUND_FROM_RIM, y: 0, z: g.rimCenter.z };
 }
 
+const FORMATION_WING_SIDE = 4;
+/** Top of the key: 5.8 m from the rim towards centre court. */
+const FORMATION_KEY_BACK = 5.8;
+const FORMATION_KEY_SIDE = 1.5;
+
 function firstPlayer(state: MatchState, team: TeamIndex): PlayerState | undefined {
   return state.teams[team].players[0] ?? state.teams[otherTeam(team)].players[0];
 }
@@ -65,18 +70,46 @@ function resetForInbound(player: PlayerState, pos: Vec3): void {
   player.facing = pos.x < 0 ? Math.PI / 2 : -Math.PI / 2;
 }
 
+/**
+ * Spec C.6 (match mode): a possession starts in formation — the receiver at their baseline,
+ * their teammates on the own-half wings, the defenders at the top of the key of the hoop they
+ * defend (the one `team` attacks). Resets actions; does not touch the ball.
+ */
+export function placeFormation(state: MatchState, court: CourtDef, team: TeamIndex): void {
+  const side = team === 0 ? -1 : 1;
+  const defended = hoopGeometry(court, attackingHoopIndex(court, team));
+  state.teams[team].players.forEach((p, i) => {
+    const pos =
+      i === 0
+        ? inboundPosition(court, team)
+        : {
+            x: side * (court.playArea.length / 4 + Math.floor((i - 1) / 2) * 2),
+            y: 0,
+            z: (i % 2 === 1 ? 1 : -1) * FORMATION_WING_SIDE,
+          };
+    resetForInbound(p, pos);
+  });
+  state.teams[otherTeam(team)].players.forEach((p, i) => {
+    resetForInbound(p, {
+      x: defended.rimCenter.x - defended.side * FORMATION_KEY_BACK,
+      y: 0,
+      z: (i % 2 === 0 ? -1 : 1) * FORMATION_KEY_SIDE * (Math.floor(i / 2) + 1),
+    });
+  });
+}
+
 /** Places the receiver and hands them the ball; the phase becomes live with a fresh shot clock. */
 export function inbound(state: MatchState, court: CourtDef, events: SimEvent[]): void {
   const team = state.pendingInbound ?? 0;
   state.pendingInbound = null;
   const receiver = firstPlayer(state, team);
   if (receiver) {
-    // Shootaround: back to the top of the key of the hoop the ball is under (the one just scored on).
-    const pos =
-      state.settings.mode === 'shootaround'
-        ? shootaroundPosition(court, hoopNearest(court, state.ball.pos))
-        : inboundPosition(court, receiver.team);
-    resetForInbound(receiver, pos);
+    if (state.settings.mode === 'shootaround') {
+      // Back to the top of the key of the hoop the ball is under (the one just scored on).
+      resetForInbound(receiver, shootaroundPosition(court, hoopNearest(court, state.ball.pos)));
+    } else {
+      placeFormation(state, court, team);
+    }
     giveBall(state, receiver, events);
   } else {
     state.ball.mode = 'free';
@@ -100,6 +133,7 @@ export function handleTipoff(state: MatchState, court: CourtDef, events: SimEven
   const team: TeamIndex =
     state.settings.mode === 'shootaround' ? 0 : (nextInt(state.rng, 2) as TeamIndex);
   const receiver = firstPlayer(state, team);
+  if (state.settings.mode === 'match') placeFormation(state, court, team);
   if (receiver) giveBall(state, receiver, events);
   state.shotClockMs = state.settings.shotClockMs;
   setPhase(state, 'live', events);
