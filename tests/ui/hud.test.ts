@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ABILITIES } from '../../src/content/abilities';
+import { getCharacter } from '../../src/content/characters';
 import { getCourt } from '../../src/content/courts';
-import { createMatch } from '../../src/sim/match';
-import { bannerFor, formatClock, Hud } from '../../src/ui/hud';
+import { createMatch, findPlayer } from '../../src/sim/match';
+import { abilityBanner, abilityBarView, bannerFor, formatClock, Hud } from '../../src/ui/hud';
 import type { MatchSettings } from '../../src/sim/types';
 
 const court = getCourt('gym');
@@ -174,5 +176,111 @@ describe('Hud', () => {
     expect(classAdds).toBe(0);
     expect(banner.hidden).toBe(false);
     expect(banner.classList.contains('is-final')).toBe(true);
+  });
+});
+
+describe('Hud ability bar, ability banners and the GUST chip (spec D.6)', () => {
+  let parent: HTMLDivElement;
+  let hud: Hud;
+  const roster = [
+    { id: 'home1', team: 0 as const, characterId: 'brick', character: getCharacter('brick') },
+    { id: 'home2', team: 0 as const, characterId: 'ace', character: getCharacter('ace') },
+    { id: 'away1', team: 1 as const, characterId: 'dash', character: getCharacter('dash') },
+  ];
+  const fresh = () => createMatch(settings, court, roster);
+  const el = (selector: string): HTMLElement => {
+    const found = parent.querySelector<HTMLElement>(selector);
+    if (!found) throw new Error(`missing ${selector}`);
+    return found;
+  };
+  beforeEach(() => {
+    parent = document.createElement('div');
+    document.body.appendChild(parent);
+    hud = new Hud(parent, 0, { humanId: 'home1', abilities: ABILITIES });
+  });
+  afterEach(() => {
+    hud.dispose();
+    parent.remove();
+  });
+
+  it('shows the human’s ability name and fills with charge in the team colour', () => {
+    const s = fresh();
+    const me = findPlayer(s, 'home1');
+    if (!me) throw new Error('no human');
+    me.charge = 50;
+    hud.update(s);
+    expect(el('.hud-ability').hidden).toBe(false);
+    expect(el('.hud-ability-name').textContent).toContain('Rocket Dunk');
+    expect(el('.hud-ability-fill').style.width).toBe('50%');
+    expect(el('.hud-ability-status').textContent).toBe('');
+    expect(el('.hud-ability').classList.contains('team-0')).toBe(true);
+  });
+
+  it('pulses READY at a full bar', () => {
+    const s = fresh();
+    const me = findPlayer(s, 'home1');
+    if (!me) throw new Error('no human');
+    me.charge = 100;
+    hud.update(s);
+    expect(el('.hud-ability-status').textContent).toBe('READY');
+    expect(el('.hud-ability').classList.contains('is-ready')).toBe(true);
+  });
+
+  it('shows the seconds left while a timed ability runs, draining the bar', () => {
+    const s = fresh();
+    const me = findPlayer(s, 'home1');
+    if (!me) throw new Error('no human');
+    me.ability = { ticksLeft: 240, uses: 0 };
+    hud.update(s);
+    expect(el('.hud-ability-status').textContent).toBe('4 s');
+    expect(el('.hud-ability-fill').style.width).toBe('50%'); // 240 of Rocket Dunk's 480 ticks
+    expect(el('.hud-ability').classList.contains('is-active')).toBe(true);
+    expect(el('.hud-ability').classList.contains('is-ready')).toBe(false);
+  });
+
+  it('shows three pips for Hot Hand', () => {
+    const s = fresh();
+    const ace = findPlayer(s, 'home2');
+    const def = ABILITIES.hotHand;
+    if (!ace || !def) throw new Error('setup');
+    ace.ability = { ticksLeft: null, uses: 3 };
+    expect(abilityBarView(ace, def).status).toBe('●●●');
+    ace.ability.uses = 1;
+    expect(abilityBarView(ace, def).status).toBe('●');
+  });
+
+  it('stays hidden without a human id', () => {
+    const other = document.createElement('div');
+    const plain = new Hud(other);
+    plain.update(fresh());
+    expect(other.querySelector<HTMLElement>('.hud-ability')?.hidden).toBe(true);
+    plain.dispose();
+  });
+
+  it('names every launch ability in its banner', () => {
+    expect(abilityBanner('rocketDunk', ABILITIES)).toBe('ROCKET DUNK!');
+    expect(abilityBanner('hotHand', ABILITIES)).toBe('HOT HAND!');
+    expect(abilityBanner('blur', ABILITIES)).toBe('BLUR!');
+    expect(abilityBanner('earthquake', ABILITIES)).toBe('EARTHQUAKE!');
+  });
+
+  it('announces an activation in the activating team’s colour', () => {
+    hud.handleEvents([{ type: 'abilityActivated', playerId: 'away1', abilityId: 'blur' }], fresh());
+    hud.tick(0);
+    expect(el('.hud-banner').textContent).toBe('BLUR!');
+    expect(el('.hud-banner').classList.contains('team-1')).toBe(true);
+    hud.handleEvents([{ type: 'block', by: 'home1', shooter: 'away1' }]);
+    hud.tick(1.3);
+    expect(el('.hud-banner').textContent).toBe('BLOCKED!');
+    expect(el('.hud-banner').classList.contains('team-1')).toBe(false);
+  });
+
+  it('shows a GUST chip with an arrow while a gust blows', () => {
+    expect(el('.hud-gust').hidden).toBe(true);
+    hud.handleEvents([{ type: 'gustStart', dir: { x: 0, y: 0, z: 1 } }]);
+    expect(el('.hud-gust').hidden).toBe(false);
+    expect(el('.hud-gust-arrow').style.transform).toBe('rotate(90deg)');
+    hud.handleEvents([{ type: 'gustEnd' }]);
+    expect(el('.hud-gust').hidden).toBe(true);
   });
 });

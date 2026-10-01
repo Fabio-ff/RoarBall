@@ -1,0 +1,149 @@
+import {
+  BoxGeometry,
+  Group,
+  InstancedMesh,
+  Matrix4,
+  MeshBasicMaterial,
+  Quaternion,
+  SphereGeometry,
+  Vector3,
+} from 'three';
+import type { Vec3 } from '../sim/math';
+import type { CourtDef, SimEvent, Weather } from '../sim/types';
+
+export const RAIN_COUNT = 400;
+export const EMBER_COUNT = 120;
+const RAIN_FALL_SPEED = 14;
+const RAIN_WIND_SPEED = 6;
+const EMBER_RISE_SPEED = 1.2;
+const EMBER_WIND_SPEED = 2;
+/** Particles live in a box this high and this far beyond the play area. */
+const TOP = 12;
+const MARGIN = 4;
+const UP = new Vector3(0, 1, 0);
+
+/** Rain falls at 14 m/s and is blown 6 m/s along a gust (spec D.6: streaks slant with the gust). */
+export function rainVelocity(gust: Vec3 | null): Vec3 {
+  return gust
+    ? { x: gust.x * RAIN_WIND_SPEED, y: -RAIN_FALL_SPEED, z: gust.z * RAIN_WIND_SPEED }
+    : { x: 0, y: -RAIN_FALL_SPEED, z: 0 };
+}
+
+function emberVelocity(gust: Vec3 | null): Vec3 {
+  return {
+    x: (gust?.x ?? 0) * EMBER_WIND_SPEED,
+    y: EMBER_RISE_SPEED,
+    z: (gust?.z ?? 0) * EMBER_WIND_SPEED,
+  };
+}
+
+/**
+ * Placeholder weather (spec D.6): instanced rain streaks on the rooftop, rising embers on the
+ * volcano, nothing elsewhere. Reads simulation events only (gustStart / gustEnd).
+ */
+export class WeatherView {
+  readonly group = new Group();
+  readonly kind: Weather;
+  private mesh: InstancedMesh | null = null;
+  private readonly particles: Vec3[] = [];
+  private gust: Vec3 | null = null;
+  private readonly halfX: number;
+  private readonly halfZ: number;
+  private readonly matrix = new Matrix4();
+  private readonly rotation = new Quaternion();
+  private readonly position = new Vector3();
+  private readonly scale = new Vector3(1, 1, 1);
+  private readonly axis = new Vector3();
+
+  constructor(
+    court: CourtDef,
+    private readonly random: () => number = Math.random,
+  ) {
+    this.kind = court.dressing.weather;
+    this.halfX = court.playArea.length / 2 + MARGIN;
+    this.halfZ = court.playArea.width / 2 + MARGIN;
+    if (this.kind === 'none') return;
+    const rain = this.kind === 'rain';
+    const count = rain ? RAIN_COUNT : EMBER_COUNT;
+    this.mesh = new InstancedMesh(
+      rain ? new BoxGeometry(0.02, 0.5, 0.02) : new SphereGeometry(0.05, 6, 4),
+      rain
+        ? new MeshBasicMaterial({ color: 0xa8c4e0, transparent: true, opacity: 0.5 })
+        : new MeshBasicMaterial({ color: 0xff7a1a }),
+      count,
+    );
+    for (let i = 0; i < count; i++) this.particles.push(this.spawn(this.random() * TOP));
+    this.group.add(this.mesh);
+    this.writeMatrices();
+  }
+
+  /** For tests: the instanced mesh, or null when the court has no weather. */
+  get instances(): InstancedMesh | null {
+    return this.mesh;
+  }
+
+  /** Angle of the rain streaks from vertical, radians. */
+  get tilt(): number {
+    const v = rainVelocity(this.gust);
+    return Math.atan2(Math.hypot(v.x, v.z), -v.y);
+  }
+
+  handleEvents(events: readonly SimEvent[]): void {
+    for (const e of events) {
+      if (e.type === 'gustStart') this.gust = { ...e.dir };
+      else if (e.type === 'gustEnd') this.gust = null;
+    }
+  }
+
+  /** A new match starts calm. */
+  reset(): void {
+    this.gust = null;
+  }
+
+  update(dtSeconds: number): void {
+    if (!this.mesh) return;
+    const rain = this.kind === 'rain';
+    const v = rain ? rainVelocity(this.gust) : emberVelocity(this.gust);
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      if (!p) continue;
+      p.x += v.x * dtSeconds;
+      p.y += v.y * dtSeconds;
+      p.z += v.z * dtSeconds;
+      const gone = rain ? p.y < 0 : p.y > TOP;
+      if (gone || Math.abs(p.x) > this.halfX || Math.abs(p.z) > this.halfZ) {
+        // Respawn in place: no per-frame allocation.
+        p.x = (this.random() * 2 - 1) * this.halfX;
+        p.y = rain ? TOP : 0;
+        p.z = (this.random() * 2 - 1) * this.halfZ;
+      }
+    }
+    this.writeMatrices();
+  }
+
+  private spawn(y: number): Vec3 {
+    return {
+      x: (this.random() * 2 - 1) * this.halfX,
+      y,
+      z: (this.random() * 2 - 1) * this.halfZ,
+    };
+  }
+
+  private writeMatrices(): void {
+    const mesh = this.mesh;
+    if (!mesh) return;
+    // Streaks lie along their velocity (pointing up the fall line); embers are round.
+    const v = this.kind === 'rain' ? rainVelocity(this.gust) : emberVelocity(this.gust);
+    this.axis.set(-v.x, -v.y, -v.z);
+    if (v.y > 0) this.axis.negate();
+    this.rotation.setFromUnitVectors(UP, this.axis.normalize());
+    for (let i = 0; i < this.particles.length; i++) {
+      const p = this.particles[i];
+      if (!p) continue;
+      this.position.set(p.x, p.y, p.z);
+      this.matrix.compose(this.position, this.rotation, this.scale);
+      mesh.setMatrixAt(i, this.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+}

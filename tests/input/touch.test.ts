@@ -148,3 +148,15 @@ describe('TouchBackend visibility', () => {
     expect(backend.element.hidden).toBe(true);
   });
 });
+
+describe('TouchBackend SP readiness (spec D.6)', () => {
+  it('dims SP until the ability bar is full, without blocking presses', () => {
+    expect(button('special').classList.contains('is-dimmed')).toBe(true);
+    backend.setSpecialReady(true);
+    expect(button('special').classList.contains('is-dimmed')).toBe(false);
+    backend.setSpecialReady(false);
+    expect(button('special').classList.contains('is-dimmed')).toBe(true);
+    fire(button('special'), 'pointerdown', { pointerId: 4, clientX: 900, clientY: 450 });
+    expect(backend.sample().special).toBe(true);
+  });
+});
