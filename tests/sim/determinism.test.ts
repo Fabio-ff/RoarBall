@@ -84,19 +84,22 @@ function playShort(): { state: MatchState; events: SimEvent[] } {
   return { state, events };
 }
 
-function play(): MatchState {
+function play(): { state: MatchState; events: SimEvent[] } {
   let state = createMatch(settings, court, roster);
+  const events: SimEvent[] = [];
   for (let i = 0; i < 1500; i++) {
-    state = tick(
+    const result = tick(
       state,
       new Map([
         ['home1', scriptedIntent(i, 0)],
         ['away1', scriptedIntent(i, 37)],
       ]),
       court,
-    ).state;
+    );
+    state = result.state;
+    events.push(...result.events);
   }
-  return state;
+  return { state, events };
 }
 
 /**
@@ -195,11 +198,11 @@ describe('determinism (golden)', () => {
     const a = play();
     const b = play();
     expect(a).toEqual(b);
-    expect(a.score[0] + a.score[1]).toBeGreaterThan(0); // the script actually shoots
+    expect(a.state.score[0] + a.state.score[1]).toBeGreaterThan(0); // the script actually shoots
   });
 
   it('matches the pinned hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(play()))).toMatchInlineSnapshot(`"3cbe5a85"`);
+    expect(fnv1a(JSON.stringify(play().state))).toMatchInlineSnapshot(`"8d79e9ca"`);
   });
 
   it('the short-clock run reaches violations and the end of the match, deterministically', () => {
@@ -212,7 +215,7 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned short-clock hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(playShort().state))).toMatchInlineSnapshot(`"c2687487"`);
+    expect(fnv1a(JSON.stringify(playShort().state))).toMatchInlineSnapshot(`"fe0fe01e"`);
   });
 
   it('the 2v2 run passes and defends, deterministically', () => {
@@ -229,6 +232,22 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned 2v2 hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(playTeams().state))).toMatchInlineSnapshot(`"3d776fad"`);
+    expect(fnv1a(JSON.stringify(playTeams().state))).toMatchInlineSnapshot(`"1c8be5f2"`);
+  });
+
+  it('pins each run’s events and score (spec D.7: phase 5 never changes them on the gym without abilities)', () => {
+    const pin = (run: { state: MatchState; events: SimEvent[] }): string =>
+      `${fnv1a(JSON.stringify(run.events))} ${run.state.score[0]}-${run.state.score[1]} ${run.events.length}`;
+    expect({
+      long: pin(play()),
+      short: pin(playShort()),
+      teams: pin(playTeams()),
+    }).toMatchInlineSnapshot(`
+      {
+        "long": "4278f28b 3-0 28",
+        "short": "41c73bc9 0-3 33",
+        "teams": "616184cb 2-5 72",
+      }
+    `);
   });
 });

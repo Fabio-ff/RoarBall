@@ -328,6 +328,7 @@ describe('off ball', () => {
       receiver: null,
       lob: false,
       team: 0,
+      bow: null,
     };
     s.ball.lastShot = {
       shooter: 'home1',

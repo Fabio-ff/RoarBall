@@ -146,6 +146,27 @@ export function resolveSteal(state: MatchState, stealer: PlayerState, events: Si
   }
 }
 
+/** Unit vector on the court plane from `from` towards `to` (0, 0 when they coincide). */
+function awayFrom(from: PlayerState, to: PlayerState): { ux: number; uz: number } {
+  const dx = to.pos.x - from.pos.x;
+  const dz = to.pos.z - from.pos.z;
+  const len = Math.hypot(dx, dz) || 1;
+  return { ux: dx / len, uz: dz / len };
+}
+
+/** A knocked-down holder loses the ball: it pops out of their hand, away from the hit (spec B.4). */
+function popBallLoose(state: MatchState, holder: PlayerState, ux: number, uz: number): void {
+  const { ball } = state;
+  const hand = holdPosition(holder);
+  ball.mode = 'free';
+  ball.holder = null;
+  ball.flight = null;
+  ball.lastShot = null;
+  ball.freeTicks = 0;
+  ball.pos = { x: hand.x, y: hand.y + 0.3, z: hand.z };
+  ball.vel = { x: ux * POP_SPEED, y: POP_SPEED, z: uz * POP_SPEED };
+}
+
 /** Spec B.4 shove: the nearest opponent in reach and in front is knocked down; the ball pops loose. */
 export function resolveShove(state: MatchState, shover: PlayerState, events: SimEvent[]): void {
   const target = shover.targetId === null ? undefined : findPlayer(state, shover.targetId);
@@ -153,26 +174,31 @@ export function resolveShove(state: MatchState, shover: PlayerState, events: Sim
   if (v3DistanceXZ(shover.pos, target.pos) > SHOVE_REACH || !inFront(shover, target.pos)) return;
   const dealt = shover.stats.stunTicksDealt * (shover.turboActive ? SHOVE_TURBO_MULTIPLIER : 1);
   const stun = dealt - target.stats.stunResistTicks;
-  const dx = target.pos.x - shover.pos.x;
-  const dz = target.pos.z - shover.pos.z;
-  const len = Math.hypot(dx, dz) || 1;
-  const ux = dx / len;
-  const uz = dz / len;
+  const { ux, uz } = awayFrom(shover, target);
   applyStun(target, stun);
   target.vel.x = ux * POP_SPEED;
   target.vel.z = uz * POP_SPEED;
-  if (state.ball.holder === target.id) {
-    const { ball } = state;
-    const hand = holdPosition(target);
-    ball.mode = 'free';
-    ball.holder = null;
-    ball.flight = null;
-    ball.lastShot = null;
-    ball.freeTicks = 0;
-    ball.pos = { x: hand.x, y: hand.y + 0.3, z: hand.z };
-    ball.vel = { x: ux * POP_SPEED, y: POP_SPEED, z: uz * POP_SPEED };
-  }
+  if (state.ball.holder === target.id) popBallLoose(state, target, ux, uz);
   events.push({ type: 'shove', by: shover.id, target: target.id });
+}
+
+/**
+ * Spec D.3 (Earthquake): `target` is knocked down for exactly `ticks`, ignoring stun resistance and
+ * shove immunity; the normal get-up and immunity follow. A holder drops the ball as after a shove.
+ */
+export function knockDown(
+  state: MatchState,
+  by: PlayerState,
+  target: PlayerState,
+  ticks: number,
+  events: SimEvent[],
+): void {
+  const { ux, uz } = awayFrom(by, target);
+  applyStun(target, ticks);
+  target.vel.x = ux * POP_SPEED;
+  target.vel.z = uz * POP_SPEED;
+  if (state.ball.holder === target.id) popBallLoose(state, target, ux, uz);
+  events.push({ type: 'knockdown', by: by.id, target: target.id });
 }
 
 /**

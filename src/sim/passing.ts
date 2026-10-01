@@ -122,6 +122,7 @@ export function releasePass(
     receiver: receiver.id,
     lob,
     team: player.team,
+    bow: null,
   };
   ball.lastShot = null;
   events.push({ type: 'pass', from: player.id, to: receiver.id, lob });

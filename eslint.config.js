@@ -85,6 +85,16 @@ export default defineConfig([
     // Spec §3: content may only import types from sim.
     files: ['src/content/**/*.ts'],
     rules: {
+      // Hooks run inside tick(): randomness only through ctx.rng (spec A.7).
+      'no-restricted-properties': [
+        'error',
+        {
+          object: 'Math',
+          property: 'random',
+          message: 'Content draws randomness through ctx.rng (spec A.7)',
+        },
+        { object: 'Date', property: 'now', message: 'Content must not read the wall clock' },
+      ],
       'no-restricted-imports': 'off',
       '@typescript-eslint/no-restricted-imports': [
         'error',

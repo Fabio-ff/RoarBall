@@ -17,7 +17,7 @@ describe('AI golden (spec C.7)', () => {
   });
 
   it('matches the pinned hash — update it only for an intentional simulation or AI change', () => {
-    expect(fnv1a(JSON.stringify(playAiMatch(7).state))).toMatchInlineSnapshot(`"46c64171"`);
+    expect(fnv1a(JSON.stringify(playAiMatch(7).state))).toMatchInlineSnapshot(`"8b3fbaa4"`);
   });
 
   it('replays from seed + recorded intents to the identical state (spec §4.10)', () => {
@@ -32,5 +32,12 @@ describe('AI golden (spec C.7)', () => {
     let state = createMatch({ ...settings, seed: 7 }, court, roster);
     for (const frame of a.intents) state = tick(state, frame, court).state;
     expect(state.rng.seed).toBe(a.state.rng.seed);
+  });
+
+  it('pins the events and score (spec D.7: phase 5 never changes them on the gym without abilities)', () => {
+    const run = playAiMatch(7);
+    expect(
+      `${fnv1a(JSON.stringify(run.events))} ${run.state.score[0]}-${run.state.score[1]} ${run.events.length}`,
+    ).toMatchInlineSnapshot(`"f4662376 16-30 441"`);
   });
 });

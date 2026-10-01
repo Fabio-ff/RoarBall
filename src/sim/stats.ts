@@ -22,6 +22,10 @@ export const DEFAULT_STATS: Readonly<ResolvedStats> = Object.freeze({
   stealChance: 0.45,
   stunTicksDealt: 60,
   stunResistTicks: 15,
+  dunkFromArc: false,
+  unblockableDunk: false,
+  stealAlwaysSucceeds: false,
+  unlimitedTurbo: false,
 });
 
 /**
@@ -48,5 +52,9 @@ export function resolveStats(def: CharacterDef): ResolvedStats {
     stealChance: 0.2 + 0.05 * s.defense,
     stunTicksDealt: 30 + 6 * s.power,
     stunResistTicks: 3 * s.power,
+    dunkFromArc: false,
+    unblockableDunk: false,
+    stealAlwaysSucceeds: false,
+    unlimitedTurbo: false,
   };
 }
