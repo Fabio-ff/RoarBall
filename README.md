@@ -8,6 +8,7 @@ tablets and phones.
     npm install
     npm run dev        # http://localhost:5173  (add ?debug for the overlay)
     npm run check      # lint + format + typecheck + build + tests
+    npm run balance    # AI-vs-AI balance report → docs/balance/<date>.md (minutes)
 
 Live build (main): https://fabio-ff.github.io/RoarBall/
 
