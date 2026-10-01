@@ -53,7 +53,7 @@ export const SHOOTER_PICKUP_COOLDOWN_TICKS = 30;
 const RELEASE_HEIGHT = 2.1;
 const RELEASE_FORWARD = 0.3;
 /** Spec B.4: a blocker's hand reaches this far above their feet; a swatted ball is knocked away at this speed. */
-const BLOCK_HAND_HEIGHT = 2.3;
+const BLOCK_HAND_HEIGHT = 2.6;
 const BLOCK_SWAT_SPEED = 3;
 /**
  * A made shot targets a point just below the rim plane so the crossing happens inside the

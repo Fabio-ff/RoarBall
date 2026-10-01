@@ -110,7 +110,7 @@ describe('block', () => {
     if (!x) throw new Error('no x');
     x.pos.x = hoop.rimCenter.x - 4.4; // 0.6 m from the shooter
     // Shooter presses at tick 0 (release at tick 27). The defender jumps at tick 10: at the release
-    // they are 17 ticks up (0.88 m, hand at 3.18 m ≥ the 3.13 m release point) and still rising.
+    // they are 17 ticks up (0.88 m, hand at 3.48 m ≥ the 3.13 m release point) and still rising.
     let state = s;
     const all: SimEvent[] = [];
     for (let i = 0; i < 120; i++) {
