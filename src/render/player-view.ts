@@ -9,7 +9,8 @@ import {
 import type { PlayerState } from '../sim/types';
 import { lerpAngle, lerpVec3 } from './interpolate';
 
-const RAISED_ACTIONS = new Set<PlayerState['action']>(['jump', 'shoot', 'layup', 'dunk']);
+const ARMS_UP = new Set<PlayerState['action']>(['jump', 'block', 'shoot', 'layup', 'dunk']);
+const ARMS_FORWARD = new Set<PlayerState['action']>(['pass', 'steal', 'shove']);
 
 /**
  * Placeholder player (spec §5.5): capsule body, box head, and a cone on the front so the facing
@@ -18,6 +19,9 @@ const RAISED_ACTIONS = new Set<PlayerState['action']>(['jump', 'shoot', 'layup',
 export class PlayerView {
   readonly group = new Group();
   private readonly arms: Group;
+  /** Body, head, nose and arms, pivoted at the feet so the stun tilt lays the whole figure down. */
+  private readonly figure = new Group();
+  private tilt = 0;
 
   constructor(color: number) {
     const body = new Mesh(
@@ -51,14 +55,24 @@ export class PlayerView {
       this.arms.add(arm);
     }
 
-    this.group.add(body, head, nose, this.arms);
+    this.figure.add(body, head, nose, this.arms);
+    this.group.add(this.figure);
   }
 
   update(prev: PlayerState, next: PlayerState, alpha: number): void {
     const p = lerpVec3(prev.pos, next.pos, alpha);
     this.group.position.set(p.x, p.y, p.z);
     this.group.rotation.y = lerpAngle(prev.facing, next.facing, alpha);
-    const target = RAISED_ACTIONS.has(next.action) ? Math.PI : 0;
+    // Negative x rotation swings the arms forward (+Z) and up.
+    const target = ARMS_UP.has(next.action)
+      ? -Math.PI
+      : ARMS_FORWARD.has(next.action)
+        ? -Math.PI / 2
+        : 0;
     this.arms.rotation.x += (target - this.arms.rotation.x) * 0.25;
+    const tiltTarget = next.action === 'stunned' ? 1 : next.action === 'getup' ? 0.5 : 0;
+    this.tilt += (tiltTarget - this.tilt) * 0.25;
+    this.figure.rotation.x = -this.tilt * (Math.PI / 2);
+    this.figure.position.z = this.tilt * 0.9;
   }
 }

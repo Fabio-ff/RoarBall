@@ -1,3 +1,4 @@
+import { defenderDummy, teammateDummy, type Controller } from './app/dummies';
 import { GameLoop } from './app/game-loop';
 import { MatchRunner } from './app/match-runner';
 import { characters, DEFAULT_CHARACTER_ID, getCharacter } from './content/characters';
@@ -52,7 +53,11 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
         mode: 'shootaround',
       },
       court,
-      [{ id: HUMAN_ID, team: 0, characterId: character.id, character }],
+      [
+        { id: HUMAN_ID, team: 0, characterId: character.id, character },
+        { id: 'home2', team: 0, characterId: 'rook', character: getCharacter('rook') },
+        { id: 'away1', team: 1, characterId: 'brick', character: getCharacter('brick') },
+      ],
     ),
   );
 
@@ -96,13 +101,17 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   let fps = 0;
   let ticksPerSecond = 0;
 
-  // One controller per player; AI controllers join in phase 4 (spec A.6).
-  const controllers = new Map<PlayerId, () => PlayerIntent>([[HUMAN_ID, () => input.sample()]]);
+  // One controller per player; AI controllers replace the dummies in phase 4 (spec A.6).
+  const controllers = new Map<PlayerId, Controller>([
+    [HUMAN_ID, () => input.sample()],
+    ['home2', teammateDummy('home2', HUMAN_ID, court)],
+    ['away1', defenderDummy('away1', HUMAN_ID, court)],
+  ]);
   const intents = new Map<PlayerId, PlayerIntent>();
 
   const loop = new GameLoop(
     () => {
-      for (const [id, controller] of controllers) intents.set(id, controller());
+      for (const [id, controller] of controllers) intents.set(id, controller(runner.current));
       const events = runner.step(intents);
       hud.handleEvents(events);
       for (const event of events) {
@@ -149,6 +158,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
           ballMode: next.ball.mode,
           shotClockMs: next.shotClockMs,
           character: character.name,
+          action: human.action,
         });
       }
     },
