@@ -619,7 +619,8 @@ describe('deflectBallOffPlayers', () => {
     const a = findPlayer(s, 'a');
     if (!a) throw new Error('no player');
     a.pos = { x: 0, y: 0, z: 0 };
-    s.ball = { ...s.ball, mode: 'free', holder: null, flight: null, pos: { x: -0.4, y: 1.9, z: 0 }, vel: { x: 6, y: 0, z: 0 } };
+    // Capsule top at 1.55 + 0.35 reach, ball radius 0.12: at y = 1.7 the ball just overlaps the shoulder.
+    s.ball = { ...s.ball, mode: 'free', holder: null, flight: null, pos: { x: -0.4, y: 1.7, z: 0 }, vel: { x: 6, y: 0, z: 0 } };
     deflectBallOffPlayers(s);
     expect(s.ball.vel.x).toBeLessThan(0);
   });
