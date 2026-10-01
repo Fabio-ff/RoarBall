@@ -1,9 +1,10 @@
 import { BALL_RADIUS } from './constants';
 import { createRng } from './rng';
 import { RULES } from './rules';
-import { DEFAULT_STATS } from './stats';
+import { DEFAULT_STATS, resolveStats } from './stats';
 import { NO_BUTTONS } from './types';
 import type {
+  CharacterDef,
   CourtDef,
   MatchSettings,
   MatchState,
@@ -16,6 +17,8 @@ export interface RosterEntry {
   id: PlayerId;
   team: TeamIndex;
   characterId: string;
+  /** Resolved through the stat table when present; placeholders use DEFAULT_STATS. */
+  character?: CharacterDef;
 }
 
 /** Builds the initial state. Every match starts in 'tipoff'. */
@@ -81,7 +84,7 @@ function createPlayer(entry: RosterEntry, indexInTeam: number, court: CourtDef):
     prevButtons: { ...NO_BUTTONS },
     shot: null,
     shotCooldownTicks: 0,
-    stats: { ...DEFAULT_STATS },
+    stats: entry.character ? resolveStats(entry.character) : { ...DEFAULT_STATS },
   };
 }
 

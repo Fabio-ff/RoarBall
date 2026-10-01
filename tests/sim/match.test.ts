@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { getCharacter } from '../../src/content/characters';
 import { getCourt } from '../../src/content/courts';
 import { allPlayers, createMatch, findPlayer } from '../../src/sim/match';
 import type { MatchSettings } from '../../src/sim/types';
@@ -42,5 +43,13 @@ describe('createMatch', () => {
       { id: 'b', team: 0, characterId: 'placeholder' },
     ]);
     expect(findPlayer(state, 'a')?.pos.z).not.toBe(findPlayer(state, 'b')?.pos.z);
+  });
+
+  it('resolves a character through the stat table', () => {
+    const state = createMatch(settings, getCourt('gym'), [
+      { id: 'd', team: 0, characterId: 'dash', character: getCharacter('dash') },
+    ]);
+    expect(findPlayer(state, 'd')?.stats.runSpeed).toBeCloseTo(7.0);
+    expect(findPlayer(state, 'd')?.stats.defense).toBe(8);
   });
 });
