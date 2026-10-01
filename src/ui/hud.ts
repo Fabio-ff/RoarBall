@@ -98,8 +98,10 @@ export class Hud {
     const final = state.phase === 'finished';
     if (final) {
       this.setText(this.banner, finalBanner(state, this.humanTeam));
-      this.banner.classList.add('is-final');
-      this.banner.hidden = false;
+      if (!this.final) {
+        this.banner.classList.add('is-final');
+        this.banner.hidden = false;
+      }
     } else if (this.final) {
       // A new match started: drop the sticky banner and any stale queue.
       this.banner.classList.remove('is-final');
