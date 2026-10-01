@@ -133,12 +133,15 @@ describe('AppShell (spec E.1)', () => {
 describe('AppShell audio (spec E.4)', () => {
   const fakeEngine = () => ({
     played: [] as string[],
+    music: [] as (string | null)[],
     enabled: [] as [boolean, boolean][],
     resumed: 0,
     playSfx(name: string) {
       this.played.push(name);
     },
-    setMusic() {},
+    setMusic(track: string | null) {
+      this.music.push(track);
+    },
     duck() {},
     setEnabled(sound: boolean, music: boolean) {
       this.enabled.push([sound, music]);
@@ -217,6 +220,50 @@ describe('AppShell audio (spec E.4)', () => {
     expect(engine.played.length).toBe(before);
     shell.dispose();
     root.remove();
+  });
+
+  it('picks the track per screen: menu, court, then the win or lose jingle', () => {
+    const engine = fakeEngine();
+    vi.spyOn(AudioEngine, 'create').mockReturnValue(
+      engine as unknown as InstanceType<typeof AudioEngine>,
+    );
+    const root = document.createElement('div');
+    const shell = new AppShell(root, { initial: null, store: null });
+    press('KeyZ'); // the engine arrives late and takes the current screen's track
+    expect(engine.music.at(-1)).toBe('menu');
+    root.querySelector<HTMLButtonElement>('[data-action="play"]')?.click();
+    expect(engine.music.at(-1)).toBe('menu');
+    root.querySelector<HTMLButtonElement>('[data-action="start"]')?.click();
+    expect(engine.music.at(-1)).toBe('gym');
+    const options = created.at(-1)?.deps.options as ReturnType<typeof readGameOptions>;
+    const line = (id: string, team: 0 | 1) => ({
+      id,
+      team,
+      name: id,
+      points: 0,
+      dunks: 0,
+      threes: 0,
+      assists: 0,
+      steals: 0,
+      blocks: 0,
+      abilityUses: 0,
+    });
+    const finish = (score: [number, number]) =>
+      created.at(-1)?.deps.onFinished({
+        score,
+        humanTeam: 0,
+        overtime: false,
+        lines: [line('home1', 0), line('away1', 1)],
+        options,
+      });
+    finish([21, 18]);
+    expect(engine.music.at(-1)).toBe('win');
+    root.querySelector<HTMLButtonElement>('[data-action="rematch"]')?.click();
+    finish([10, 18]);
+    expect(engine.music.at(-1)).toBe('lose');
+    root.querySelector<HTMLButtonElement>('[data-action="title"]')?.click();
+    expect(engine.music.at(-1)).toBe('menu');
+    shell.dispose();
   });
 
   it('stays silent and does not throw where Web Audio is missing', () => {

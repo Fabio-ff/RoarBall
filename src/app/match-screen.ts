@@ -7,6 +7,7 @@ import type { Settings } from './storage';
 import type { GameOptions } from './url-options';
 import { AudioDirector } from '../audio/director';
 import type { AudioSink } from '../audio/sink';
+import { courtTrack } from '../audio/tracks';
 import { ABILITIES } from '../content/abilities';
 import { getCharacter } from '../content/characters';
 import { getCourt } from '../content/courts';
@@ -285,6 +286,7 @@ export class MatchScreen {
   pause(): void {
     if (this.disposed || this.done || this.pauseOverlay) return;
     this.loop.stop();
+    this.deps.sink().setMusic(null);
     this.pauseOverlay = new PauseOverlay(this.container, {
       settings: this.settings,
       onResume: () => this.resume(),
@@ -305,6 +307,7 @@ export class MatchScreen {
     this.pauseOverlay.dispose();
     this.pauseOverlay = null;
     this.primeHuman();
+    this.deps.sink().setMusic(courtTrack(this.deps.options.courtId));
     this.loop.start();
   }
 

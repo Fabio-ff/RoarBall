@@ -131,3 +131,8 @@ export const TRACKS: Record<TrackId, Track> = {
     },
   },
 };
+
+/** Court ids equal their track ids; an unknown court falls back to the gym loop. */
+export function courtTrack(courtId: string): TrackId {
+  return courtId === 'rooftop' || courtId === 'volcano' || courtId === 'frozen' ? courtId : 'gym';
+}
