@@ -28,10 +28,17 @@ Touch (tablets and phones): a floating joystick where your left thumb lands, and
 
 URL options:
 
-- `?character=brick|ace|dash|rook` picks your player (default `rook`).
-- `?debug` shows the debug overlay.
+- The page starts a **2v2 match** (3 minutes, 14 s shot clock, sudden-death overtime): you and an
+  AI teammate against two AI opponents. After the final, press ACTION/PASS/SPECIAL (or tap a
+  button) to play again.
+- `?mode=shootaround` — the practice build with the training dummies instead of the AI.
+- `?character=brick|ace|dash|rook` picks your player (default `rook`);
+  `?teammate=<id>` (default `ace`) and `?opponents=<id>,<id>` (default `brick,dash`) pick the rest.
+- `?ai=easy|fair|hard` — the AI profile for all three AI players (default `fair`).
+- `?seed=<n>` — reproduce a match (the default seed is the clock, so every game differs).
+- `?debug` shows the debug overlay (now with each AI's current goal).
 
-Both can be combined, e.g. `?character=dash&debug`.
+Parameters combine, e.g. `?character=dash&teammate=brick&ai=hard&debug`.
 
 Right now the game is a **shootaround** on the gym court: you, a teammate dummy
 and a defender dummy. Both hoops score; you attack whichever hoop is nearer. The

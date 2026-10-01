@@ -1,4 +1,4 @@
-import type { MatchState, SimEvent } from '../sim/types';
+import type { MatchState, SimEvent, TeamIndex } from '../sim/types';
 import './hud.css';
 
 const BANNER_SECONDS = 1.2;
@@ -26,11 +26,16 @@ export function bannerFor(event: SimEvent): string | null {
       return 'INTERCEPTED!';
     case 'alleyOop':
       return 'ALLEY-OOP!';
-    case 'phaseChange':
-      return event.to === 'finished' ? 'FINAL' : null;
     default:
-      return null;
+      return null; // the final is a sticky banner built from the state (spec C.6)
   }
+}
+
+/** Spec C.6: `FINAL 21–18 · YOU WIN!` from the human team's point of view. */
+export function finalBanner(state: MatchState, humanTeam: TeamIndex): string {
+  const [home, away] = state.score;
+  const won = state.score[humanTeam] > state.score[humanTeam === 0 ? 1 : 0];
+  return `FINAL ${home}–${away} · ${won ? 'YOU WIN!' : 'YOU LOSE'}`;
 }
 
 /** Score, clocks and event banners in the DOM (spec §9 "UI screens"). Never reads input. */
@@ -43,8 +48,15 @@ export class Hud {
   private readonly banner: HTMLDivElement;
   private readonly queue: string[] = [];
   private bannerLeft = 0;
+  private wasOvertime = false;
+  private final = false;
+  /** Last text written per element, so a frame with no change writes nothing to the DOM. */
+  private readonly written = new Map<HTMLElement, string>();
 
-  constructor(parent: HTMLElement) {
+  constructor(
+    parent: HTMLElement,
+    private readonly humanTeam: TeamIndex = 0,
+  ) {
     this.root = document.createElement('div');
     this.root.className = 'hud';
     this.root.innerHTML =
@@ -65,13 +77,38 @@ export class Hud {
     return el;
   }
 
+  private setText(el: HTMLElement, text: string): void {
+    if (this.written.get(el) === text) return;
+    el.textContent = text;
+    this.written.set(el, text);
+  }
+
   update(state: MatchState): void {
-    this.home.textContent = String(state.score[0]);
-    this.away.textContent = String(state.score[1]);
-    this.clock.hidden = state.settings.mode === 'shootaround';
-    this.clock.textContent = state.overtime ? 'OT' : formatClock(state.clockMs);
-    this.shotClock.textContent = String(Math.ceil(state.shotClockMs / 1000));
+    this.setText(this.home, String(state.score[0]));
+    this.setText(this.away, String(state.score[1]));
+    const hideClock = state.settings.mode === 'shootaround';
+    if (this.clock.hidden !== hideClock) this.clock.hidden = hideClock;
+    this.setText(this.clock, state.overtime ? 'OT' : formatClock(state.clockMs));
+    this.setText(this.shotClock, String(Math.ceil(state.shotClockMs / 1000)));
     this.shotClock.classList.toggle('is-low', state.shotClockMs <= 5000);
+
+    if (state.overtime && !this.wasOvertime) this.queue.push('OVERTIME!');
+    this.wasOvertime = state.overtime;
+
+    const final = state.phase === 'finished';
+    if (final) {
+      this.setText(this.banner, finalBanner(state, this.humanTeam));
+      this.banner.classList.add('is-final');
+      this.banner.hidden = false;
+    } else if (this.final) {
+      // A new match started: drop the sticky banner and any stale queue.
+      this.banner.classList.remove('is-final');
+      this.banner.hidden = true;
+      this.written.delete(this.banner);
+      this.queue.length = 0;
+      this.bannerLeft = 0;
+    }
+    this.final = final;
   }
 
   handleEvents(events: SimEvent[]): void {
@@ -82,14 +119,15 @@ export class Hud {
   }
 
   tick(dtSeconds: number): void {
+    if (this.final) return;
     this.bannerLeft -= dtSeconds;
     if (this.bannerLeft <= 0) {
       const next = this.queue.shift();
       if (next) {
-        this.banner.textContent = next;
+        this.setText(this.banner, next);
         this.banner.hidden = false;
         this.bannerLeft = BANNER_SECONDS;
-      } else {
+      } else if (!this.banner.hidden) {
         this.banner.hidden = true;
       }
     }
