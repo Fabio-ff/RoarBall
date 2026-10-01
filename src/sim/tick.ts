@@ -70,7 +70,7 @@ export function tick(
 
   // 6. bodies
   separatePlayers(players, court);
-  deflectBallOffPlayers(next);
+  deflectBallOffPlayers(next, events);
   tryPickup(next, events);
 
   // 7. rules

@@ -121,6 +121,12 @@ export function stepBall(state: MatchState, court: CourtDef, events: SimEvent[])
   if (ball.mode === 'free') stepFreeBall(ball, court, events);
 }
 
+/** Whether a player may take a loose ball: not knocked down, not the shooter during the cooldown. */
+export function canTakeLooseBall(state: MatchState, player: PlayerState): boolean {
+  if (player.action === 'stunned' || player.action === 'getup') return false;
+  return !(player.shotCooldownTicks > 0 && state.ball.lastShot?.shooter === player.id);
+}
+
 /**
  * Spec A.3: a player touching a low free ball takes it, except the shooter during the cooldown.
  * Contested balls go to the nearest player (XZ distance to the ball), ties to the lower id, so
@@ -132,8 +138,7 @@ export function tryPickup(state: MatchState, events: SimEvent[]): void {
   let best: PlayerState | null = null;
   let bestDistance = Infinity;
   for (const player of allPlayers(state)) {
-    if (player.action === 'stunned' || player.action === 'getup') continue;
-    if (player.shotCooldownTicks > 0 && ball.lastShot?.shooter === player.id) continue;
+    if (!canTakeLooseBall(state, player)) continue;
     const bottom = { x: player.pos.x, y: player.pos.y + PLAYER_CAPSULE_BOTTOM, z: player.pos.z };
     const top = { x: player.pos.x, y: player.pos.y + PLAYER_CAPSULE_TOP, z: player.pos.z };
     if (!sphereVsCapsule(ball.pos, ball.radius, bottom, top, PICKUP_RADIUS)) continue;
