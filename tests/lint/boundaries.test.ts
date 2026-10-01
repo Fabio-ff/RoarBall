@@ -63,6 +63,17 @@ describe('src/content boundary', () => {
     ).not.toHaveLength(0);
   });
 
+  for (const [name, code] of [
+    ['Date.now', 'export const t = Date.now();'],
+    ['new Date', 'export const d = new Date();'],
+    ['Date()', 'export const d = Date();'],
+    ['performance.now', 'export const p = performance.now();'],
+  ] as const) {
+    it(`rejects ${name}`, async () => {
+      expect(await errorsFor('src/content/probe.ts', code)).not.toHaveLength(0);
+    });
+  }
+
   it('accepts an ability written against the hook types only', async () => {
     expect(
       await errorsFor(
