@@ -3,7 +3,7 @@ import { giveBall, holdPosition } from './ball';
 import { hoopGeometry } from './hoop';
 import { clamp, v3DistanceXZ, type Vec3 } from './math';
 import { allPlayers, findPlayer } from './match';
-import { startJump } from './player-movement';
+import { isActionLocked, startJump } from './player-movement';
 import { nextFloat } from './rng';
 import { targetHoopIndex } from './shooting';
 import { SHOT_ACTIONS } from './types';
@@ -172,4 +172,30 @@ export function resolveShove(state: MatchState, shover: PlayerState, events: Sim
     ball.vel = { x: ux * POP_SPEED, y: POP_SPEED, z: uz * POP_SPEED };
   }
   events.push({ type: 'shove', by: shover.id, target: target.id });
+}
+
+/**
+ * Spec C.4: what pressing the action button without the ball would do right now, following
+ * tick.ts exactly — or null when nothing would happen (not live, airborne, action-locked,
+ * holding the ball, or the chosen move is on cooldown). A block on cooldown is a plain jump,
+ * as in the tick. The AI presses only when this returns the move it intends.
+ */
+export function resolveDefensivePress(
+  state: MatchState,
+  player: PlayerState,
+  court: CourtDef,
+): DefensiveChoice | null {
+  if (state.phase !== 'live' || !player.onGround || isActionLocked(player)) return null;
+  if (state.ball.holder === player.id) return null;
+  const choice = chooseDefensiveAction(state, player, court);
+  switch (choice) {
+    case 'block':
+      return player.cooldowns.block === 0 ? 'block' : 'jump';
+    case 'steal':
+      return player.cooldowns.steal === 0 ? 'steal' : null;
+    case 'shove':
+      return player.cooldowns.shove === 0 ? 'shove' : null;
+    default:
+      return 'jump';
+  }
 }
