@@ -4,10 +4,20 @@ import { chromium } from 'playwright';
 
 const PORT = 4173;
 const BASE = `http://localhost:${PORT}/`;
-const server = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
-  stdio: 'pipe',
-});
+const server = spawn(
+  process.execPath,
+  ['node_modules/vite/bin/vite.js', 'preview', '--port', String(PORT), '--strictPort'],
+  { stdio: 'pipe' },
+);
 const errors = [];
+let browser;
+
+// Whole-run watchdog: nothing may hang CI. unref'd, so it never keeps a finished run alive.
+setTimeout(() => {
+  console.error('smoke: watchdog timeout');
+  server.kill();
+  process.exit(1);
+}, 150_000).unref();
 
 async function waitForServer() {
   for (let i = 0; i < 60; i++) {
@@ -23,7 +33,7 @@ async function waitForServer() {
 
 async function run() {
   await waitForServer();
-  const browser = await chromium.launch({
+  browser = await chromium.launch({
     args: [
       '--use-gl=swiftshader',
       '--enable-unsafe-swiftshader',
@@ -58,7 +68,6 @@ async function run() {
   await page.click('[data-action="rematch"]', { force: true });
   await page.waitForSelector('.hud');
 
-  await browser.close();
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
   console.log('smoke: ok');
 }
@@ -68,4 +77,8 @@ run()
     console.error(e);
     process.exitCode = 1;
   })
-  .finally(() => server.kill());
+  .finally(async () => {
+    await browser?.close().catch(() => undefined);
+    server.kill();
+    process.exit(process.exitCode ?? 0);
+  });
