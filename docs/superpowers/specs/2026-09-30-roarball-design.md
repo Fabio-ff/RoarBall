@@ -1001,13 +1001,13 @@ Title → Setup → Match ⇄ Pause → Results → Rematch (Match) | Change set
 - **Setup**: four rows of cards — You, Teammate, Opponents (two slots, each with a "random"
   card), Court — and a difficulty toggle Easy / Fair / Hard (the C.3 profiles; default Fair),
   then START. A character card shows name, ability name and the seven 1..10 stats as bars; a
-  court card shows name, a palette swatch from its `dressing` and a one-line modifier text
-  (a new `CourtDef.blurb` string; content-only). Duplicate characters are allowed (as today).
+  court card shows name, a palette swatch from its `dressing`, its existing `description` and
+  the modifier's name (gym: "No modifier"). Duplicate characters are allowed (as today).
   No 3D previews (§9): cards are DOM only until phase 7.
 - **Match**: a `MatchScreen` owns scene, views, HUD, input wiring and loop; it is built on entry
   and disposes every Three.js geometry, material and texture plus all listeners on exit.
 - **Pause**: Esc, P, gamepad Start or the HUD ⏸ button. Pausing **stops the game loop** (the
-  sim is not stepped; the sim's `paused` phase stays unused). Options: Resume, Restart, Sound,
+  sim is not stepped; the sim's `paused` phase stays unused). Options: Resume, Restart, Sound, Music,
   Vibration, Reduce motion, Quit to title. The match auto-pauses when the tab is hidden.
 - **Results**: final score, WIN / LOSS (or OVERTIME WIN), and a box score per player — points,
   dunks, 3-pointers, assists, steals, blocks, ability uses — built in the app by a pure
@@ -1023,8 +1023,9 @@ Title → Setup → Match ⇄ Pause → Results → Rematch (Match) | Change set
 
 ### E.2 Persistence
 
-A small `storage` helper keeps **the last setup** and **the settings** (sound, music, SFX
-volume, vibration, reduce motion) in `localStorage` under versioned keys. Every read and write
+A small `storage` helper keeps **the last setup** and **the settings** (sound on/off, music
+on/off, vibration, reduce motion; volumes are fixed mix constants until the audio overhaul) in
+`localStorage` under versioned keys. Every read and write
 is wrapped in try/catch and validated; blocked or corrupt storage falls back to defaults. This
 refines §2 "nothing persisted": these are conveniences, not progress.
 
@@ -1043,7 +1044,7 @@ All sound is **synthesized with Web Audio** in `src/audio/` (no files; Howler de
 later audio overhaul). `audio/` reads sim types and events only and never writes state.
 
 - `AudioEngine`: one `AudioContext`, unlocked on the first user gesture, master / music / SFX
-  buses with volumes from E.2, a cap of 12 simultaneous SFX voices (oldest dropped).
+  buses switched by the E.2 settings, a cap of 12 simultaneous SFX voices (oldest dropped).
 - `SfxBank`: one synth patch per sound — bounce (gain from the `bounce` event's speed), swish,
   rim clang, backboard thud, shoe squeak (sharp direction change of a running player, from
   state), pass whoosh, steal snap, block slam, shove/knockdown thud, dunk slam, crowd bed that
