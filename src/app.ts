@@ -140,9 +140,10 @@ export class AppShell {
   private musicFor(): TrackId | null {
     switch (this.current) {
       case 'match':
-        return this.options ? courtTrack(this.options.courtId) : null;
+        return this.options && !this.handle?.paused ? courtTrack(this.options.courtId) : null;
       case 'results':
-        return this.lastResult && resultHeadline(this.lastResult) !== 'YOU LOSE' ? 'win' : 'lose';
+        if (!this.lastResult) return null;
+        return resultHeadline(this.lastResult) !== 'YOU LOSE' ? 'win' : 'lose';
       default:
         return 'menu';
     }

@@ -84,4 +84,20 @@ describe('MusicPlayer', () => {
     t.fns.forEach((fn) => fn());
     expect(ctx.nodes.length).toBe(before);
   });
+
+  it('after a stalled timer it skips missed steps instead of scheduling them in the past', () => {
+    const t = timers();
+    const { ctx, player } = make(t);
+    player.play(TRACKS.gym);
+    t.fns.forEach((fn) => fn());
+    const before = ctx.nodes.length;
+    ctx.currentTime = 5;
+    t.fns.forEach((fn) => fn()); // one tick right after the stall
+    ctx.currentTime = 5.1;
+    t.fns.forEach((fn) => fn());
+    const fresh = ctx.nodes.slice(before).filter((n) => n.started !== null);
+    expect(fresh.length).toBeGreaterThan(0);
+    expect(fresh.every((n) => (n.started as number) >= 5)).toBe(true);
+    expect(Math.max(...fresh.map((n) => n.started as number))).toBeLessThan(5.25);
+  });
 });

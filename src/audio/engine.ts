@@ -18,6 +18,8 @@ export class AudioEngine implements AudioSink {
   private music = true;
   private readonly player: MusicPlayer;
   private wanted: TrackId | null = null;
+  /** True once the wanted track has been started, so a finished jingle is not replayed. */
+  private started = false;
 
   constructor(
     readonly context: AudioContext,
@@ -85,11 +87,16 @@ export class AudioEngine implements AudioSink {
   /** Remembers the wanted track; it plays only while music is on. */
   setMusic(track: TrackId | null): void {
     this.wanted = track;
+    this.started = false;
     this.syncMusic();
   }
 
   private syncMusic(): void {
-    this.player.play(this.music && this.wanted ? TRACKS[this.wanted] : null);
+    const track = this.wanted ? TRACKS[this.wanted] : null;
+    if (!this.music || !track) return this.player.play(null);
+    if (!track.loop && this.started) return; // a jingle plays once per setMusic
+    this.started = true;
+    this.player.play(track);
   }
 
   duck(seconds: number): void {
@@ -104,9 +111,13 @@ export class AudioEngine implements AudioSink {
   setEnabled(sound: boolean, music: boolean): void {
     this.sound = sound;
     this.music = music;
-    this.master.gain.setValueAtTime(sound || music ? MIX.master : 0, this.context.currentTime);
-    this.sfxBus.gain.setValueAtTime(sound ? MIX.sfx : 0, this.context.currentTime);
-    this.musicBus.gain.setValueAtTime(music ? MIX.music : 0, this.context.currentTime);
+    const t = this.context.currentTime;
+    // Cancel first so a pending duck ramp cannot raise the bus after it is switched off.
+    for (const g of [this.master.gain, this.sfxBus.gain, this.musicBus.gain])
+      g.cancelScheduledValues(t);
+    this.master.gain.setValueAtTime(sound || music ? MIX.master : 0, t);
+    this.sfxBus.gain.setValueAtTime(sound ? MIX.sfx : 0, t);
+    this.musicBus.gain.setValueAtTime(music ? MIX.music : 0, t);
     this.syncMusic();
   }
 

@@ -62,6 +62,19 @@ export class MusicPlayer {
     if (!track) return;
     const dur = stepSeconds(track.bpm);
     const total = track.bars * 16;
+    const now = this.ctx.currentTime;
+    if (this.nextTime < now) {
+      // The timer was throttled (hidden tab, long stall): skip the missed steps instead of
+      // scheduling them all in the past at once.
+      const skip = Math.ceil((now - this.nextTime) / dur);
+      this.step += skip;
+      this.nextTime += skip * dur;
+      if (track.loop) this.step %= total;
+      else if (this.step >= total) {
+        this.stop();
+        return;
+      }
+    }
     const n = stepsToSchedule(this.nextTime, this.ctx.currentTime, LOOKAHEAD_S, dur);
     for (let i = 0; i < n; i++) {
       if (this.step >= total) {

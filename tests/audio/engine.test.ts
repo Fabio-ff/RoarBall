@@ -86,4 +86,29 @@ describe('AudioEngine music (plan decision 23)', () => {
     expect(t.clearInterval).toHaveBeenCalled();
     expect(engine.musicPlaying).toBeNull();
   });
+
+  it('a finished jingle is not replayed by setEnabled, nor restarted by a music toggle', () => {
+    const { ctx, engine, t } = makeWith();
+    engine.setMusic('win');
+    expect(engine.musicPlaying).toBe('win');
+    ctx.currentTime = 30;
+    t.fns.forEach((fn) => fn()); // finishes
+    expect(engine.musicPlaying).toBeNull();
+    engine.setEnabled(true, true);
+    expect(engine.musicPlaying).toBeNull();
+    engine.setMusic('lose');
+    engine.setEnabled(true, false);
+    engine.setEnabled(true, true);
+    expect(engine.musicPlaying).toBeNull(); // was cut off by the toggle; not restarted
+  });
+
+  it('setEnabled cancels pending ramps before setting the bus level', () => {
+    const { ctx, engine } = makeWith();
+    const spy = vi.spyOn(engine.musicBus.gain, 'cancelScheduledValues');
+    ctx.currentTime = 2;
+    engine.duck(1);
+    spy.mockClear();
+    engine.setEnabled(true, false);
+    expect(spy).toHaveBeenCalledWith(2);
+  });
 });
