@@ -55,21 +55,63 @@ export function laneBlocker(
   return blocker;
 }
 
-/** A point SIDE_STEP_DISTANCE perpendicular to me→rim on the side away from the blocker (C.5 step 6). */
-export function sideStepPoint(me: PlayerState, rim: Vec3, blocker: PlayerState): Vec3 {
+/** A blocker this close to the me→rim line (lateral, m) is dead ahead: no side is "away" (issue #92). */
+export const SIDE_STEP_TIE = 0.4;
+
+/** +1: the left-hand side of me→rim (−uz, ux); −1: the right-hand side. */
+export type DriveSide = 1 | -1;
+
+/** The signed lateral offset of `p` from the me→rim line (positive: left-hand side). */
+function lateralOf(me: PlayerState, rim: Vec3, p: Vec3): number {
+  const dx = rim.x - me.pos.x;
+  const dz = rim.z - me.pos.z;
+  const len = Math.hypot(dx, dz) || 1;
+  return (-dz / len) * (p.x - me.pos.x) + (dx / len) * (p.z - me.pos.z);
+}
+
+/**
+ * A point SIDE_STEP_DISTANCE perpendicular to me→rim on the side away from the blocker (C.5
+ * step 6). A blocker dead ahead (|lateral| < SIDE_STEP_TIE) has no "away" side: `tieSide` picks.
+ */
+export function sideStepPoint(
+  me: PlayerState,
+  rim: Vec3,
+  blocker: PlayerState,
+  tieSide: DriveSide = 1,
+): Vec3 {
   const dx = rim.x - me.pos.x;
   const dz = rim.z - me.pos.z;
   const len = Math.hypot(dx, dz) || 1;
   const ux = dx / len;
   const uz = dz / len;
-  // Left-hand perpendicular (−uz, ux); the blocker's lateral offset picks the opposite side.
-  const lateral = -uz * (blocker.pos.x - me.pos.x) + ux * (blocker.pos.z - me.pos.z);
-  const sign = lateral > 0 ? -1 : 1;
+  const lateral = lateralOf(me, rim, blocker.pos);
+  const sign = Math.abs(lateral) < SIDE_STEP_TIE ? tieSide : lateral > 0 ? -1 : 1;
   return {
     x: me.pos.x - uz * sign * SIDE_STEP_DISTANCE + ux * SIDE_STEP_FORWARD,
     y: 0,
     z: me.pos.z + ux * sign * SIDE_STEP_DISTANCE + uz * SIDE_STEP_FORWARD,
   };
+}
+
+/**
+ * The side for a dead-ahead blocker: the stored `driveSide`, else away from the nearest other
+ * opponent (the help defender; C.5 "on the side of the farther defender"). No RNG.
+ */
+export function deadAheadSide(
+  me: PlayerState,
+  rim: Vec3,
+  blocker: PlayerState,
+  opponents: readonly PlayerState[],
+  driveSide: DriveSide | null,
+): DriveSide {
+  if (driveSide !== null) return driveSide;
+  let help: PlayerState | null = null;
+  for (const o of opponents) {
+    if (o === blocker) continue;
+    if (!help || v3DistanceXZ(o.pos, me.pos) < v3DistanceXZ(help.pos, me.pos)) help = o;
+  }
+  if (!help) return 1;
+  return lateralOf(me, rim, help.pos) > 0 ? -1 : 1;
 }
 
 const SHOOT: AiGoal = { kind: 'shoot' };
@@ -95,7 +137,7 @@ export function evaluateShotForAi(
 
 /**
  * Spec C.5 "has ball", evaluated at a decision tick. RNG: one `perceive` draw per call.
- * Mutates memory.laneClosedCount only.
+ * Mutates memory.laneClosedCount only (reads memory.driveSide).
  */
 export function planWithBall(
   state: MatchState,
@@ -153,5 +195,7 @@ export function planWithBall(
     );
     return { kind: 'moveTo', spot, name };
   }
-  return { kind: 'drive', sideStep: blocker ? sideStepPoint(me, hoop.rimCenter, blocker) : null };
+  if (!blocker) return { kind: 'drive', sideStep: null };
+  const tieSide = deadAheadSide(me, hoop.rimCenter, blocker, opponents, memory.driveSide);
+  return { kind: 'drive', sideStep: sideStepPoint(me, hoop.rimCenter, blocker, tieSide) };
 }

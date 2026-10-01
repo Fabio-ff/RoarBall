@@ -33,7 +33,8 @@ export const AI_PROFILES: Readonly<Record<AiProfileId, Readonly<AiProfile>>> = O
   fair: Object.freeze({
     id: 'fair',
     reactionTicks: 15,
-    shootThreshold: 0.55,
+    // Issue #92: 0.55 → 0.48 so an open catch-and-shoot or pull-up happens now and then.
+    shootThreshold: 0.48,
     passBias: 0.1,
     perceptionNoise: 0.08,
     stealRate: 0.4,

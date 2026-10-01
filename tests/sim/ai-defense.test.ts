@@ -312,6 +312,7 @@ describe('decide (brain)', () => {
     m.lastPhase = 'live';
     m.goal = { kind: 'chase' };
     m.markId = 'home1';
+    m.driveSide = -1;
     const seed = m.rng.seed;
     s.phase = 'inbound';
     s.tick = 300;
@@ -320,6 +321,7 @@ describe('decide (brain)', () => {
     expect(m.markId).toBeNull();
     expect(m.nextDecisionTick).toBe(303); // index 1: phase 3 of the match clock
     expect(m.rng.seed).toBe(seed);
+    expect(m.driveSide).toBeNull(); // issue #92: cleared without a draw
     expect(m.lastPhase).toBe('inbound');
   });
 

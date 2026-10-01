@@ -3,6 +3,7 @@ import { v3DistanceXZ, type Vec3 } from '../math';
 import { targetHoopIndex } from '../shooting';
 import type { CourtDef, MatchState, PlayerState } from '../types';
 import type { AiGoal, AiMemory } from './memory';
+import { nextFloat } from '../rng';
 import { opponentsOf } from './offense';
 import { pickOpenSpot, type NamedSpot } from './spots';
 
@@ -16,7 +17,12 @@ export const CHASE_RADIUS = 3;
 export const REBOUND_RANGE = 5;
 export const REBOUND_FROM_RIM = 1.2;
 
-/** Pick (or keep) an open named spot around `hoop`, scored against `anchorPos` (the handler or the ball). */
+/**
+ * Pick (or keep) an open named spot around `hoop`, scored against `anchorPos` (the handler or the
+ * ball). RNG: one draw from the brain's private RNG on a fresh pick only (no current spot), none
+ * while a spot is held. The same roll picks among near-tied spots and sets `memory.driveSide`
+ * (issue #92). Off-ball decision ticks draw nothing else, so the one-draw rule (C.2) holds.
+ */
 export function planOffBall(
   state: MatchState,
   me: PlayerState,
@@ -29,8 +35,21 @@ export function planOffBall(
     memory.goal.kind === 'moveTo' && memory.goal.name !== null
       ? { name: memory.goal.name, spot: memory.goal.spot }
       : null;
-  const pick = pickOpenSpot(hoop, anchorPos, opponents, current);
+  let roll: number | null = null;
+  if (current === null) {
+    roll = nextFloat(memory.rng);
+    memory.driveSide = driveSideFromRoll(roll);
+  }
+  const pick = pickOpenSpot(hoop, anchorPos, opponents, current, roll);
   return { kind: 'moveTo', spot: pick.spot, name: pick.name };
+}
+
+/**
+ * A drive side from the spot roll without a second draw (issue #92): the parity of
+ * floor(roll × 64), which is (near enough) independent of which near-tied spot the roll chose.
+ */
+export function driveSideFromRoll(roll: number): 1 | -1 {
+  return Math.floor(roll * 64) % 2 === 0 ? 1 : -1;
 }
 
 /** Spec C.5: jump under the basket to invite the alley-oop, at most once per INVITE_EVERY_TICKS. */

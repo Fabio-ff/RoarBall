@@ -705,7 +705,7 @@ One `AiProfile` type, three presets selected with `?ai=` (all three AI players s
 | Field | easy | fair | hard | Meaning |
 |---|---|---|---|---|
 | `reactionTicks` | 24 | 15 | 8 | ticks a mark's shot or drive must be visible before reacting (jump-shot block window ≈ 20 ticks) |
-| `shootThreshold` | 0.65 | 0.55 | 0.45 | minimum perceived quality to shoot |
+| `shootThreshold` | 0.65 | 0.48 | 0.45 | minimum perceived quality to shoot (fair was 0.55; C.8, issue #92) |
 | `passBias` | 0.15 | 0.10 | 0.00 | how much better the teammate's shot must be to pass |
 | `perceptionNoise` | 0.15 | 0.08 | 0.03 | ± seeded jitter on perceived `shotQuality` |
 | `stealRate` | 0.2 | 0.4 | 0.6 | chance per decision tick to press when a steal is on |
@@ -836,6 +836,17 @@ Recorded at the Phase 4 reassessment; they refine C.2 and C.5 and are what the c
 - **Observed at launch** (fair profile, AI vs AI): no jump shots — a marked holder's quality
   is multiplied by 0.65, so even Ace open at 4 m sits at ≈ 0.50 < 0.55; scoring is dunks and
   layups, ≈ 25–30 points a side. Tuning facts for the tablet playtest, not defects.
+- **AI variety** (2026-10-02, issue #92; refines C.2, C.3, C.5): the teammate always ran to
+  the left corner and drove the same line, because both corners tie at the openness cap and
+  ties went to the first spot name.
+  - *Spot pick*: a fresh pick (no spot held) chooses uniformly among the spots scoring within
+    `SPOT_TIE_MARGIN` 0.25 of the best, using one draw from the brain's private RNG. Off-ball
+    decision ticks drew nothing before, so the one-draw rule holds. Hysteresis is unchanged.
+  - *Drive side*: a lane blocker within 0.4 m of the me→rim line has no "away" side. The
+    side-step then uses `memory.driveSide`, set from the same spot roll, or, when no roll is
+    stored (it is cleared at the inbound reset, with no draw), the side away from the help
+    defender.
+  - *Jumpers*: fair `shootThreshold` 0.55 → 0.48, for the occasional open catch-and-shoot.
 
 ## Appendix D — Phase 5 decisions (2026-10-01)
 
