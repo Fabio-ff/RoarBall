@@ -149,9 +149,11 @@ describe('planWithBall', () => {
   it('shoots above the threshold and drives below it', () => {
     const { s, me } = holderAt(4, 'home2'); // Ace, open, mid-range
     const m = createAiMemory('home2', 1, 0, false);
+    m.laneClosedCount = 2;
     expect(planWithBall(s, me, m, { ...exact, shootThreshold: 0.3 }, court)).toEqual({
       kind: 'shoot',
     });
+    expect(m.laneClosedCount).toBe(0); // only consecutive drive decisions extend the streak
     expect(planWithBall(s, me, m, { ...exact, shootThreshold: 0.99, passBias: 9 }, court)).toEqual({
       kind: 'drive',
       sideStep: null,
