@@ -1,0 +1,70 @@
+.screen-results {
+  gap: clamp(8px, 2vh, 20px);
+  overflow-y: auto;
+  justify-content: safe center;
+}
+.screen-results > * {
+  flex-shrink: 0;
+}
+.results-headline {
+  margin: 0;
+  font-size: clamp(32px, 7vw, 72px);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: 0.03em;
+  color: #9aa3ad;
+}
+.results-headline.is-win {
+  color: #2f80ed;
+}
+.results-score {
+  font:
+    900 clamp(36px, 8vw, 80px) / 1 system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.results-box {
+  border-collapse: collapse;
+  max-width: 100%;
+  font:
+    600 clamp(14px, 2.2vw, 20px) / 1.3 system-ui,
+    sans-serif;
+  font-variant-numeric: tabular-nums;
+}
+.results-box th,
+.results-box td {
+  padding: 6px 12px;
+  text-align: center;
+}
+.results-box th {
+  color: #9aa3ad;
+  font-size: 0.8em;
+  letter-spacing: 0.08em;
+}
+.results-box .results-name {
+  text-align: left;
+}
+.results-dot {
+  display: inline-block;
+  width: 0.7em;
+  height: 0.7em;
+  margin-right: 0.6em;
+  border-radius: 50%;
+  background: #2f80ed;
+}
+.results-box tr.team-1 .results-dot {
+  background: #eb5757;
+}
+.results-box tbody tr {
+  border-left: 4px solid transparent;
+  background: rgb(255 255 255 / 0.05);
+}
+.results-box tbody tr.is-you {
+  border-left-color: #ffb020;
+  background: rgb(255 176 32 / 0.14);
+}
+.results-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+}
