@@ -1,6 +1,8 @@
+import { ABILITIES } from '../content/abilities';
 import { DEFAULT_CHARACTER_ID, characters } from '../content/characters';
 import { DEFAULT_COURT_ID, courts } from '../content/courts';
 import { DEFAULT_AI_PROFILE_ID, isAiProfileId, type AiProfileId } from '../sim/ai/profile';
+import type { SetupCatalog } from '../ui/screens/setup';
 import {
   DEFAULT_DURATION_MS,
   DEFAULT_OPPONENT_IDS,
@@ -76,5 +78,32 @@ export function toGameOptions(
     seed,
     durationMs: DEFAULT_DURATION_MS,
     debug,
+  };
+}
+
+/** The data the Setup screen renders (`ui/` must not import `content/`, so the app passes it in). */
+export function buildSetupCatalog(): SetupCatalog {
+  return {
+    characters: characters.map((c) => ({
+      id: c.id,
+      name: c.name,
+      color: c.appearance.primaryColor,
+      abilityName: ABILITIES[c.abilityId]?.name ?? c.abilityId,
+      abilityIcon: ABILITIES[c.abilityId]?.icon ?? '',
+      stats: { ...c.stats },
+    })),
+    courts: courts.map((c) => ({
+      id: c.id,
+      name: c.name,
+      description: c.description,
+      modifierName: c.modifier?.name ?? 'No modifier',
+      floorColor: c.dressing.floorColor,
+      skyColor: c.lighting.skyColor,
+    })),
+    profiles: [
+      { id: 'easy', label: 'EASY' },
+      { id: 'fair', label: 'FAIR' },
+      { id: 'hard', label: 'HARD' },
+    ],
   };
 }
