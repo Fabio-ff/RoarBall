@@ -1,8 +1,11 @@
 import { Group, Mesh, MeshBasicMaterial, SphereGeometry, type Object3D } from 'three';
 import type { Vec3 } from '../sim/math';
 import { BurstPool } from './burst-pool';
+import { brighten } from './player-view';
 
 const FLASH_SECONDS = 0.4;
+/** Team colours are lightened toward white so the particles read as bright. */
+const BURST_BRIGHTEN = 0.35;
 const RIM_SHAKE_SECONDS = 0.5;
 const RIM_SHAKE_AMPLITUDE = 0.08;
 
@@ -28,7 +31,12 @@ export class EffectsView {
   }
 
   spawnBurst(pos: Vec3, color: number, size: 'small' | 'big'): void {
-    this.bursts.spawn(pos, color, size === 'big' ? 60 : 24, size === 'big' ? 5 : 3);
+    this.bursts.spawn(
+      pos,
+      brighten(color, BURST_BRIGHTEN),
+      size === 'big' ? 60 : 24,
+      size === 'big' ? 6 : 3.5,
+    );
   }
 
   spawnFlash(pos: Vec3, color = 0xffe066): void {

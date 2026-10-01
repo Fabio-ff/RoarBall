@@ -63,7 +63,30 @@ describe('AbilityFxView (plan decision 27)', () => {
   });
 });
 
+describe('AbilityFxView extras', () => {
+  it('Blur history advances per sim tick, not per render frame', () => {
+    const fx = new AbilityFxView();
+    const blur = with_('blur', { ticksLeft: 100, uses: 0 });
+    for (let i = 0; i < 30; i++) fx.update(blur, { x: i * 0.2, y: 0, z: 0 }, 0.016, 5);
+    expect(visibleNames(fx)).toEqual([]);
+    for (let t = 6; t < 16; t++) fx.update(blur, { x: t, y: 0, z: 0 }, 0.016, t);
+    expect(visibleNames(fx)).toEqual(['blurGhost0', 'blurGhost1', 'blurGhost2']);
+  });
+  it('Hot Hand rings stay on the floor when the player jumps', () => {
+    const fx = new AbilityFxView();
+    fx.update(with_('hotHand', { ticksLeft: null, uses: 1 }), { x: 0, y: 1.5, z: 0 }, 0.016);
+    const ring = fx.group.children.find((c) => c.name === 'hotRing0');
+    expect((ring?.position.y ?? 0) + fx.group.position.y).toBeCloseTo(0.03);
+  });
+});
+
 describe('ShockwavePool', () => {
+  it('reset hides every ring', () => {
+    const pool = new ShockwavePool();
+    pool.spawn({ x: 0, y: 0, z: 0 });
+    pool.reset();
+    expect(pool.group.children.some((c) => c.visible)).toBe(false);
+  });
   it('grows to the Earthquake radius in 0.5 s, then disappears', () => {
     const pool = new ShockwavePool();
     pool.spawn({ x: 1, y: 0, z: 2 });

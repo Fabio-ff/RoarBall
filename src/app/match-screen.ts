@@ -141,6 +141,7 @@ export class MatchScreen {
       pos: { x: 0, y: 0, z: 0 },
     };
     let trailGlow = false;
+    const fxPos = { x: 0, y: 0, z: 0 };
     const weather = new WeatherView(court);
     scene.scene.add(weather.group);
 
@@ -220,6 +221,11 @@ export class MatchScreen {
       seed += 1;
       session = buildSession(options, court, seed, human, intents);
       weather.reset();
+      effects.bursts.reset();
+      shockwaves.reset();
+      ballTrail.reset();
+      trailGlow = false;
+      broadcastCamera.resetShake();
       lastTickNumber = session.runner.current.tick;
       this.finishedAt = null;
       box = newBox();
@@ -258,15 +264,10 @@ export class MatchScreen {
           const b = findPlayer(next, id);
           if (a && b) {
             view.update(a, b, alpha, next.tick);
-            abilityFxViews.get(id)?.update(
-              b,
-              {
-                x: a.pos.x + (b.pos.x - a.pos.x) * alpha,
-                y: a.pos.y + (b.pos.y - a.pos.y) * alpha,
-                z: a.pos.z + (b.pos.z - a.pos.z) * alpha,
-              },
-              dt,
-            );
+            fxPos.x = a.pos.x + (b.pos.x - a.pos.x) * alpha;
+            fxPos.y = a.pos.y + (b.pos.y - a.pos.y) * alpha;
+            fxPos.z = a.pos.z + (b.pos.z - a.pos.z) * alpha;
+            abilityFxViews.get(id)?.update(b, fxPos, dt, next.tick);
           }
         }
         const holder = next.ball.holder === null ? undefined : findPlayer(next, next.ball.holder);

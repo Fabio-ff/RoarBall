@@ -12,6 +12,8 @@ import type { Vec3 } from '../sim/math';
 export const PARTICLE_CAPACITY = 300;
 export const PARTICLE_LIFE_S = 0.9;
 const GRAVITY = 9.8;
+/** Edge of a particle cube in metres: big enough to read at the broadcast camera distance. */
+export const PARTICLE_SIZE = 0.15;
 
 /** Pooled particle bursts (plan decision 24): one InstancedMesh, preallocated particle storage. */
 export class BurstPool {
@@ -30,7 +32,7 @@ export class BurstPool {
 
   constructor() {
     this.mesh = new InstancedMesh(
-      new BoxGeometry(0.06, 0.06, 0.06),
+      new BoxGeometry(PARTICLE_SIZE, PARTICLE_SIZE, PARTICLE_SIZE),
       new MeshBasicMaterial({ vertexColors: false }),
       PARTICLE_CAPACITY,
     );
@@ -39,6 +41,12 @@ export class BurstPool {
     this.mesh.name = 'burst-particles';
     // Allocate the colour attribute up front so update never allocates.
     this.mesh.setColorAt(0, this.color.set(0xffffff));
+  }
+
+  /** Kills every particle (match restart). */
+  reset(): void {
+    this.count = 0;
+    this.flush();
   }
 
   get alive(): number {

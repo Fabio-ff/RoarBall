@@ -25,6 +25,14 @@ export class BallTrail {
     this.line.visible = false;
   }
 
+  reset(): void {
+    this.filled = 0;
+    this.fade = 0;
+    this.wasFlying = false;
+    this.line.visible = false;
+    this.line.geometry.setDrawRange(0, 0);
+  }
+
   get visible(): boolean {
     return this.line.visible;
   }

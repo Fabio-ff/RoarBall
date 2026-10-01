@@ -46,3 +46,13 @@ describe('BallTrail (plan decision 26)', () => {
     expect(p.getX(1)).toBe(1);
   });
 });
+
+describe('BallTrail.reset', () => {
+  it('hides the trail at once', () => {
+    const trail = new BallTrail();
+    trail.update(ball('flight', 1), true, 0.016);
+    trail.reset();
+    expect(trail.visible).toBe(false);
+    expect(trail.line.geometry.drawRange.count).toBe(0);
+  });
+});

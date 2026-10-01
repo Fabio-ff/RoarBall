@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { BurstPool, PARTICLE_CAPACITY, PARTICLE_LIFE_S } from '../../src/render/burst-pool';
+import {
+  BurstPool,
+  PARTICLE_CAPACITY,
+  PARTICLE_LIFE_S,
+  PARTICLE_SIZE,
+} from '../../src/render/burst-pool';
 
 describe('BurstPool (plan decision 24)', () => {
   it('spawns up to capacity, recycling the oldest, and particles die after their life', () => {
@@ -31,5 +36,15 @@ describe('BurstPool (plan decision 24)', () => {
     expect(pool.alive).toBe(1);
     expect(pool.mesh.count).toBe(1);
     expect(pool.mesh.instanceMatrix.version).toBeGreaterThan(version);
+  });
+
+  it('uses large particles and reset kills them all', () => {
+    const pool = new BurstPool();
+    expect(PARTICLE_SIZE).toBeGreaterThanOrEqual(0.14);
+    expect(PARTICLE_SIZE).toBeLessThanOrEqual(0.16);
+    pool.spawn({ x: 0, y: 3, z: 0 }, 0xff0000, 10, 4, () => 0.5);
+    pool.reset();
+    expect(pool.alive).toBe(0);
+    expect(pool.mesh.count).toBe(0);
   });
 });

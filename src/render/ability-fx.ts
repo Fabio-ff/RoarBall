@@ -18,6 +18,7 @@ const SHOCKWAVE_POOL = 4;
 const HISTORY = 10;
 const GHOST_LAGS = [3, 6, 9] as const;
 const GHOST_OPACITY = [0.35, 0.2, 0.1] as const;
+const FLOOR_Y = 0.03;
 const ARC = (110 * Math.PI) / 180;
 
 /** Signature-ability visuals for one player (plan decision 27); all parts are built once and toggled. */
@@ -31,6 +32,7 @@ export class AbilityFxView {
   private readonly history = new Float32Array(HISTORY * 2);
   private filled = 0;
   private time = 0;
+  private lastTick: number | undefined;
 
   constructor() {
     this.aura = new Mesh(
@@ -68,7 +70,7 @@ export class AbilityFxView {
       );
       ring.name = `hotRing${i}`;
       ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.03;
+      ring.position.y = FLOOR_Y;
       ring.visible = false;
       this.rings.push(ring);
       this.group.add(ring);
@@ -92,7 +94,7 @@ export class AbilityFxView {
   }
 
   /** `pos` is the player's (interpolated) feet position. */
-  update(player: PlayerState, pos: Vec3, dt: number): void {
+  update(player: PlayerState, pos: Vec3, dt: number, tick?: number): void {
     this.time += dt;
     this.group.position.set(pos.x, pos.y, pos.z);
     const id = player.ability ? player.abilityId : null;
@@ -107,14 +109,21 @@ export class AbilityFxView {
     const uses = id === 'hotHand' ? (player.ability?.uses ?? 0) : 0;
     for (let i = 0; i < this.rings.length; i++) {
       const ring = this.rings[i];
-      if (ring) ring.visible = i < uses;
+      if (!ring) continue;
+      ring.visible = i < uses;
+      // The group follows the player's jump; the floor rings stay on the floor.
+      ring.position.y = FLOOR_Y - pos.y;
     }
 
     if (id === 'blur') {
-      this.history.copyWithin(2, 0, (HISTORY - 1) * 2);
+      // History advances once per sim tick (callers pass the tick; without one, every call).
+      if (tick === undefined || tick !== this.lastTick) {
+        this.lastTick = tick;
+        this.history.copyWithin(2, 0, (HISTORY - 1) * 2);
+        this.filled = Math.min(this.filled + 1, HISTORY);
+      }
       this.history[0] = pos.x;
       this.history[1] = pos.z;
-      this.filled = Math.min(this.filled + 1, HISTORY);
       for (let i = 0; i < this.ghosts.length; i++) {
         const ghost = this.ghosts[i];
         const lag = GHOST_LAGS[i] ?? 3;
@@ -157,6 +166,11 @@ export class ShockwavePool {
       this.group.add(ring);
       this.ages.push(SHOCKWAVE_S);
     }
+  }
+
+  reset(): void {
+    for (const child of this.group.children) child.visible = false;
+    this.ages.fill(SHOCKWAVE_S);
   }
 
   spawn(pos: Vec3): void {

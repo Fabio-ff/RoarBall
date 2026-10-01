@@ -60,3 +60,22 @@ describe('camera shake (plan decision 25)', () => {
     expect(cam.position.distanceTo(rest)).toBeLessThan(0.01);
   });
 });
+
+describe('camera shake extras', () => {
+  it('shakeOffset fills the out parameter in place', () => {
+    const out = { x: 9, y: 9, z: 9 };
+    expect(shakeOffset(0.4, 1, out)).toBe(out);
+    expect(out.z).toBe(0);
+    expect(out.x).toBeCloseTo(shakeOffset(0.4, 1).x);
+  });
+  it('resetShake stops a shake in progress', () => {
+    const cam = new PerspectiveCamera();
+    const bc = new BroadcastCamera(cam);
+    bc.update({ x: 0, y: 0, z: 0 }, 0.016);
+    const rest = cam.position.clone();
+    bc.shake(1);
+    bc.resetShake();
+    bc.update({ x: 0, y: 0, z: 0 }, 0.016);
+    expect(cam.position.distanceTo(rest)).toBeLessThan(0.01);
+  });
+});
