@@ -116,7 +116,8 @@ export function stepDefenceAction(
   }
 }
 
-function movingAway(holder: PlayerState, from: PlayerState): boolean {
+/** Spec B.4: the holder runs away from the stealer (the steal chance is halved). */
+export function movingAway(holder: PlayerState, from: PlayerState): boolean {
   const speed = Math.hypot(holder.vel.x, holder.vel.z);
   if (speed < AWAY_SPEED) return false;
   const dx = holder.pos.x - from.pos.x;

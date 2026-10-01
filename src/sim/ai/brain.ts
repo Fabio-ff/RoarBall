@@ -1,20 +1,22 @@
+import { arcPoint } from '../arc';
+import { TICK_DT } from '../constants';
 import { nearestOpponent } from '../defence';
 import { hoopGeometry } from '../hoop';
-import { v3DistanceXZ } from '../math';
+import { v3DistanceXZ, type Vec3 } from '../math';
 import { findPlayer } from '../match';
 import { isActionLocked } from '../player-movement';
 import { targetHoopIndex } from '../shooting';
 import { NO_INTENT } from '../types';
-import type { CourtDef, MatchState, PlayerIntent, PlayerState } from '../types';
+import type { CourtDef, MatchState, PlayerIntent, PlayerState, ShotFlight } from '../types';
 import { decidePress, markPosition, planDefence } from './defense';
-import { resetAiMemory, type AiGoal, type AiMemory } from './memory';
+import { nextCadenceTick, resetAiMemory, type AiGoal, type AiMemory } from './memory';
 import { planOffBall, planRebound, shouldChase, wantsAlleyOopInvite } from './offball';
 import { planWithBall } from './offense';
 import type { AiProfile } from './profile';
 import { steerTowards, wantsTurbo } from './steering';
 
 /** Spec §6 / C.2: re-plan at 10 Hz, steer every tick. */
-export const DECISION_INTERVAL_TICKS = 6;
+export { DECISION_INTERVAL_TICKS } from './memory';
 const CHASE_ARRIVE_RADIUS = 0.1;
 const DRIVE_ARRIVE_RADIUS = 0.2;
 
@@ -44,7 +46,7 @@ export function decide(
   const isDecisionTick = cadenceTick || state.possession !== memory.lastPlannedPossession;
   if (isDecisionTick) {
     memory.goal = plan(state, me, memory, profile, court);
-    if (cadenceTick) memory.nextDecisionTick = state.tick + DECISION_INTERVAL_TICKS;
+    if (cadenceTick) memory.nextDecisionTick = nextCadenceTick(state.tick + 1, memory.offset);
     memory.lastPlannedPossession = state.possession;
   }
   return finish(memory, act(state, me, memory, profile, court, isDecisionTick));
@@ -80,7 +82,9 @@ function plan(
   }
   if (ball.mode === 'flight' && ball.flight) {
     if (ball.flight.kind === 'shot') return planRebound(state, me, court);
-    if (ball.flight.receiver === me.id) return { kind: 'idle' }; // plant the feet for the catch
+    // The sim leads a pass by the receiver's velocity: run to where the arc ends, not stop dead.
+    if (ball.flight.receiver === me.id)
+      return { kind: 'moveTo', spot: passLanding(ball.flight, court), name: null };
     if (ball.flight.team !== me.team) return planDefence(state, me, memory);
     const receiver =
       ball.flight.receiver === null ? undefined : findPlayer(state, ball.flight.receiver);
@@ -91,6 +95,17 @@ function plan(
   return state.possession === null || state.possession === me.team
     ? planOffBall(state, me, memory, myHoop, ball.pos)
     : planDefence(state, me, memory);
+}
+
+/** Where a pass arc ends (XZ, on the floor): the point the sim checks the catch against. */
+export function passLanding(flight: ShotFlight, court: CourtDef): Vec3 {
+  const end = arcPoint(
+    flight.from,
+    flight.velocity,
+    court.physics.gravity,
+    flight.totalTicks * TICK_DT,
+  );
+  return { x: end.x, y: 0, z: end.z };
 }
 
 function act(

@@ -1,10 +1,10 @@
-import { nearestOpponent, resolveDefensivePress } from '../defence';
+import { movingAway, nearestOpponent, resolveDefensivePress } from '../defence';
 import { hoopGeometry } from '../hoop';
 import { clamp, v3DistanceXZ, type Vec3 } from '../math';
 import { findPlayer } from '../match';
 import { otherTeam } from '../phases';
 import { nextFloat } from '../rng';
-import { targetHoopIndex } from '../shooting';
+import { SHOT_TIMING, targetHoopIndex } from '../shooting';
 import { SHOT_ACTIONS } from '../types';
 import type { CourtDef, MatchState, PlayerId, PlayerState, TeamIndex } from '../types';
 import type { AiGoal, AiMemory } from './memory';
@@ -135,11 +135,23 @@ export function decidePress(
   if (press === null || press === 'jump') return false;
   if (press === 'block') {
     const holder = state.ball.holder === null ? undefined : findPlayer(state, state.ball.holder);
-    if (!holder || !SHOT_ACTIONS.has(holder.action)) return false; // a near-hoop holder is not worth a jump
+    if (!holder || !holder.shot || !SHOT_ACTIONS.has(holder.action)) return false; // a near-hoop holder is not worth a jump
+    // A press on the release tick lands only if the sim happens to step me before the shooter
+    // (team 0 first): a roster-order coin, not a reaction. Jump only while it can beat the release.
+    if (holder.actionTicks >= SHOT_TIMING[holder.shot.type].releaseTick) return false;
     return holder.actionTicks >= profile.reactionTicks;
   }
   if (!isDecisionTick) return false;
-  if (press === 'steal') return nextFloat(memory.rng) < profile.stealRate;
+  if (press === 'steal') {
+    // A reach at a holder running away is a half-chance that freezes me while they blow by.
+    const holder = state.ball.holder === null ? undefined : findPlayer(state, state.ball.holder);
+    if (holder) {
+      if (movingAway(holder, me)) return false;
+      const rim = hoopGeometry(court, targetHoopIndex(state, holder, court)).rimCenter;
+      if (isDriving(holder, rim)) return false;
+    }
+    return nextFloat(memory.rng) < profile.stealRate;
+  }
   // shove
   const target = nearestOpponent(state, me);
   if (!target) return false;
