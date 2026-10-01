@@ -132,6 +132,7 @@ export function tryPickup(state: MatchState, events: SimEvent[]): void {
   let best: PlayerState | null = null;
   let bestDistance = Infinity;
   for (const player of allPlayers(state)) {
+    if (player.action === 'stunned' || player.action === 'getup') continue;
     if (player.shotCooldownTicks > 0 && ball.lastShot?.shooter === player.id) continue;
     const bottom = { x: player.pos.x, y: player.pos.y + PLAYER_CAPSULE_BOTTOM, z: player.pos.z };
     const top = { x: player.pos.x, y: player.pos.y + PLAYER_CAPSULE_TOP, z: player.pos.z };

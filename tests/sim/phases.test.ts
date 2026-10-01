@@ -75,7 +75,8 @@ describe('phases', () => {
     expect(state.phase).toBe('live');
     expect(state.possession).toBe(1);
     expect(state.ball.holder).toBe('away1');
-    expect(findPlayer(state, 'away1')?.pos.x).toBeCloseTo(court.playArea.length / 2 - 1.5);
+    // Player separation (step 6) may nudge the receiver a few cm if the scorer stands next to them.
+    expect(findPlayer(state, 'away1')?.pos.x).toBeCloseTo(court.playArea.length / 2 - 1.5, 1);
     expect(state.shotClockMs).toBeGreaterThan(10_000); // reset at the inbound, then ran for a while
     expect(state.score[0]).toBe(2);
   });
@@ -206,5 +207,33 @@ describe('phases', () => {
     const { state, events } = run(s, 420);
     expect(events.some((e) => e.type === 'phaseChange' && e.to === 'inbound')).toBe(true);
     expect(state.ball.mode).toBe('held');
+  });
+
+  it('a buzzer-beater counts: the clock waits for a shot in flight', () => {
+    const s = run(createMatch({ ...base, durationMs: TICK_MS * 40 }, court, roster), 1).state;
+    const home = findPlayer(s, 'home1');
+    if (!home) throw new Error('no player');
+    home.pos = { x: hoopGeometry(court, 1).rimCenter.x - 4, y: 0, z: 0 };
+    home.facing = Math.PI / 2;
+    giveBall(s, home, []);
+    s.score = [0, 2];
+    // Press now: the release lands around tick 27, the clock expires at tick 40 with the ball in the air.
+    const { state, events } = run(s, 160, new Map([['home1', press]]));
+    const released = events.find((e) => e.type === 'shotReleased');
+    expect(released).toBeDefined();
+    // The clock hits zero at tick 40 with the ball in the air (released at ~27, lands at ~100):
+    // nothing may finish before the flight resolves.
+    const releasedAt = events.findIndex((e) => e.type === 'shotReleased');
+    const finishedAt = events.findIndex((e) => e.type === 'phaseChange' && e.to === 'finished');
+    if (released?.type === 'shotReleased' && released.made) {
+      expect(state.score[0]).toBe(2);
+      expect(state.overtime).toBe(true); // 2–2: the buzzer-beater forces overtime
+      expect(finishedAt).toBe(-1);
+      expect(state.phase).not.toBe('finished');
+    } else {
+      expect(finishedAt).toBeGreaterThan(releasedAt + 40);
+      expect(state.phase).toBe('finished');
+      expect(state.score).toEqual([0, 2]);
+    }
   });
 });

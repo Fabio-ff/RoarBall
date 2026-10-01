@@ -1,11 +1,13 @@
+import { stepLockedAction } from './actions';
 import { stepBall, tryPickup } from './ball';
+import { deflectBallOffPlayers, separatePlayers } from './bodies';
 import { buttonsOf, justPressed } from './buttons';
 import { TICK_DT } from './constants';
 import { allPlayers } from './match';
 import { receivingTeam, setPhase, stepClocks, stepPhases } from './phases';
 import { isActionLocked, startJump, stepPlayer, stepTurbo } from './player-movement';
 import { applyRules } from './rules';
-import { detectBasket, startShot, stepFlight, stepShotAction } from './shooting';
+import { detectBasket, startShot, stepFlight } from './shooting';
 import { NO_INTENT } from './types';
 import type { CourtDef, MatchState, PlayerId, PlayerIntent, PlayerState, SimEvent } from './types';
 
@@ -21,8 +23,8 @@ export interface TickResult {
  *   2. abilities           (phase 5)
  *   3. resolve intents → actions
  *   4. move players
- *   5. move ball
- *   6. collisions, pickup
+ *   5. move ball (held / flight / free, incl. floor, rim and board)
+ *   6. bodies: player separation, ball deflection, pickup
  *   7. rules
  *   8. scoring / phases
  *   9. timers
@@ -55,15 +57,16 @@ export function tick(
   if (next.ball.mode === 'flight') stepFlight(next.ball, court);
   else stepBall(next, court, events);
 
-  // 6. collisions with players: loose-ball pickup
+  // 6. bodies
+  separatePlayers(players, court);
+  deflectBallOffPlayers(next);
   tryPickup(next, events);
 
   // 7. rules
   for (const violation of applyRules(next)) {
     if (violation.ruleId === 'shotClock') {
       events.push({ type: 'shotClockViolation', team: violation.team });
-      next.pendingInbound =
-        next.settings.mode === 'shootaround' ? violation.team : receivingTeam(next, violation.team);
+      next.pendingInbound = receivingTeam(next, violation.team);
       setPhase(next, 'inbound', events);
     }
   }
@@ -82,6 +85,10 @@ export function tick(
   for (const player of players) {
     stepTurbo(player);
     if (player.shotCooldownTicks > 0) player.shotCooldownTicks -= 1;
+    if (player.cooldowns.block > 0) player.cooldowns.block -= 1;
+    if (player.cooldowns.steal > 0) player.cooldowns.steal -= 1;
+    if (player.cooldowns.shove > 0) player.cooldowns.shove -= 1;
+    if (player.callingForPassTicks > 0) player.callingForPassTicks -= 1;
     player.prevButtons = buttonsOf(intentFor(player));
   }
 
@@ -96,7 +103,7 @@ function resolveAction(
   events: SimEvent[],
 ): void {
   if (isActionLocked(player)) {
-    stepShotAction(state, player, court, events);
+    stepLockedAction(state, player, court, events);
     return;
   }
   const hasBall = state.ball.holder === player.id;

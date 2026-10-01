@@ -71,6 +71,26 @@ export function sphereVsRing(
   return { normal, depth: reach - dist };
 }
 
+/** Contact of a sphere with a capsule (segment a→b, radius), or null. */
+export function sphereVsCapsuleContact(
+  center: Vec3,
+  radius: number,
+  a: Vec3,
+  b: Vec3,
+  capsuleRadius: number,
+): Contact | null {
+  const ab = v3Sub(b, a);
+  const lengthSq = v3Dot(ab, ab);
+  const t = lengthSq > EPSILON ? clamp(v3Dot(v3Sub(center, a), ab) / lengthSq, 0, 1) : 0;
+  const closest = v3Add(a, v3Scale(ab, t));
+  const delta = v3Sub(center, closest);
+  const dist = v3Length(delta);
+  const reach = radius + capsuleRadius;
+  if (dist >= reach) return null;
+  const normal = dist > EPSILON ? v3Scale(delta, 1 / dist) : { x: 1, y: 0, z: 0 };
+  return { normal, depth: reach - dist };
+}
+
 /** True when the sphere overlaps the capsule with axis segment a→b. */
 export function sphereVsCapsule(
   center: Vec3,
@@ -79,11 +99,7 @@ export function sphereVsCapsule(
   b: Vec3,
   capsuleRadius: number,
 ): boolean {
-  const ab = v3Sub(b, a);
-  const lengthSq = v3Dot(ab, ab);
-  const t = lengthSq > EPSILON ? clamp(v3Dot(v3Sub(center, a), ab) / lengthSq, 0, 1) : 0;
-  const closest = v3Add(a, v3Scale(ab, t));
-  return v3Length(v3Sub(center, closest)) < radius + capsuleRadius;
+  return sphereVsCapsuleContact(center, radius, a, b, capsuleRadius) !== null;
 }
 
 /**

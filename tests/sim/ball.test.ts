@@ -92,6 +92,22 @@ describe('holding and pickup', () => {
     expect(h.y).toBeCloseTo(0.95);
   });
 
+  it('a stunned player cannot pick up a ball at their feet', () => {
+    const state = createMatch(settings, court, [{ id: 'p', team: 0, characterId: 'placeholder' }]);
+    state.phase = 'live';
+    const p = findPlayer(state, 'p');
+    if (!p) throw new Error('no player');
+    p.action = 'stunned';
+    state.ball.pos = { x: p.pos.x + 0.3, y: BALL_RADIUS, z: p.pos.z };
+    state.ball.mode = 'free';
+    state.ball.holder = null;
+    tryPickup(state, []);
+    expect(state.ball.mode).toBe('free');
+    p.action = 'idle';
+    tryPickup(state, []);
+    expect(state.ball.mode).toBe('held');
+  });
+
   it('a nearby free ball is picked up and possession changes', () => {
     const state = createMatch(settings, court, [{ id: 'p', team: 0, characterId: 'placeholder' }]);
     state.phase = 'live';

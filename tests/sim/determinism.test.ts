@@ -98,7 +98,7 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(play()))).toMatchInlineSnapshot(`"264c616d"`);
+    expect(fnv1a(JSON.stringify(play()))).toMatchInlineSnapshot(`"40ecd303"`);
   });
 
   it('the short-clock run reaches violations and the end of the match, deterministically', () => {
@@ -111,6 +111,6 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned short-clock hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(playShort().state))).toMatchInlineSnapshot(`"1cb20f2f"`);
+    expect(fnv1a(JSON.stringify(playShort().state))).toMatchInlineSnapshot(`"d7b2c3ab"`);
   });
 });

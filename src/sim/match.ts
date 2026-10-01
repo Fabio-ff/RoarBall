@@ -45,6 +45,7 @@ export function createMatch(
     possession: null,
     pendingInbound: null,
     overtime: false,
+    buzzerPending: false,
     ball: {
       pos: { x: 0, y: BALL_RADIUS, z: 0 },
       vel: { x: 0, y: 0, z: 0 },
@@ -84,6 +85,10 @@ function createPlayer(entry: RosterEntry, indexInTeam: number, court: CourtDef):
     prevButtons: { ...NO_BUTTONS },
     shot: null,
     shotCooldownTicks: 0,
+    cooldowns: { block: 0, steal: 0, shove: 0 },
+    stunTicks: 0,
+    callingForPassTicks: 0,
+    targetId: null,
     stats: entry.character ? resolveStats(entry.character) : { ...DEFAULT_STATS },
   };
 }

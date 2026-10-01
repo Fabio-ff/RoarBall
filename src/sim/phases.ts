@@ -28,9 +28,9 @@ export function setPhase(state: MatchState, to: MatchPhase, events: SimEvent[]):
   state.phaseTicks = 0;
 }
 
-/** Match: the scored-on team. Shootaround: the scorer keeps practising. */
+/** Match: the scored-on team. Shootaround: always team 0 (spec B.1), whoever scored. */
 export function receivingTeam(state: MatchState, scoringTeam: TeamIndex): TeamIndex {
-  if (state.settings.mode === 'shootaround') return scoringTeam;
+  if (state.settings.mode === 'shootaround') return 0;
   return scoringTeam === 0 ? 1 : 0;
 }
 
@@ -131,9 +131,8 @@ export function stepPhases(
           points: basket.points,
           shotType: basket.shotType,
         });
-        if (state.overtime) {
-          setPhase(state, 'finished', events);
-          return;
+        if (state.overtime || state.buzzerPending) {
+          if (finishOrOvertime(state, events)) return;
         }
         state.pendingInbound = receivingTeam(state, basket.team);
         setPhase(state, 'scored', events);
@@ -157,9 +156,33 @@ export function stepClocks(state: MatchState, events: SimEvent[], rimHitThisTick
   else state.shotClockMs = Math.max(0, state.shotClockMs - TICK_MS);
 
   if (state.settings.mode !== 'match' || state.overtime) return;
+  if (state.buzzerPending) {
+    // Spec B.5: the buzzer waits for a shot already in the air.
+    if (!shotInFlight(state)) finishOrOvertime(state, events);
+    return;
+  }
   state.clockMs = Math.max(0, state.clockMs - TICK_MS);
   if (state.clockMs === 0) {
-    if (state.score[0] === state.score[1]) state.overtime = true;
-    else setPhase(state, 'finished', events);
+    if (shotInFlight(state)) state.buzzerPending = true;
+    else finishOrOvertime(state, events);
   }
+}
+
+/** Ends regulation: a tie goes to sudden death, otherwise the match is over. True when finished. */
+export function finishOrOvertime(state: MatchState, events: SimEvent[]): boolean {
+  state.buzzerPending = false;
+  if (state.score[0] === state.score[1]) {
+    state.overtime = true;
+    return false;
+  }
+  setPhase(state, 'finished', events);
+  return true;
+}
+
+function shotInFlight(state: MatchState): boolean {
+  return (
+    state.ball.mode === 'flight' &&
+    state.ball.flight?.kind === 'shot' &&
+    state.ball.lastShot !== null
+  );
 }

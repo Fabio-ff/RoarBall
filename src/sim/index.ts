@@ -14,3 +14,5 @@ export * from './arc';
 export * from './shooting';
 export * from './rules';
 export * from './phases';
+export * from './actions';
+export * from './bodies';

@@ -1,5 +1,5 @@
 import { clamp, moveTowards, v2Length, v2Normalize } from './math';
-import { SHOT_ACTIONS } from './types';
+import { LOCKED_ACTIONS } from './types';
 import type { CourtDef, PlayerAction, PlayerIntent, PlayerState } from './types';
 
 /** Stick magnitudes below this count as no input. */
@@ -7,9 +7,9 @@ const MOVE_DEADZONE = 0.1;
 /** Below this speed (m/s) the player is idle. */
 const IDLE_SPEED = 0.05;
 
-/** Shots lock the player out of input until the animation ends (spec §4.4). */
+/** Shots, passes, defensive moves and knockdowns lock out input until they end (spec §4.4, B.3). */
 export function isActionLocked(player: PlayerState): boolean {
-  return SHOT_ACTIONS.has(player.action);
+  return LOCKED_ACTIONS.has(player.action);
 }
 
 /** Leaves the ground with the given vertical speed; gravity applies from the next step. */
