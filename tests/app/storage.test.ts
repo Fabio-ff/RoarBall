@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_SETUP } from '../../src/app/setup-model';
 import {
   DEFAULT_SETTINGS,
   loadSettings,
+  loadSetup,
   saveSettings,
+  saveSetup,
   type StorageLike,
 } from '../../src/app/storage';
 
@@ -64,5 +67,24 @@ describe('settings storage (spec E.2)', () => {
   it('never throws when saving fails', () => {
     expect(() => saveSettings(DEFAULT_SETTINGS, throwing)).not.toThrow();
     expect(() => saveSettings(DEFAULT_SETTINGS, null)).not.toThrow();
+  });
+});
+
+describe('setup storage (spec E.2)', () => {
+  it('round-trips and sanitizes', () => {
+    const store = memory();
+    const setup = {
+      ...DEFAULT_SETUP,
+      characterId: 'dash',
+      opponentIds: ['random', 'ace'] as [string, string],
+    };
+    saveSetup(setup, store);
+    expect(Object.keys(store.data)).toEqual(['roarball.setup.v1']);
+    expect(loadSetup(store)).toEqual(setup);
+    expect(loadSetup(memory({ 'roarball.setup.v1': '{"characterId":"zz"}' }))).toEqual(
+      DEFAULT_SETUP,
+    );
+    expect(loadSetup(throwing)).toEqual(DEFAULT_SETUP);
+    expect(() => saveSetup(setup, throwing)).not.toThrow();
   });
 });
