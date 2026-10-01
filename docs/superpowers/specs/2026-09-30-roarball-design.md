@@ -619,7 +619,9 @@ Until menus exist (phase 6) the human's character is chosen with `?character=<id
   (0.35 s + 0.05 s/m), low arc. At arrival the receiver takes the ball if within reach
   (0.9 m); otherwise it is loose.
 - Interception: during a pass flight any **opponent** whose capsule overlaps the ball takes
-  it (`intercept` event, possession change). Teammates other than the receiver do not.
+  it (`intercept` event, possession change), except opponents within 1 m of the passer
+  during the first 6 ticks of the flight (the ball is still leaving the hands). Teammates
+  other than the receiver do not.
 - Alley-oop: PASS while the teammate is airborne within 3 m of the attacking hoop makes a
   lob (higher, slower arc to a point above the rim); if the receiver is still airborne
   near the rim at arrival, the catch starts a dunk immediately.
@@ -627,11 +629,14 @@ Until menus exist (phase 6) the human's character is chosen with `?character=<id
 
 ### B.4 Defence details
 
-- Context-sensitive action without the ball: **block** if the nearest opponent holds the
-  ball and is mid-shot or within 3 m of the hoop; else **steal** if the ball handler is
-  within reach; else **shove** the nearest opponent within reach in front.
+- Context-sensitive action without the ball, in this order: **block** if the opponent
+  holder is mid-shot; else **steal** if the holder is on the ground within reach; else
+  **block** if the holder is within 3 m of the hoop; else **shove** the nearest opponent
+  within reach in front; else jump. (Steal before the near-hoop block, so a holder in the
+  paint can still be stolen from.)
 - Block: a jump with arms up. A shot released within 1.2 m horizontally while the blocker
-  is rising and whose hand (feet + 2.3 m) is at or above the release height is deflected:
+  is rising and whose hand (feet + 2.6 m) is at or above the release height is deflected
+  (about a 330 ms window after the shooter's press for a jump shot):
   the flight is cancelled and the ball goes free, knocked down and away. Dunks are blocked
   only by a block that started before the dunk did.
 - Defender term in `shotQuality`: for each opponent at distance `d` (m) compute
@@ -644,7 +649,8 @@ Until menus exist (phase 6) the human's character is chosen with `?character=<id
   away. Failure just costs the animation and cooldown.
 - Shove: 20-tick lunge, 60-tick cooldown; at tick 5 the nearest opponent within 1.2 m in
   front is `stunned` for `30 + 6·power` ticks (×1.5 with turbo), minus `3·victimPower`,
-  min 20; the ball pops loose; a shot in progress is cancelled; `getup` (20 ticks) follows.
+  min 20; the ball pops loose; a shot in progress is cancelled; `getup` (20 ticks) follows,
+  then 30 ticks of immunity. Players who are stunned, getting up or immune cannot be shoved.
 - Player–player soft separation (§4.2 step 6) and ball-vs-player deflection for free
   balls above pickup height (A.2) arrive with this phase.
 
