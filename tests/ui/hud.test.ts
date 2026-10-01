@@ -379,3 +379,40 @@ describe('Hud pause button and final banner (spec E.1, plan decision 12)', () =>
     hud.dispose();
   });
 });
+
+describe('Hud frames with nothing changed', () => {
+  it('mutate no DOM after the first frame (100 updates and ticks)', () => {
+    const parent = document.createElement('div');
+    document.body.appendChild(parent);
+    const hud = new Hud(parent, 0, { humanId: 'home1', abilities: ABILITIES });
+    const state = createMatch(settings, court, [
+      { id: 'home1', team: 0, characterId: 'brick', character: getCharacter('brick') },
+      { id: 'away1', team: 1, characterId: 'dash', character: getCharacter('dash') },
+    ]);
+    const me = findPlayer(state, 'home1');
+    if (!me) throw new Error('no human');
+    me.charge = 40;
+    hud.update(state);
+    const root = parent.querySelector('.hud');
+    if (!root) throw new Error('no hud');
+    const observer = new MutationObserver(() => undefined);
+    observer.observe(root, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
+    for (let i = 0; i < 100; i++) {
+      hud.update(state);
+      hud.tick(0.016);
+    }
+    expect(observer.takeRecords()).toHaveLength(0);
+    // The observer does see a real change (the check can fail).
+    me.charge = 80;
+    hud.update(state);
+    expect(observer.takeRecords().length).toBeGreaterThan(0);
+    observer.disconnect();
+    hud.dispose();
+    parent.remove();
+  });
+});

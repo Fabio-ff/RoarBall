@@ -36,12 +36,17 @@ export function rainVelocity(gust: Vec3 | null): Vec3 {
     : { x: 0, y: -RAIN_FALL_SPEED, z: 0 };
 }
 
-function emberVelocity(gust: Vec3 | null): Vec3 {
-  return {
-    x: (gust?.x ?? 0) * EMBER_WIND_SPEED,
-    y: EMBER_RISE_SPEED,
-    z: (gust?.z ?? 0) * EMBER_WIND_SPEED,
-  };
+/** Writes the particle velocity into `out` (no allocation: the per-frame path). */
+function velocityInto(out: Vec3, rain: boolean, gust: Vec3 | null): void {
+  if (rain) {
+    out.x = gust ? gust.x * RAIN_WIND_SPEED : 0;
+    out.y = -RAIN_FALL_SPEED;
+    out.z = gust ? gust.z * RAIN_WIND_SPEED : 0;
+  } else {
+    out.x = (gust?.x ?? 0) * EMBER_WIND_SPEED;
+    out.y = EMBER_RISE_SPEED;
+    out.z = (gust?.z ?? 0) * EMBER_WIND_SPEED;
+  }
 }
 
 /**
@@ -61,6 +66,7 @@ export class WeatherView {
   private readonly position = new Vector3();
   private readonly scale = new Vector3(1, 1, 1);
   private readonly axis = new Vector3();
+  private readonly velocity: Vec3 = { x: 0, y: 0, z: 0 };
 
   constructor(
     court: CourtDef,
@@ -110,8 +116,8 @@ export class WeatherView {
 
   update(dtSeconds: number): void {
     if (!this.mesh) return;
-    const rain = this.kind === 'rain';
-    const v = rain ? rainVelocity(this.gust) : emberVelocity(this.gust);
+    const v = this.velocity;
+    velocityInto(v, this.kind === 'rain', this.gust);
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
       if (!p) continue;
@@ -140,7 +146,8 @@ export class WeatherView {
     const mesh = this.mesh;
     if (!mesh) return;
     // Streaks lie along their velocity (pointing up the fall line); embers are round.
-    const v = this.kind === 'rain' ? rainVelocity(this.gust) : emberVelocity(this.gust);
+    const v = this.velocity;
+    velocityInto(v, this.kind === 'rain', this.gust);
     this.axis.set(-v.x, -v.y, -v.z);
     if (v.y > 0) this.axis.negate();
     this.rotation.setFromUnitVectors(UP, this.axis.normalize());
