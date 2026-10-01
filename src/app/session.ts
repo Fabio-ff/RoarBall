@@ -42,10 +42,10 @@ export function buildRoster(options: GameOptions): RosterEntry[] {
   ];
 }
 
-/** Spec A.5 defaults; only the seed and the mode vary. */
+/** Spec A.5 defaults; the seed, mode and duration vary. */
 export function buildSettings(options: GameOptions, court: CourtDef, seed: number): MatchSettings {
   return {
-    durationMs: 180_000,
+    durationMs: options.durationMs,
     shotClockMs: 14_000,
     seed,
     ruleIds: ['shotClock'],
@@ -70,6 +70,37 @@ export function primeHeldButtons(
       const intent = held.get(player.id);
       if (intent) player.prevButtons = buttonsOf(intent);
     }
+  }
+}
+
+/**
+ * Samples the human controller once (which clears the keyboard's press latches) and treats that
+ * sample as held: the key that resumed or restarted the match is not a press in play (spec D.6).
+ */
+export function primeHumanInput(
+  state: MatchState,
+  human: Controller,
+  held: Map<PlayerId, PlayerIntent>,
+): void {
+  held.set(HUMAN_ID, human(state));
+  primeHeldButtons(state, held);
+}
+
+/**
+ * Priming must happen on the first tick, not inside the menu keydown: the keyboard backend
+ * latches the same key after the menu listener ran. `request()` there, `run()` before sampling.
+ */
+export class PendingPrime {
+  private pending = false;
+
+  request(): void {
+    this.pending = true;
+  }
+
+  run(state: MatchState, human: Controller, held: Map<PlayerId, PlayerIntent>): void {
+    if (!this.pending) return;
+    this.pending = false;
+    primeHumanInput(state, human, held);
   }
 }
 

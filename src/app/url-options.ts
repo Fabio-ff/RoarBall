@@ -13,8 +13,21 @@ export interface GameOptions {
   aiProfile: AiProfileId;
   seed: number;
   debug: boolean;
+  /** Match length (spec A.5 default; `?duration=` seconds, E.1). */
+  durationMs: number;
 }
 
+export const DEFAULT_DURATION_MS = 180_000;
+export const MATCH_PARAMS = [
+  'mode',
+  'character',
+  'teammate',
+  'opponents',
+  'court',
+  'ai',
+  'seed',
+  'duration',
+] as const;
 export const DEFAULT_TEAMMATE_ID = 'ace';
 export const DEFAULT_OPPONENT_IDS: readonly [string, string] = ['brick', 'dash'];
 /** Shootaround stays reproducible run to run, as in Phase 3. */
@@ -26,6 +39,19 @@ function characterOr(value: string | null | undefined, fallback: string): string
 
 function courtOr(value: string | null): string {
   return value && courts.some((c) => c.id === value) ? value : DEFAULT_COURT_ID;
+}
+
+/** Spec E.1: any match parameter skips the menus; `?debug` alone does not. */
+export function hasMatchParams(search: string): boolean {
+  const params = new URLSearchParams(search);
+  return MATCH_PARAMS.some((name) => params.has(name));
+}
+
+function durationOr(value: string | null): number {
+  const seconds = Number.parseInt(value ?? '', 10);
+  return Number.isFinite(seconds) && seconds >= 5 && seconds <= 600
+    ? seconds * 1000
+    : DEFAULT_DURATION_MS;
 }
 
 /** `now` (ms) seeds a match when `?seed=` is absent, so every game is different. */
@@ -53,5 +79,6 @@ export function readGameOptions(search: string, now: number): GameOptions {
     aiProfile: ai !== null && isAiProfileId(ai) ? ai : DEFAULT_AI_PROFILE_ID,
     seed,
     debug: params.has('debug'),
+    durationMs: durationOr(params.get('duration')),
   };
 }

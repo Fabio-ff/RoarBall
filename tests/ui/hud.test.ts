@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ABILITIES } from '../../src/content/abilities';
 import { getCharacter } from '../../src/content/characters';
 import { getCourt } from '../../src/content/courts';
@@ -310,5 +310,72 @@ describe('Hud ability bar, ability banners and the GUST chip (spec D.6)', () => 
     expect(el('.hud-banner').hidden).toBe(true); // the stale queue is gone
     expect(el('.hud-ability-fill').style.width).toBe('0%');
     expect(el('.hud-ability-status').textContent).toBe('');
+  });
+});
+
+describe('Hud pause button and final banner (spec E.1, plan decision 12)', () => {
+  const roster = [
+    { id: 'home1', team: 0 as const, characterId: 'brick', character: getCharacter('brick') },
+    { id: 'home2', team: 0 as const, characterId: 'ace', character: getCharacter('ace') },
+    { id: 'away1', team: 1 as const, characterId: 'dash', character: getCharacter('dash') },
+  ];
+
+  it('renders a ⏸ button that calls onPause', () => {
+    const parent = document.createElement('div');
+    const onPause = vi.fn();
+    const hud = new Hud(parent, 0, { onPause });
+    const button = parent.querySelector<HTMLButtonElement>('.hud-pause');
+    expect(button?.getAttribute('aria-label')).toBe('Pause');
+    expect(button?.hidden).toBe(false);
+    button?.click();
+    expect(onPause).toHaveBeenCalledOnce();
+    hud.dispose();
+  });
+
+  it('hides the ⏸ button when there is no onPause', () => {
+    const parent = document.createElement('div');
+    const hud = new Hud(parent, 0);
+    expect(parent.querySelector<HTMLButtonElement>('.hud-pause')?.hidden).toBe(true);
+    hud.dispose();
+  });
+
+  it('shows the game-ending basket banner before the sticky final', () => {
+    const parent = document.createElement('div');
+    const hud = new Hud(parent, 0);
+    const state = createMatch(settings, court, roster);
+    hud.handleEvents(
+      [{ type: 'basket', playerId: 'home1', team: 0, points: 2, shotType: 'dunk' }],
+      state,
+    );
+    const finished = { ...state, phase: 'finished' as const, score: [21, 18] as [number, number] };
+    hud.update(finished);
+    hud.tick(0.016);
+    const banner = parent.querySelector<HTMLDivElement>('.hud-banner');
+    expect(banner?.textContent).toBe('DUNK!');
+    hud.tick(1.3);
+    hud.update(finished);
+    expect(banner?.textContent).toMatch(/^FINAL 21–18/);
+    expect(banner?.hidden).toBe(false);
+    expect(banner?.classList.contains('is-final')).toBe(true);
+    // It stays: further ticks and updates leave the final up.
+    hud.tick(5);
+    hud.update(finished);
+    expect(banner?.hidden).toBe(false);
+    expect(banner?.textContent).toMatch(/^FINAL 21–18/);
+    hud.dispose();
+  });
+
+  it('shows the final from tick alone once the queue drains, with no update in between', () => {
+    const parent = document.createElement('div');
+    const hud = new Hud(parent, 0);
+    const state = createMatch(settings, court, roster);
+    hud.handleEvents([{ type: 'steal', by: 'home1', from: 'away1' }], state);
+    hud.update({ ...state, phase: 'finished' as const });
+    hud.tick(0.016);
+    hud.tick(1.3);
+    const banner = parent.querySelector<HTMLDivElement>('.hud-banner');
+    expect(banner?.hidden).toBe(false);
+    expect(banner?.textContent).toMatch(/^FINAL/);
+    hud.dispose();
   });
 });
