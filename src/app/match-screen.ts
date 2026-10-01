@@ -148,7 +148,7 @@ export class MatchScreen {
       this.finishedAt = null;
     };
 
-    this.primeHuman = (): void => primeHumanInput(session.runner.current, human, intents);
+    this.primeHuman = (): void => this.prime.request();
 
     this.loop = new GameLoop(
       () => {
