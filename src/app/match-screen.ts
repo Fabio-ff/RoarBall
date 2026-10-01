@@ -5,6 +5,8 @@ import { BoxScore, type MatchResult } from './box-score';
 import { buildRoster, buildSession, HUMAN_ID, PendingPrime } from './session';
 import type { Settings } from './storage';
 import type { GameOptions } from './url-options';
+import { AudioDirector } from '../audio/director';
+import type { AudioSink } from '../audio/sink';
 import { ABILITIES } from '../content/abilities';
 import { getCharacter } from '../content/characters';
 import { getCourt } from '../content/courts';
@@ -40,6 +42,8 @@ export interface MatchScreenDeps {
   onFinished(result: MatchResult): void;
   onQuit(): void;
   onSettingsChange(settings: Settings): void;
+  /** The shell's current sink; it may swap from null to the real engine after the first gesture. */
+  sink: () => AudioSink;
 }
 
 /**
@@ -153,6 +157,7 @@ export class MatchScreen {
         })),
       );
     let box = newBox();
+    const director = new AudioDirector(deps.sink);
 
     /** Pause → Restart: seed + 1, and the buttons held now are not presses in the new match (spec D.6). */
     this.restartMatch = (): void => {
@@ -176,6 +181,8 @@ export class MatchScreen {
         const events = runner.step(intents);
         box.record(events, runner.current.tick);
         hud.handleEvents(events, runner.current);
+        director.handleEvents(events);
+        director.update(runner.previous, runner.current, performance.now() / 1000);
         weather.handleEvents(events);
         for (const event of events) {
           if (this.settings.vibration) {

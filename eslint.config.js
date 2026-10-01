@@ -18,7 +18,7 @@ const presentationDirs = [
 const threeModules = ['three', 'three/**'];
 
 export default defineConfig([
-  { ignores: ['dist/**', 'node_modules/**', '.superpowers/**'] },
+  { ignores: ['dist/**', 'node_modules/**', '.superpowers/**', '.claude/worktrees/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

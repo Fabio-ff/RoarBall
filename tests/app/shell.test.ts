@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const created: { deps: { options: unknown; onFinished(f: unknown): void; onQuit(): void } }[] = [];
 vi.mock('../../src/app/match-screen', () => ({
@@ -13,6 +13,7 @@ vi.mock('../../src/app/match-screen', () => ({
 }));
 
 const { AppShell } = await import('../../src/app');
+const { AudioEngine } = await import('../../src/audio/engine');
 const { readGameOptions } = await import('../../src/app/url-options');
 
 describe('AppShell (spec E.1)', () => {
@@ -125,6 +126,104 @@ describe('AppShell (spec E.1)', () => {
     root.querySelector<HTMLButtonElement>('[data-action="rematch"]')?.click();
     expect(shell.screen).toBe('match');
     expect(created.at(-1)?.deps.options).toMatchObject({ seed: 42 });
+    shell.dispose();
+  });
+});
+
+describe('AppShell audio (spec E.4)', () => {
+  const fakeEngine = () => ({
+    played: [] as string[],
+    enabled: [] as [boolean, boolean][],
+    resumed: 0,
+    playSfx(name: string) {
+      this.played.push(name);
+    },
+    setMusic() {},
+    duck() {},
+    setEnabled(sound: boolean, music: boolean) {
+      this.enabled.push([sound, music]);
+    },
+    resume() {
+      this.resumed += 1;
+    },
+    dispose() {},
+  });
+  const press = (code: string) =>
+    window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code }));
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('creates the engine once, on the first keydown, and enables it from the settings', () => {
+    const engine = fakeEngine();
+    const create = vi
+      .spyOn(AudioEngine, 'create')
+      .mockReturnValue(engine as unknown as InstanceType<typeof AudioEngine>);
+    const shell = new AppShell(document.createElement('div'), { initial: null, store: null });
+    expect(create).not.toHaveBeenCalled();
+    press('KeyZ');
+    press('KeyZ');
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(engine.enabled).toEqual([[true, true]]);
+    shell.dispose();
+  });
+
+  it('later keydowns and gamepad commands keep resuming the engine', () => {
+    const engine = fakeEngine();
+    vi.spyOn(AudioEngine, 'create').mockReturnValue(
+      engine as unknown as InstanceType<typeof AudioEngine>,
+    );
+    const shell = new AppShell(document.createElement('div'), { initial: null, store: null });
+    press('KeyZ');
+    const after = engine.resumed;
+    press('KeyZ');
+    expect(engine.resumed).toBe(after + 1);
+    shell.dispose();
+  });
+
+  it('toggling sound tells the engine', () => {
+    const engine = fakeEngine();
+    vi.spyOn(AudioEngine, 'create').mockReturnValue(
+      engine as unknown as InstanceType<typeof AudioEngine>,
+    );
+    const root = document.createElement('div');
+    const shell = new AppShell(root, { initial: null, store: null });
+    press('KeyZ');
+    root.querySelector<HTMLButtonElement>('[data-action="sound"]')?.click();
+    expect(engine.enabled.at(-1)).toEqual([false, true]);
+    shell.dispose();
+  });
+
+  it('menus click once per command or pointer press; live play is silent', () => {
+    const engine = fakeEngine();
+    vi.spyOn(AudioEngine, 'create').mockReturnValue(
+      engine as unknown as InstanceType<typeof AudioEngine>,
+    );
+    const root = document.createElement('div');
+    document.body.append(root);
+    const shell = new AppShell(root, { initial: null, store: null });
+    press('KeyZ');
+    press('ArrowDown');
+    expect(engine.played).toEqual(['menuMove']);
+    press('ArrowUp');
+    press('Space'); // confirms PLAY: one confirm sound, not two
+    expect(shell.screen).toBe('setup');
+    expect(engine.played).toEqual(['menuMove', 'menuMove', 'menuConfirm']);
+    root.querySelector<HTMLButtonElement>('[data-action="start"]')?.click();
+    expect(engine.played.at(-1)).toBe('menuConfirm');
+    expect(shell.screen).toBe('match');
+    const before = engine.played.length;
+    press('ArrowDown');
+    press('Space');
+    expect(engine.played.length).toBe(before);
+    shell.dispose();
+    root.remove();
+  });
+
+  it('stays silent and does not throw where Web Audio is missing', () => {
+    vi.spyOn(AudioEngine, 'create').mockReturnValue(null);
+    const root = document.createElement('div');
+    const shell = new AppShell(root, { initial: null, store: null });
+    expect(() => press('ArrowDown')).not.toThrow();
     shell.dispose();
   });
 });
