@@ -3,6 +3,9 @@ import { createRng, type RngState } from '../rng';
 import type { MatchPhase, PlayerId, TeamIndex } from '../types';
 import type { SpotName } from './spots';
 
+/** Finite "long ago" tick: -Infinity would serialise to null in JSON. */
+export const NEVER_TICK = -1_000_000;
+
 /** What a brain is currently trying to do; re-planned every DECISION_INTERVAL_TICKS. */
 export type AiGoal =
   | { kind: 'idle' }
@@ -66,7 +69,7 @@ export function createAiMemory(
     markId: null,
     marksForPossession: null,
     laneClosedCount: 0,
-    lastInviteTick: -Infinity,
+    lastInviteTick: NEVER_TICK,
     pressedLastTick: false,
     passedLastTick: false,
     lastPhase: 'tipoff',
@@ -81,7 +84,7 @@ export function resetAiMemory(memory: AiMemory, tick: number): void {
   memory.markId = null;
   memory.marksForPossession = null;
   memory.laneClosedCount = 0;
-  memory.lastInviteTick = -Infinity;
+  memory.lastInviteTick = NEVER_TICK;
   memory.pressedLastTick = false;
   memory.passedLastTick = false;
 }

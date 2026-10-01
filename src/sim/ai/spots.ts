@@ -42,10 +42,14 @@ export function namedSpot(hoop: HoopGeometry, name: SpotName): Vec3 {
   return { x: hoop.rimCenter.x - hoop.side * o.back, y: 0, z: hoop.rimCenter.z + o.side };
 }
 
-function openness(spot: Vec3, opponents: readonly Vec3[]): number {
-  let nearest = OPENNESS_CAP;
+function nearestDistance(spot: Vec3, opponents: readonly Vec3[]): number {
+  let nearest = Infinity;
   for (const o of opponents) nearest = Math.min(nearest, v3DistanceXZ(spot, o));
   return nearest;
+}
+
+function openness(spot: Vec3, opponents: readonly Vec3[]): number {
+  return Math.min(OPENNESS_CAP, nearestDistance(spot, opponents));
 }
 
 /** Openness − lane penalty − handler penalty (spec C.5). */
@@ -95,7 +99,7 @@ export function farthestSpot(hoop: HoopGeometry, defenders: readonly Vec3[]): Na
   for (const name of SPOT_NAMES) {
     if (name === 'underBasket') continue;
     const spot = namedSpot(hoop, name);
-    const score = openness(spot, defenders);
+    const score = nearestDistance(spot, defenders);
     if (score > bestScore) {
       best = { name, spot };
       bestScore = score;
