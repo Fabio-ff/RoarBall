@@ -96,4 +96,35 @@ describe('AppShell (spec E.1)', () => {
     expect(JSON.parse(data['roarball.settings.v1'] ?? '{}').sound).toBe(false);
     shell.dispose();
   });
+
+  it('a finished match shows Results; REMATCH starts a match with seed + 1', () => {
+    const root = document.createElement('div');
+    const options = readGameOptions('?seed=41', 0);
+    const shell = new AppShell(root, { initial: options, store: null });
+    const line = (id: string, team: 0 | 1) => ({
+      id,
+      team,
+      name: id,
+      points: 0,
+      dunks: 0,
+      threes: 0,
+      assists: 0,
+      steals: 0,
+      blocks: 0,
+      abilityUses: 0,
+    });
+    created.at(-1)?.deps.onFinished({
+      score: [21, 18],
+      humanTeam: 0,
+      overtime: false,
+      lines: [line('home1', 0), line('away1', 1)],
+      options,
+    });
+    expect(shell.screen).toBe('results');
+    expect(root.querySelector('.results-headline')?.textContent).toBe('YOU WIN!');
+    root.querySelector<HTMLButtonElement>('[data-action="rematch"]')?.click();
+    expect(shell.screen).toBe('match');
+    expect(created.at(-1)?.deps.options).toMatchObject({ seed: 42 });
+    shell.dispose();
+  });
 });
