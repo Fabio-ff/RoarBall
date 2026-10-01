@@ -8,6 +8,7 @@ import type { GameOptions } from './url-options';
 import { ABILITIES } from '../content/abilities';
 import { getCharacter } from '../content/characters';
 import { getCourt } from '../content/courts';
+import { GamepadBackend, playRumble, rumbleFor } from '../input/gamepad';
 import { InputManager } from '../input/input-manager';
 import { KeyboardBackend } from '../input/keyboard';
 import type { MenuCommand } from '../input/menu-input';
@@ -77,7 +78,8 @@ export class MatchScreen {
     scene.scene.add(buildCourtView(court));
 
     const touch = new TouchBackend(container);
-    const input = new InputManager([new KeyboardBackend(window), touch]);
+    const gamepad = new GamepadBackend();
+    const input = new InputManager([new KeyboardBackend(window), touch, gamepad]);
     this.input = input;
     input.onActiveKindChange = (kind) => (kind === 'touch' ? touch.show() : touch.hide());
     this.onFirstTouch = (e: PointerEvent): void => {
@@ -168,6 +170,10 @@ export class MatchScreen {
         hud.handleEvents(events, runner.current);
         weather.handleEvents(events);
         for (const event of events) {
+          if (this.settings.vibration) {
+            const rumble = rumbleFor(event, HUMAN_ID, HUMAN_TEAM);
+            if (rumble) playRumble(gamepad.activePad(), rumble);
+          }
           if (event.type === 'basket') effects.spawnFlash(runner.current.ball.pos);
           if (event.type === 'abilityActivated') {
             const p = findPlayer(runner.current, event.playerId);
