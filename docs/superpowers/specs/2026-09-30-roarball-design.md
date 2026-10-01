@@ -659,3 +659,149 @@ Until menus exist (phase 6) the human's character is chosen with `?character=<id
 
 When the match clock reaches zero while a shot is in flight, the finish waits for the
 flight to resolve; a make counts, then the match finishes or goes to overtime.
+
+## Appendix C — Phase 4 decisions (2026-10-01)
+
+Decisions taken when planning Phase 4 (AI teammate and opponents, match mode, balance
+harness). They refine §6, §4.3, §9 and §10.2.
+
+### C.1 Playable build: match by default
+
+Opening the page starts a **2v2 match**: the human (`home1`) with an AI teammate (`home2`)
+against two AI opponents (`away1`, `away2`), on the gym court, with the A.5 defaults
+(3 minutes, 14 s shot clock, sudden-death overtime). Until menus exist (phase 6) everything is
+chosen by URL: `?mode=match|shootaround` (default `match`; shootaround keeps the Phase 3
+dummies unchanged), `?character=` (exists), `?teammate=<id>` (default `ace`),
+`?opponents=<id>,<id>` (default `brick,dash`), `?ai=easy|fair|hard` (default `fair`),
+`?seed=<n>` (default: the current time in a match, `1` in shootaround). The camera keeps
+following the ball (§9); from 20 m back the whole court is in frame.
+
+### C.2 Brain contract
+
+The AI lives in `sim/ai/` and imports only from `sim/`. Its single entry point is
+
+```
+decide(state, memory, profile, court) → PlayerIntent
+```
+
+- **Memory** (`AiMemory`) is a plain, serialisable object: its own RNG, the next decision
+  tick, the current goal (a tagged union: `moveTo`, `drive`, `shoot`, `pass`, `chase`,
+  `mark`, `idle`), the assigned mark, whether a button was pressed last tick. No closure
+  state. It is reset on the `phaseChange` to `inbound` or `tipoff`.
+- **RNG**: seeded from `hash(settings.seed, playerId)` and kept in the memory; the AI never
+  reads or advances `state.rng`, so a match remains replayable from seed + intents (§4.10)
+  and AI-vs-AI runs are deterministic.
+- **Cadence** (§6): re-plan when `tick ≥ memory.nextDecisionTick` (every 6 ticks, offset by
+  the player's index in the roster); steer towards the goal every tick. Button presses are
+  one tick of `true` followed by a forced `false` (the simulation detects edges).
+- **App wrapper**: `app/ai-controller.ts` holds the memory and exposes a `Controller`
+  (`(state) => PlayerIntent`, type moved from `dummies.ts` to `app/controller.ts`). The
+  `?debug` overlay shows each AI's `goal.kind` (§10.3).
+
+### C.3 Profiles
+
+One `AiProfile` type, three presets selected with `?ai=` (all three AI players share it):
+
+| Field | easy | fair | hard | Meaning |
+|---|---|---|---|---|
+| `reactionTicks` | 24 | 15 | 8 | ticks a mark's shot or drive must be visible before reacting (jump-shot block window ≈ 20 ticks) |
+| `shootThreshold` | 0.65 | 0.55 | 0.45 | minimum perceived quality to shoot |
+| `passBias` | 0.15 | 0.10 | 0.00 | how much better the teammate's shot must be to pass |
+| `perceptionNoise` | 0.15 | 0.08 | 0.03 | ± seeded jitter on perceived `shotQuality` |
+| `stealRate` | 0.2 | 0.4 | 0.6 | chance per decision tick to press when a steal is on |
+| `shoveRate` | 0.1 | 0.3 | 0.5 | chance per decision tick to shove a driving mark |
+| `turboThreshold` | 0.6 | 0.4 | 0.2 | minimum turbo bar before using turbo |
+
+`fair` is the launch profile of §6; `easy` and `hard` are tuning presets, not difficulty
+levels with menus (still §12). The teammate brain uses `passBias − 0.15` towards the human, so
+the human sees the ball often.
+
+### C.4 Shared helpers (pure, in `sim/`)
+
+- `evaluateShot(state, player, court) → { type, quality }`: the type `chooseShotType` would
+  pick and the `shotQuality` a shot released now would have against the current opponents,
+  without cloning the player. Also usable for a hypothetical shot by a teammate.
+- `resolveDefensivePress(state, player, court) → DefensiveChoice | null`: what pressing
+  action without the ball would do, or `null` when nothing would happen (cooldown,
+  airborne, action-locked). The AI presses only when the result is the move it intends.
+- `passLaneOpen` (B.3) and `targetHoopIndex` are reused as they are.
+
+### C.5 Branches
+
+**Has ball**, in order at each decision tick:
+
+1. Shot clock under 3 s: shoot if perceived quality > 0.15, else pass if the lane is open,
+   else shoot anyway.
+2. Teammate airborne within `ALLEY_OOP_RANGE` of the hoop and lane open → pass (the
+   simulation makes it a lob).
+3. Teammate `callingForPassTicks > 0` and lane open → pass.
+4. Perceived quality (`evaluateShot` + noise) ≥ `shootThreshold` → shoot. A dunk or layup is
+   taken at once when no opponent is airborne within 1.5 m.
+5. Teammate's hypothetical quality ≥ mine + `passBias` and lane open → pass.
+6. Drive to the hoop. The lane is closed when an opponent is within 1.2 m of the segment
+   me→rim and nearer the rim than I am; then steer to a point 2 m perpendicular to that
+   segment on the side of the farther defender and re-test next decision tick. Turbo while
+   the lane is open and `turbo ≥ turboThreshold`.
+7. Lane closed three decision ticks running and shot clock > 6 s → move to the open named
+   spot farthest from the defenders, then re-plan.
+
+**Teammate has ball**: choose a named spot of the attacking hoop (left/right corner,
+left/right wing, top of the key, under the basket) by score: distance to the nearest
+opponent, minus a penalty within 2.5 m of the handler→rim line (keeps the drive and the
+alley-oop lane clear), minus a penalty within 3 m of the handler; switch only when another
+spot wins by 1.5. At the under-basket spot, with the handler within 6 m and no opponent
+within 1.5 m, jump to invite the alley-oop (at most once per 90 ticks). Chase a loose ball
+when closest on my team to it or when it is within 3 m.
+
+**Defending**:
+
+- `assignMarks(state, team)` is a deterministic function of the state (ids sorted; minimum
+  total distance over permutations up to three players, greedy beyond), so both brains agree
+  without communicating. Recomputed on possession change only.
+- Stand on the segment mark→our hoop at `clamp(0.4·d, 0.8, 2.5)` m from the mark (0.8 m when
+  the mark holds the ball); turbo to recover from more than 4 m away.
+- Press only when `resolveDefensivePress` returns the intended move: `block` once the mark's
+  shot has been visible for `reactionTicks`; `steal` with probability `stealRate` per
+  decision tick; `shove` with probability `shoveRate` when the mark is driving (moving
+  towards the hoop faster than 3 m/s) and turbo allows. Never press on `jump` or `null`.
+- Loose ball: the nearest defender chases, the other stays home in the key.
+
+Dunks stay effectively unblockable by the AI (a block must start before the dunk and the
+fastest reaction is 8 ticks): getting inside is the human's reward. Recorded design decision.
+
+### C.6 Match flow in the app
+
+- **Inbound formation** (match mode only; shootaround unchanged): `inbound()` places all
+  players, not just the receiver — receiver at the own baseline with the ball, their
+  teammate at the own-half wing, both defenders at the top of the key of the hoop they
+  defend. Tip-off places everyone the same way on their own halves before awarding the ball.
+- **Finish**: on `phaseChange → finished` the HUD shows a sticky banner (`FINAL 21–18 ·
+  YOU WIN!` / `YOU LOSE`; `OVERTIME!` when sudden death starts). While finished, an
+  ACTION, PASS or SPECIAL press from the human (edge-detected in the app) rebuilds the
+  `MatchRunner` with `seed + 1`, the same roster and fresh AI memories. The real Results
+  screen arrives with menus (phase 6).
+
+### C.7 Testing and balance
+
+- **Unit**: `evaluateShot` ≡ real shot type/quality; `resolveDefensivePress` ≡
+  `chooseDefensiveAction` or `null`; `assignMarks` symmetric and minimal; spot scoring and
+  hysteresis; offense order (threshold, pass, call, panic, one-tick presses); defence
+  reaction window per profile (fair blocks a shot pressed at tick 0, easy misses the window);
+  steal rate within tolerance over 1000 seeded decisions; memory reset on inbound; `state.rng`
+  untouched by `decide`.
+- **Simulation**: a 2v2 AI-vs-AI **golden** (fair, real cast, full match, pinned hash of the
+  final state and score; re-pinned only with a stated reason); a **no-soft-lock sweep** over
+  20 seeds (every possession ends within shot clock + loose-ball timeout, the match finishes,
+  both teams score ≥ 6, no player stunned more than 30 % of ticks, no live tick where every
+  intent is `NO_INTENT`); replay determinism from seed + AI-produced intents.
+- **Balance** (on demand, `npm run balance`, not in CI): all 4×4 pairings as mirrored 2v2,
+  20 seeds each, fair profile; reports win rate and mean score per pairing to stdout and
+  `docs/balance/<date>.md`; asserts no side above 60 % with equal characters and mean totals
+  within 20–60. The plan records the first report.
+- **Feel**: tablet playtest with the first player before the phase closes — the teammate
+  gives up the ball when asked, a drive beats the opponents, a fair game lands near 20–30
+  points, no stuck-in-the-corner moments.
+
+Cheap leftovers folded into this phase: favicon, `sourcemap: 'hidden'`, HUD per-frame DOM
+writes (the final banner touches the HUD anyway). Still deferred: chunk split, 2 m sweep
+bucket.
