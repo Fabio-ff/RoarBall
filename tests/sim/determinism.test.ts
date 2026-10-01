@@ -1,8 +1,18 @@
 import { describe, expect, it } from 'vitest';
+import { getCharacter } from '../../src/content/characters';
 import { getCourt } from '../../src/content/courts';
-import { createMatch } from '../../src/sim/match';
+import { attackingHoopIndex, hoopGeometry } from '../../src/sim/hoop';
+import { createMatch, findPlayer } from '../../src/sim/match';
+import type { Vec2, Vec3 } from '../../src/sim/math';
 import { tick } from '../../src/sim/tick';
-import type { MatchSettings, MatchState, PlayerIntent, SimEvent } from '../../src/sim/types';
+import {
+  NO_INTENT,
+  type MatchSettings,
+  type MatchState,
+  type PlayerIntent,
+  type PlayerState,
+  type SimEvent,
+} from '../../src/sim/types';
 
 const court = getCourt('gym');
 const settings: MatchSettings = {
@@ -89,6 +99,97 @@ function play(): MatchState {
   return state;
 }
 
+/**
+ * Third golden run (Phase 3): 2v2 with the real cast in match mode, so passes, catches,
+ * interceptions, steals, shoves, blocks and knockdowns all feed the hash. Every intent is a pure
+ * function of the state and the tick index: no randomness outside the sim. With seed 27 the script
+ * passes, catches, intercepts, steals (and misses), shoves and blocks.
+ */
+const teamSettings: MatchSettings = { ...settings, seed: 27 };
+const teamRoster = [
+  { id: 'home1', team: 0 as const, characterId: 'dash', character: getCharacter('dash') },
+  { id: 'home2', team: 0 as const, characterId: 'brick', character: getCharacter('brick') },
+  { id: 'away1', team: 1 as const, characterId: 'ace', character: getCharacter('ace') },
+  { id: 'away2', team: 1 as const, characterId: 'rook', character: getCharacter('rook') },
+];
+const homeHoop = hoopGeometry(court, attackingHoopIndex(court, 0));
+
+/** Unit court-space step from `from` towards `to`, zero once within 0.3 m. */
+function towards(from: Vec3, to: Vec3): Vec2 {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const d = Math.hypot(dx, dz);
+  return d < 0.3 ? { x: 0, y: 0 } : { x: dx / d, y: dz / d };
+}
+
+function player(state: MatchState, id: string): PlayerState {
+  const p = findPlayer(state, id);
+  if (!p) throw new Error(`no ${id}`);
+  return p;
+}
+
+function teamIntents(state: MatchState, i: number): Map<string, PlayerIntent> {
+  const home1 = player(state, 'home1');
+  const home2 = player(state, 'home2');
+  const away1 = player(state, 'away1');
+  const away2 = player(state, 'away2');
+  const holder = state.ball.holder === null ? undefined : findPlayer(state, state.ball.holder);
+  const wing = {
+    x: homeHoop.rimCenter.x - homeHoop.side * 5,
+    y: 0,
+    z: homeHoop.rimCenter.z + 4,
+  };
+  const ball = state.ball.pos;
+  const toBall = Math.hypot(ball.x - home2.pos.x, ball.z - home2.pos.z) || 1;
+  const denySpot = {
+    x: home2.pos.x + (ball.x - home2.pos.x) / toBall,
+    y: 0,
+    z: home2.pos.z + (ball.z - home2.pos.z) / toBall,
+  };
+  return new Map<string, PlayerIntent>([
+    // Drives at the hoop, pressing action every 1.5 s (with the ball only inside 6 m, so it drives
+    // first), and passes when home2 calls for the ball.
+    [
+      'home1',
+      {
+        ...NO_INTENT,
+        move: towards(home1.pos, homeHoop.rimCenter),
+        action:
+          i % 90 === 0 &&
+          (state.ball.holder !== 'home1' ||
+            Math.hypot(home1.pos.x - homeHoop.rimCenter.x, home1.pos.z - homeHoop.rimCenter.z) < 6),
+        pass: home2.callingForPassTicks > 0,
+      },
+    ],
+    // Waits on the wing and presses pass every 2.5 s (a pass with the ball, a call without).
+    ['home2', { ...NO_INTENT, move: towards(home2.pos, wing), pass: i % 150 === 75 }],
+    // Chases whoever holds the ball (or the loose ball), pressing action every 0.75 s; 10 ticks
+    // after home1's presses, inside the jump-shot block window.
+    [
+      'away1',
+      {
+        ...NO_INTENT,
+        move: towards(away1.pos, holder?.pos ?? state.ball.pos),
+        action: i % 45 === 10,
+        turbo: true,
+      },
+    ],
+    // Shadows home2 a metre towards the ball (denying the pass), pressing action every second.
+    ['away2', { ...NO_INTENT, move: towards(away2.pos, denySpot), action: i % 60 === 40 }],
+  ]);
+}
+
+function playTeams(): { state: MatchState; events: SimEvent[] } {
+  let state = createMatch(teamSettings, court, teamRoster);
+  const events: SimEvent[] = [];
+  for (let i = 0; i < 2400; i++) {
+    const result = tick(state, teamIntents(state, i), court);
+    state = result.state;
+    events.push(...result.events);
+  }
+  return { state, events };
+}
+
 describe('determinism (golden)', () => {
   it('two runs with the same seed and inputs end in the identical state', () => {
     const a = play();
@@ -98,7 +199,7 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(play()))).toMatchInlineSnapshot(`"40ecd303"`);
+    expect(fnv1a(JSON.stringify(play()))).toMatchInlineSnapshot(`"89b659e3"`);
   });
 
   it('the short-clock run reaches violations and the end of the match, deterministically', () => {
@@ -111,6 +212,23 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned short-clock hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(playShort().state))).toMatchInlineSnapshot(`"d7b2c3ab"`);
+    expect(fnv1a(JSON.stringify(playShort().state))).toMatchInlineSnapshot(`"594f7f43"`);
+  });
+
+  it('the 2v2 run passes and defends, deterministically', () => {
+    const a = playTeams();
+    expect(a).toEqual(playTeams());
+    const counts: Record<string, number> = {};
+    for (const e of a.events) counts[e.type] = (counts[e.type] ?? 0) + 1;
+    const has = (...types: SimEvent['type'][]) => types.some((t) => (counts[t] ?? 0) > 0);
+    expect(has('pass')).toBe(true);
+    expect(has('steal', 'stealFailed')).toBe(true);
+    expect(has('shove')).toBe(true);
+    expect(has('block', 'intercept')).toBe(true);
+    expect(a.state.score[0] + a.state.score[1]).toBeGreaterThan(0);
+  });
+
+  it('matches the pinned 2v2 hash — update it only for an intentional simulation change', () => {
+    expect(fnv1a(JSON.stringify(playTeams().state))).toMatchInlineSnapshot(`"d0c8eeb8"`);
   });
 });
