@@ -71,7 +71,8 @@ export class AudioDirector {
   }
 
   /** Shoe squeaks: call once per tick; compares velocity with 12 ticks ago (plan decision 21). */
-  update(_prev: MatchState, next: MatchState, nowSeconds: number): void {
+  update(prev: MatchState, next: MatchState, nowSeconds: number): void {
+    if (!prev.overtime && next.overtime) this.sink().playSfx('buzzer', 1); // regulation ended tied
     for (const team of next.teams) {
       for (const p of team.players) {
         let h = this.history.get(p.id);

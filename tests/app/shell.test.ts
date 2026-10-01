@@ -14,6 +14,7 @@ vi.mock('../../src/app/match-screen', () => ({
 
 const { AppShell } = await import('../../src/app');
 const { AudioEngine } = await import('../../src/audio/engine');
+const { RESULTS_INPUT_GUARD_MS } = await import('../../src/ui/screens/results');
 const { readGameOptions } = await import('../../src/app/url-options');
 
 describe('AppShell (spec E.1)', () => {
@@ -54,13 +55,14 @@ describe('AppShell (spec E.1)', () => {
       getItem: (k: string) => data[k] ?? null,
       setItem: (k: string, v: string) => void (data[k] = v),
     };
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
     const root = document.createElement('div');
     const shell = new AppShell(root, { initial: null, store });
     root.querySelector<HTMLButtonElement>('[data-action="play"]')?.click();
     root.querySelector<HTMLButtonElement>('[data-field="characterId"][data-value="dash"]')?.click();
     root.querySelector<HTMLButtonElement>('[data-action="start"]')?.click();
     expect(JSON.parse(data['roarball.setup.v1'] ?? '{}').characterId).toBe('dash');
-    const first = created.at(-1)?.deps.options;
+    const first = (created.at(-1)?.deps.options as { seed: number }).seed;
     created.at(-1)?.deps.onQuit();
     root.querySelector<HTMLButtonElement>('[data-action="play"]')?.click();
     expect(
@@ -68,8 +70,10 @@ describe('AppShell (spec E.1)', () => {
         .querySelector('[data-field="characterId"][data-value="dash"]')
         ?.getAttribute('aria-pressed'),
     ).toBe('true');
+    clock.mockReturnValue(2_000);
     root.querySelector<HTMLButtonElement>('[data-action="start"]')?.click();
-    expect(created.at(-1)?.deps.options).not.toBe(first);
+    clock.mockRestore();
+    expect((created.at(-1)?.deps.options as { seed: number }).seed).not.toBe(first);
     shell.dispose();
   });
 
@@ -123,9 +127,12 @@ describe('AppShell (spec E.1)', () => {
     });
     expect(shell.screen).toBe('results');
     expect(root.querySelector('.results-headline')?.textContent).toBe('YOU WIN!');
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(RESULTS_INPUT_GUARD_MS); // the guard is measured from mount
     root.querySelector<HTMLButtonElement>('[data-action="rematch"]')?.click();
     expect(shell.screen).toBe('match');
     expect(created.at(-1)?.deps.options).toMatchObject({ seed: 42 });
+    vi.useRealTimers();
     shell.dispose();
   });
 });
@@ -154,7 +161,10 @@ describe('AppShell audio (spec E.4)', () => {
   const press = (code: string) =>
     window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code }));
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
   it('creates the engine once, on the first keydown, and enables it from the settings', () => {
     const engine = fakeEngine();
@@ -193,6 +203,19 @@ describe('AppShell audio (spec E.4)', () => {
     press('KeyZ');
     root.querySelector<HTMLButtonElement>('[data-action="sound"]')?.click();
     expect(engine.enabled.at(-1)).toEqual([false, true]);
+    shell.dispose();
+  });
+
+  it('toggling music tells the engine and leaves sound alone', () => {
+    const engine = fakeEngine();
+    vi.spyOn(AudioEngine, 'create').mockReturnValue(
+      engine as unknown as InstanceType<typeof AudioEngine>,
+    );
+    const root = document.createElement('div');
+    const shell = new AppShell(root, { initial: null, store: null });
+    press('KeyZ');
+    root.querySelector<HTMLButtonElement>('[data-action="music"]')?.click();
+    expect(engine.enabled.at(-1)).toEqual([true, false]);
     shell.dispose();
   });
 
@@ -256,13 +279,17 @@ describe('AppShell audio (spec E.4)', () => {
         lines: [line('home1', 0), line('away1', 1)],
         options,
       });
+    vi.useFakeTimers();
     finish([21, 18]);
     expect(engine.music.at(-1)).toBe('win');
+    vi.advanceTimersByTime(RESULTS_INPUT_GUARD_MS);
     root.querySelector<HTMLButtonElement>('[data-action="rematch"]')?.click();
     finish([10, 18]);
     expect(engine.music.at(-1)).toBe('lose');
+    vi.advanceTimersByTime(RESULTS_INPUT_GUARD_MS);
     root.querySelector<HTMLButtonElement>('[data-action="title"]')?.click();
     expect(engine.music.at(-1)).toBe('menu');
+    vi.useRealTimers();
     shell.dispose();
   });
 

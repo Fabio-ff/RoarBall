@@ -331,7 +331,7 @@ export class MatchScreen {
               humanTeam: HUMAN_TEAM,
               overtime: next.overtime,
               lines: box.lines(),
-              options,
+              options: { ...options, seed },
             });
           }
         }
@@ -342,6 +342,8 @@ export class MatchScreen {
       if (document.hidden) this.pause();
     };
     document.addEventListener('visibilitychange', this.onVisibilityChange);
+    // Buttons held at tip-off (A on START/REMATCH, a repeating Space) are not presses (spec D.6).
+    this.prime.request();
     this.loop.start();
   }
 

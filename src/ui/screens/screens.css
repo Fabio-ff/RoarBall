@@ -4,7 +4,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: safe center;
   gap: clamp(12px, 3vh, 28px);
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
     max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
@@ -134,5 +134,30 @@
   .howto-table th,
   .howto-table td {
     padding: 2px 10px;
+  }
+}
+
+/* Short landscape (phones): the Pause column fits 375 px, toggles in two columns. */
+@media (max-height: 520px) {
+  .is-overlay .screen-heading {
+    font-size: 18px;
+  }
+  .is-overlay {
+    gap: 8px;
+  }
+  .pause-column {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .pause-column .menu-button {
+    min-width: 0;
+    min-height: 44px;
+    padding: 0 12px;
+    font-size: 15px;
+  }
+  .pause-column [data-action='resume'],
+  .pause-column [data-action='quit'] {
+    grid-column: 1 / -1;
   }
 }

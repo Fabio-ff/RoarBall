@@ -87,9 +87,11 @@ export class AppShell {
       case 'title':
         this.handle = new TitleScreen(this.root, {
           sound: this.settings.sound,
+          music: this.settings.music,
           onPlay: () => this.dispatch({ type: 'play' }),
           onHowToPlay: () => this.dispatch({ type: 'howToPlay' }),
           onSoundChange: (sound) => this.updateSettings({ ...this.settings, sound }),
+          onMusicChange: (music) => this.updateSettings({ ...this.settings, music }),
         });
         break;
       case 'match':

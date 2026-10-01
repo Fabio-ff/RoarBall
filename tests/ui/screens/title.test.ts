@@ -7,12 +7,15 @@ describe('TitleScreen', () => {
     const root = document.createElement('div');
     const onPlay = vi.fn();
     const onSound = vi.fn();
+    const onMusic = vi.fn();
     const onHowToPlay = vi.fn();
     const screen = new TitleScreen(root, {
       sound: true,
+      music: true,
       onPlay,
       onHowToPlay,
       onSoundChange: onSound,
+      onMusicChange: onMusic,
     });
     const play = root.querySelector<HTMLButtonElement>('[data-action="play"]');
     const sound = root.querySelector<HTMLButtonElement>('[data-action="sound"]');
@@ -20,6 +23,12 @@ describe('TitleScreen', () => {
     const howTo = root.querySelector<HTMLButtonElement>('[data-action="howToPlay"]');
     expect(howTo?.dataset.navRow).toBe('1');
     expect(sound?.dataset.navRow).toBe('2');
+    const music = root.querySelector<HTMLButtonElement>('[data-action="music"]');
+    expect(music?.dataset.navRow).toBe('3');
+    expect(music?.textContent).toBe('MUSIC: ON');
+    music?.click();
+    expect(onMusic).toHaveBeenCalledWith(false);
+    expect(music?.textContent).toBe('MUSIC: OFF');
     howTo?.click();
     expect(onHowToPlay).toHaveBeenCalledOnce();
     expect(sound?.textContent).toBe('SOUND: ON');
@@ -38,9 +47,11 @@ describe('TitleScreen', () => {
     const onPlay = vi.fn();
     const screen = new TitleScreen(root, {
       sound: true,
+      music: true,
       onPlay,
       onHowToPlay: vi.fn(),
       onSoundChange: vi.fn(),
+      onMusicChange: vi.fn(),
     });
     screen.handleCommand('confirm');
     expect(onPlay).toHaveBeenCalledOnce();

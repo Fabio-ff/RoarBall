@@ -65,6 +65,7 @@ async function run() {
     throw new Error(`bad headline: ${headline}`);
   }
   // The focused button pulses forever, so Playwright never sees it as stable: skip that check.
+  await page.waitForTimeout(700); // Results ignores confirm/clicks for 600 ms after it mounts
   await page.click('[data-action="rematch"]', { force: true });
   await page.waitForSelector('.hud');
 

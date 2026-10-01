@@ -16,8 +16,8 @@ Live build (main): https://fabio-ff.github.io/RoarBall/
 ## How to play
 
 The bare URL opens the **title screen**: **PLAY** goes to the setup screen (pick your character,
-teammate, two opponents, court and difficulty, or leave them on RANDOM), **START** begins
-the match, **HOW TO PLAY** shows the controls and **SOUND** toggles audio and music. Move through
+teammate, two opponents, court and difficulty, or leave the opponents on RANDOM), **START** begins
+the match, **HOW TO PLAY** shows the controls and **SOUND** and **MUSIC** switch the effects and the music on or off. Move through
 the menus with the arrow keys / WASD, a gamepad D-pad or stick, or by tapping; Enter / Space /
 A confirms and Escape / Backspace / B goes back. Pause a match with Escape, P, the on-screen ⏸
 button or the gamepad Start button; RESUME is focused. When the match ends the results screen
@@ -39,7 +39,7 @@ Your player has a pulsing ring under its feet in your team colour.
 
 Gamepad (standard mapping; plug in and press any button): left stick or D-pad moves,
 **A** shoots, **X** passes, **Y** uses the special ability, **RT** or **B** is turbo and
-**Start** pauses. A pad that supports it rumbles when your team dunks, you block a shot, you are knocked down
+**Start** pauses. A pad that supports it rumbles when your team dunks, your shot is blocked, you are knocked down
 or you use Earthquake.
 
 Touch (tablets and phones): a floating joystick where your left thumb lands, and **GO** (Space),
