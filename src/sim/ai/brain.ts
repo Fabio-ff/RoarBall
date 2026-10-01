@@ -41,12 +41,12 @@ export function decide(
 
   // A possession change (or the first plan after a reset) re-plans everyone on the same tick, so
   // teammates assign marks from the same snapshot. Only the regular cadence reschedules, which
-  // keeps the per-player offsets staggered.
+  // keeps the per-slot phases staggered.
   const cadenceTick = state.tick >= memory.nextDecisionTick;
   const isDecisionTick = cadenceTick || state.possession !== memory.lastPlannedPossession;
   if (isDecisionTick) {
     memory.goal = plan(state, me, memory, profile, court);
-    if (cadenceTick) memory.nextDecisionTick = nextCadenceTick(state.tick + 1, memory.offset);
+    if (cadenceTick) memory.nextDecisionTick = nextCadenceTick(state.tick + 1, memory.slot);
     memory.lastPlannedPossession = state.possession;
   }
   return finish(memory, act(state, me, memory, profile, court, isDecisionTick));

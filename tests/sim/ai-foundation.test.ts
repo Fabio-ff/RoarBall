@@ -58,8 +58,8 @@ describe('memory', () => {
   });
 
   it('starts planning at its phase and resets goals but keeps the RNG stream', () => {
-    // Roster index 3 is a team's second slot: it plans half a cycle (3 ticks) after the first.
-    const m = createAiMemory('away2', 5, 3, false);
+    // Slot 1 is a team's second player: it plans half a cycle (3 ticks) after the first.
+    const m = createAiMemory('away2', 5, 1, false);
     expect(m.nextDecisionTick).toBe(3);
     expect(m.goal).toEqual({ kind: 'idle' });
     expect(m.favourTeammate).toBe(false);
@@ -81,12 +81,12 @@ describe('memory', () => {
   });
 
   it('both teams share the same two decision phases (no team always plans first)', () => {
-    expect([0, 1, 2, 3].map(cadencePhase)).toEqual([0, 3, 0, 3]);
+    expect([0, 1].map(cadencePhase)).toEqual([0, 3]);
     expect(nextCadenceTick(0, 0)).toBe(0);
     expect(nextCadenceTick(1, 0)).toBe(6);
-    expect(nextCadenceTick(1, 2)).toBe(6);
+    expect(nextCadenceTick(1, 0)).toBe(6);
     expect(nextCadenceTick(4, 1)).toBe(9);
-    expect(nextCadenceTick(9, 3)).toBe(9);
+    expect(nextCadenceTick(9, 1)).toBe(9);
   });
 
   it('is plain data', () => {

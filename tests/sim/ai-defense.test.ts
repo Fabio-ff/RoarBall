@@ -270,7 +270,7 @@ describe('decide (brain)', () => {
     }
   });
 
-  it('plans every 6 ticks at its offset, steers every tick, presses for one tick only', () => {
+  it('plans every 6 ticks at its slot phase, steers every tick, presses for one tick only', () => {
     const s = live();
     const me = place(s, 'home1', rim.x - 2.2, 0);
     giveBall(s, me, []);
@@ -332,7 +332,7 @@ describe('decide (brain)', () => {
     place(s, 'away1', 6, 0.02);
     place(s, 'away2', 6, -0.02); // a near tie
     const a = createAiMemory('away1', 1, 0, false);
-    const b = createAiMemory('away2', 1, 3, false);
+    const b = createAiMemory('away2', 1, 1, false);
     for (let t = 0; t < 4; t++) {
       s.tick = t;
       decide(s, a, exact, court);
@@ -359,8 +359,8 @@ describe('decide (brain)', () => {
     s.phase = 'inbound';
     s.pendingInbound = 0; // team 0 has the ball; team 1 defends
     s.tick = 100;
-    const a = createAiMemory('away1', 2, 2, false);
-    const b = createAiMemory('away2', 2, 3, false);
+    const a = createAiMemory('away1', 2, 0, false);
+    const b = createAiMemory('away2', 2, 1, false);
     const planTicks: number[][] = [[], []];
     let state = s;
     for (let i = 0; i < 8; i++) {
@@ -386,7 +386,7 @@ describe('decide (brain)', () => {
 
   it('never touches the simulation RNG', () => {
     const s = live();
-    const memories = roster.map((e, i) => createAiMemory(e.id, 1, i, e.id === 'home2'));
+    const memories = roster.map((e, i) => createAiMemory(e.id, 1, i % 2, e.id === 'home2'));
     const before = s.rng.seed;
     for (let t = 0; t < 120; t++) {
       s.tick = t;
@@ -397,7 +397,7 @@ describe('decide (brain)', () => {
 
   it('four brains play 20 seconds of a match without anyone standing still the whole time', () => {
     const s = createMatch({ ...matchSettings, seed: 4 }, court, roster);
-    const memories = roster.map((e, i) => createAiMemory(e.id, 4, i, e.id === 'home2'));
+    const memories = roster.map((e, i) => createAiMemory(e.id, 4, i % 2, e.id === 'home2'));
     const start = structuredClone(s);
     const { state, events } = playBrains(s, 1200, AI_PROFILES.fair, memories);
     for (const e of roster) {

@@ -34,7 +34,7 @@ export interface AiRun {
 /** Four brains (the human slot too) play a full match; every intent is recorded for replay. */
 export function playAiMatch(seed: number, profile: AiProfile = AI_PROFILES.fair): AiRun {
   let state = createMatch({ ...settings, seed }, court, roster);
-  const memories = roster.map((e, i) => createAiMemory(e.id, seed, i, e.id === 'home2'));
+  const memories = roster.map((e, i) => createAiMemory(e.id, seed, i % 2, e.id === 'home2'));
   const events: SimEvent[] = [];
   const intents: Map<string, PlayerIntent>[] = [];
   while (state.phase !== 'finished' && state.tick < MAX_TICKS) {

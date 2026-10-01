@@ -144,4 +144,35 @@ describe('Hud', () => {
     hud.update(state);
     expect(writes).toBe(1);
   });
+
+  it('writes the finished banner state once, not every frame', () => {
+    const state = createMatch(settings, court, []);
+    state.phase = 'finished';
+    hud.update(state);
+    const banner = parent.querySelector<HTMLElement>('.hud-banner')!;
+    let hiddenWrites = 0;
+    let classAdds = 0;
+    const hiddenDesc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden')!;
+    Object.defineProperty(banner, 'hidden', {
+      set(v: boolean) {
+        hiddenWrites++;
+        hiddenDesc.set!.call(this, v);
+      },
+      get() {
+        return hiddenDesc.get!.call(this) as boolean;
+      },
+      configurable: true,
+    });
+    const add = banner.classList.add.bind(banner.classList);
+    banner.classList.add = (...tokens: string[]) => {
+      classAdds++;
+      add(...tokens);
+    };
+    hud.update(state);
+    hud.update(state);
+    expect(hiddenWrites).toBe(0);
+    expect(classAdds).toBe(0);
+    expect(banner.hidden).toBe(false);
+    expect(banner.classList.contains('is-final')).toBe(true);
+  });
 });

@@ -18,7 +18,7 @@ const settings: MatchSettings = {
   courtId: 'gym',
   mode: 'match',
 };
-const SEEDS_PER_PAIRING = 10;
+const SEEDS_PER_PAIRING = 20;
 const MAX_TICKS = 20_000;
 const ids = characters.map((c) => c.id);
 
@@ -33,7 +33,7 @@ function roster(home: [string, string], away: [string, string]): RosterEntry[] {
 
 function play(seed: number, entries: RosterEntry[]): MatchState {
   let state = createMatch({ ...settings, seed }, court, entries);
-  const memories = entries.map((e, i) => createAiMemory(e.id, seed, i, false));
+  const memories = entries.map((e, i) => createAiMemory(e.id, seed, i % 2, false));
   while (state.phase !== 'finished' && state.tick < MAX_TICKS) {
     state = tick(
       state,

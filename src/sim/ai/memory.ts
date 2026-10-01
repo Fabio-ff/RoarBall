@@ -24,8 +24,8 @@ export interface AiMemory {
   playerId: PlayerId;
   /** Private RNG: the brain never touches state.rng (spec §4.10). */
   rng: RngState;
-  /** The player's roster index; sets the decision phase (see cadencePhase). */
-  offset: number;
+  /** Slot in the team, 0 or 1; sets the decision phase (see cadencePhase). */
+  slot: number;
   nextDecisionTick: number;
   goal: AiGoal;
   /** Defence: the opponent I am marking, and the possession the marks were assigned for. */
@@ -59,14 +59,14 @@ export function hashSeed(seed: number, playerId: PlayerId): number {
 export function createAiMemory(
   playerId: PlayerId,
   seed: number,
-  offset: number,
+  slot: number,
   favourTeammate: boolean,
 ): AiMemory {
   return {
     playerId,
     rng: createRng(hashSeed(seed, playerId)),
-    offset,
-    nextDecisionTick: cadencePhase(offset),
+    slot,
+    nextDecisionTick: cadencePhase(slot),
     goal: { kind: 'idle' },
     markId: null,
     marksForPossession: null,
@@ -84,14 +84,13 @@ export function createAiMemory(
 export const DECISION_INTERVAL_TICKS = 6;
 
 /**
- * The tick of the 6-tick cycle on which the brain at roster index `offset` plans (spec §6:
- * staggered by roster index). The roster lists a team's two players together, so the index
- * parity is the slot in the team: slot 0 plans on phase 0, slot 1 half a cycle later. Both teams
- * share the same two phases. Counting the raw index instead (0, 1 | 2, 3) made one team always
- * re-plan two ticks before the other, which alone won 62 % of mirrored games for team 0.
+ * The tick of the 6-tick cycle on which the brain in `slot` (0 or 1: the player's index within
+ * its team) plans, spec §6: slot 0 on phase 0, slot 1 half a cycle later (phase = slot * 3). Both
+ * teams share the same two phases. Staggering by the raw roster index (0, 1 | 2, 3) made one team
+ * always re-plan two ticks before the other, which alone won 62 % of mirrored games for team 0.
  */
-export function cadencePhase(offset: number): number {
-  return (offset % 2) * (DECISION_INTERVAL_TICKS / 2);
+export function cadencePhase(slot: number): number {
+  return slot * (DECISION_INTERVAL_TICKS / 2);
 }
 
 /**
@@ -99,8 +98,8 @@ export function cadencePhase(offset: number): number {
  * absolute, not counted from the last reset, so a team's brains do not re-plan in a fixed order
  * after every inbound either.
  */
-export function nextCadenceTick(from: number, offset: number): number {
-  const phase = cadencePhase(offset);
+export function nextCadenceTick(from: number, slot: number): number {
+  const phase = cadencePhase(slot);
   const behind =
     (((from - phase) % DECISION_INTERVAL_TICKS) + DECISION_INTERVAL_TICKS) %
     DECISION_INTERVAL_TICKS;
@@ -109,7 +108,7 @@ export function nextCadenceTick(from: number, offset: number): number {
 
 /** Forgets goals and marks (not the RNG); the next cadence plan is the brain's next phase tick. */
 export function resetAiMemory(memory: AiMemory, tick: number): void {
-  memory.nextDecisionTick = nextCadenceTick(tick, memory.offset);
+  memory.nextDecisionTick = nextCadenceTick(tick, memory.slot);
   memory.goal = { kind: 'idle' };
   memory.markId = null;
   memory.marksForPossession = null;
