@@ -31,8 +31,8 @@ Touch (tablets and phones): a floating joystick where your left thumb lands, and
 
 ## Abilities
 
-Every player has one signature ability. The bar under the score fills as you play (+12 for a
-basket, +18 for a three, +10 for an assist, +15 for a steal or a block); when it reads **READY**,
+Every player has one signature ability. The bar under the score fills as you play (+24 for a
+basket, +36 for a three, +20 for an assist, +30 for a steal or a block); when it reads **READY**,
 press Q / **SP** on the ground during play (the SP button is dimmed until then). The AI uses its
 abilities too.
 
