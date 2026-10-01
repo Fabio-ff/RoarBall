@@ -14,13 +14,17 @@ import type {
 
 /** Spec D.2: a full bar. */
 export const CHARGE_MAX = 100;
-/** Spec D.2 charge gains (≈ 2 uses per player per match). */
+/**
+ * Spec D.2 charge gains (ratios 12 : 18 : 10 : 15 : 15), all scaled by CHARGE_PACE. At the spec
+ * values the AI balance report gave 0.86 uses per player per match; the target is 1.5-3.
+ */
+export const CHARGE_PACE = 2;
 export const CHARGE_GAIN = Object.freeze({
-  basket2: 12,
-  basket3: 18,
-  assist: 10,
-  steal: 15,
-  block: 15,
+  basket2: 12 * CHARGE_PACE,
+  basket3: 18 * CHARGE_PACE,
+  assist: 10 * CHARGE_PACE,
+  steal: 15 * CHARGE_PACE,
+  block: 15 * CHARGE_PACE,
 });
 /** A basket within this many ticks of catching a teammate's pass is an assist. */
 export const ASSIST_WINDOW_TICKS = 180;

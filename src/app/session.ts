@@ -3,6 +3,7 @@ import type { Controller } from './controller';
 import { defenderDummy, teammateDummy } from './dummies';
 import { MatchRunner } from './match-runner';
 import type { GameOptions } from './url-options';
+import { ABILITIES } from '../content/abilities';
 import { getCharacter } from '../content/characters';
 import { buttonsOf } from '../sim/buttons';
 import { AI_PROFILES } from '../sim/ai/profile';
@@ -82,7 +83,7 @@ export function buildSession(
 ): Session {
   const state = createMatch(buildSettings(options, court, seed), court, buildRoster(options));
   primeHeldButtons(state, held);
-  const runner = new MatchRunner(court, state);
+  const runner = new MatchRunner(court, state, ABILITIES);
   const controllers = new Map<PlayerId, Controller>([[HUMAN_ID, human]]);
   const ais: AiController[] = [];
   if (options.mode === 'shootaround') {
@@ -96,7 +97,13 @@ export function buildSession(
       ['away2', 1, false],
     ];
     for (const [id, slot, favourTeammate] of brains) {
-      const ai = createAiController(id, court, { profile, seed, slot, favourTeammate });
+      const ai = createAiController(id, court, {
+        profile,
+        seed,
+        slot,
+        favourTeammate,
+        abilities: ABILITIES,
+      });
       ais.push(ai);
       controllers.set(id, ai.controller);
     }

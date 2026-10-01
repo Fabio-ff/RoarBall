@@ -133,6 +133,26 @@ describe('Rooftop Storm — gusts (spec D.4)', () => {
     expect(next - s.tick).toBeLessThanOrEqual(1500);
   });
 
+  it('gust timers and pushes run only in live play; a gust ends when play leaves live', () => {
+    const idle = match(rooftop, 3);
+    idle.phase = 'scored';
+    idle.courtState = { nextGustTick: idle.tick + 2, gust: null };
+    let s = idle;
+    for (let i = 0; i < 3; i++) s = tick(s, new Map(), rooftop).state;
+    expect(s.phase).toBe('scored');
+    expect(gustOf(s)).toBeNull();
+    expect((s.courtState as { nextGustTick: number }).nextGustTick).toBe(s.tick + 2);
+
+    const windy = gusty();
+    windy.phase = 'scored';
+    const r = tick(windy, new Map(), rooftop);
+    expect(gustOf(r.state)).toBeNull();
+    expect(r.events.filter((e) => e.type === 'gustEnd')).toHaveLength(1);
+    const next = (r.state.courtState as { nextGustTick: number }).nextGustTick;
+    expect(next - r.state.tick).toBeGreaterThanOrEqual(900);
+    expect(next - r.state.tick).toBeLessThanOrEqual(1500);
+  });
+
   it('shooting ×0.85 during a gust only, and aiHint reports the drift then', () => {
     const calm = tick(match(rooftop), new Map(), rooftop).state;
     const a0 = player(calm, 'a');

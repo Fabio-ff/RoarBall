@@ -1,15 +1,15 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { ABILITIES } from '../../src/content/abilities';
 import { characters, getCharacter } from '../../src/content/characters';
-import { getCourt } from '../../src/content/courts';
+import { courts, getCourt } from '../../src/content/courts';
 import { decide } from '../../src/sim/ai/brain';
 import { createAiMemory } from '../../src/sim/ai/memory';
 import { AI_PROFILES } from '../../src/sim/ai/profile';
 import { createMatch, type RosterEntry } from '../../src/sim/match';
 import { tick } from '../../src/sim/tick';
-import type { MatchSettings, MatchState } from '../../src/sim/types';
+import type { CourtDef, MatchSettings } from '../../src/sim/types';
 
-const court = getCourt('gym');
 const settings: MatchSettings = {
   durationMs: 180_000,
   shotClockMs: 14_000,
@@ -18,8 +18,20 @@ const settings: MatchSettings = {
   courtId: 'gym',
   mode: 'match',
 };
-const SEEDS_PER_PAIRING = 20;
+/**
+ * Spec C.7 / D.7 sample sizes, trimmed so the run stays near 5 minutes (≈ 864 matches): the gym
+ * keeps 20 seeds for the mirrored duos (10 for the strength table); the other courts play the
+ * mirrored duos only, 8 seeds each.
+ */
+const GYM_MIRROR_SEEDS = 20;
+const GYM_STRENGTH_SEEDS = 10;
+const COURT_MIRROR_SEEDS = 8;
 const MAX_TICKS = 20_000;
+/** Spec D.7 score ceilings: the gym keeps C.7's 60; the modifier courts get 66 (ruling). */
+const SCORE_CEILING = { gym: 60, modifier: 66 } as const;
+const ceilingOf = (id: string): number =>
+  id === 'gym' ? SCORE_CEILING.gym : SCORE_CEILING.modifier;
+const ABILITY_USE_TARGET = [1.5, 3] as const;
 const ids = characters.map((c) => c.id);
 
 function roster(home: [string, string], away: [string, string]): RosterEntry[] {
@@ -31,17 +43,28 @@ function roster(home: [string, string], away: [string, string]): RosterEntry[] {
   ];
 }
 
-function play(seed: number, entries: RosterEntry[]): MatchState {
-  let state = createMatch({ ...settings, seed }, court, entries);
+/** Ability activations per character, and how many player-matches each character played. */
+const uses: Record<string, number> = {};
+const slots: Record<string, number> = {};
+
+function play(seed: number, entries: RosterEntry[], court: CourtDef): [number, number] {
+  let state = createMatch({ ...settings, seed, courtId: court.id }, court, entries);
   const memories = entries.map((e, i) => createAiMemory(e.id, seed, i % 2, false));
+  const characterOf = new Map(entries.map((e) => [e.id, e.characterId]));
+  for (const e of entries) slots[e.characterId] = (slots[e.characterId] ?? 0) + 1;
   while (state.phase !== 'finished' && state.tick < MAX_TICKS) {
-    state = tick(
-      state,
-      new Map(memories.map((m) => [m.playerId, decide(state, m, AI_PROFILES.fair, court)])),
-      court,
-    ).state;
+    const frame = new Map(
+      memories.map((m) => [m.playerId, decide(state, m, AI_PROFILES.fair, court, ABILITIES)]),
+    );
+    const r = tick(state, frame, court, ABILITIES);
+    state = r.state;
+    for (const e of r.events) {
+      if (e.type !== 'abilityActivated') continue;
+      const c = characterOf.get(e.playerId) ?? '?';
+      uses[c] = (uses[c] ?? 0) + 1;
+    }
   }
-  return state;
+  return [state.score[0], state.score[1]];
 }
 
 interface Row {
@@ -52,23 +75,30 @@ interface Row {
   meanAway: number;
 }
 
-function series(label: string, home: [string, string], away: [string, string]): Row {
+function series(
+  label: string,
+  home: [string, string],
+  away: [string, string],
+  court: CourtDef,
+  seeds: number,
+): Row {
   let homeWins = 0;
   let sumHome = 0;
   let sumAway = 0;
-  for (let seed = 1; seed <= SEEDS_PER_PAIRING; seed++) {
-    const s = play(seed, roster(home, away));
-    if (s.score[0] > s.score[1]) homeWins++;
-    sumHome += s.score[0];
-    sumAway += s.score[1];
+  for (let seed = 1; seed <= seeds; seed++) {
+    const [h, a] = play(seed, roster(home, away), court);
+    if (h > a) homeWins++;
+    sumHome += h;
+    sumAway += a;
   }
-  return {
-    label,
-    homeWins,
-    games: SEEDS_PER_PAIRING,
-    meanHome: sumHome / SEEDS_PER_PAIRING,
-    meanAway: sumAway / SEEDS_PER_PAIRING,
-  };
+  return { label, homeWins, games: seeds, meanHome: sumHome / seeds, meanAway: sumAway / seeds };
+}
+
+function summary(rows: Row[]): { games: number; homeRate: number; meanTotal: number } {
+  const games = rows.reduce((n, r) => n + r.games, 0);
+  const homeWins = rows.reduce((n, r) => n + r.homeWins, 0);
+  const total = rows.reduce((n, r) => n + (r.meanHome + r.meanAway) * r.games, 0);
+  return { games, homeRate: homeWins / games, meanTotal: total / games };
 }
 
 function table(rows: Row[]): string {
@@ -81,49 +111,83 @@ function table(rows: Row[]): string {
   return lines.join('\n');
 }
 
-describe('balance report (spec C.7, on demand)', () => {
-  it('mirrored duos show no side bias; strength table reported', () => {
-    // Mirror set: every ordered duo against itself (16 × SEEDS games) — equal characters, so any
-    // bias is a side bias (team 0 attacks +X, gets the tip-off half the time, etc.).
-    const mirror: Row[] = [];
-    for (const a of ids)
-      for (const b of ids) mirror.push(series(`${a}+${b} vs ${a}+${b}`, [a, b], [a, b]));
-    // Strength set: each character as the lead with a Rook partner against each other lead.
+describe('balance report (spec C.7, D.7; on demand)', () => {
+  it('no side bias on any court; scores in band; ability use reported', () => {
+    const mirrored = new Map<string, Row[]>();
+    for (const court of courts) {
+      const seeds = court.id === 'gym' ? GYM_MIRROR_SEEDS : COURT_MIRROR_SEEDS;
+      const rows: Row[] = [];
+      for (const a of ids)
+        for (const b of ids)
+          rows.push(series(`${a}+${b} vs ${a}+${b}`, [a, b], [a, b], court, seeds));
+      mirrored.set(court.id, rows);
+    }
+    const gym = getCourt('gym');
     const strength: Row[] = [];
     for (const a of ids)
       for (const c of ids)
-        strength.push(series(`${a}+rook vs ${c}+rook`, [a, 'rook'], [c, 'rook']));
+        strength.push(
+          series(`${a}+rook vs ${c}+rook`, [a, 'rook'], [c, 'rook'], gym, GYM_STRENGTH_SEEDS),
+        );
 
-    const games = mirror.reduce((n, r) => n + r.games, 0);
-    const homeWins = mirror.reduce((n, r) => n + r.homeWins, 0);
-    const homeRate = homeWins / games;
-    const meanTotal = mirror.reduce((n, r) => n + r.meanHome + r.meanAway, 0) / mirror.length;
+    const perCourt = courts.map((c) => ({ id: c.id, ...summary(mirrored.get(c.id) ?? []) }));
+    const all = summary([...mirrored.values()].flat());
+    const perCharacter = ids.map((id) => ({ id, perMatch: (uses[id] ?? 0) / (slots[id] ?? 1) }));
+    const inTarget = (x: number): string =>
+      x >= ABILITY_USE_TARGET[0] && x <= ABILITY_USE_TARGET[1] ? 'yes' : '**no**';
 
     const date = new Date().toISOString().slice(0, 10);
     const report = [
       `# AI balance report — ${date}`,
       '',
-      `Fair profile, gym court, ${SEEDS_PER_PAIRING} seeds per pairing, 3-minute matches.`,
+      `Fair profile, abilities on, 3-minute matches. Mirrored duos: ${GYM_MIRROR_SEEDS} seeds on the gym, ${COURT_MIRROR_SEEDS} on each other court; strength table on the gym, ${GYM_STRENGTH_SEEDS} seeds.`,
       '',
-      `**Side bias (mirrored duos, ${games} games):** home wins ${(100 * homeRate).toFixed(1)} % — band 40–60 %.`,
-      `**Mean total score (mirrored):** ${meanTotal.toFixed(1)} — band 20–60.`,
+      `**Side bias (all mirrored games, ${all.games}):** home wins ${(100 * all.homeRate).toFixed(1)} % — band 45–55 %.`,
+      `**Mean total score (all mirrored):** ${all.meanTotal.toFixed(1)} — band 20–${SCORE_CEILING.gym} (gym), 20–${SCORE_CEILING.modifier} (modifier courts).`,
       '',
-      '## Mirrored duos',
+      '## Per court (mirrored duos)',
       '',
-      table(mirror),
+      '| court | games | home wins | mean total | band |',
+      '|---|---|---|---|---|',
+      ...perCourt.map(
+        (c) =>
+          `| ${c.id} | ${c.games} | ${(100 * c.homeRate).toFixed(1)} % | ${c.meanTotal.toFixed(1)} | 20–${ceilingOf(c.id)} |`,
+      ),
       '',
-      '## Lead vs lead (Rook partners)',
+      `## Ability uses per player per match (target ${ABILITY_USE_TARGET[0]}–${ABILITY_USE_TARGET[1]})`,
+      '',
+      '| character | uses / match | in target |',
+      '|---|---|---|',
+      ...perCharacter.map(
+        (c) => `| ${c.id} | ${c.perMatch.toFixed(2)} | ${inTarget(c.perMatch)} |`,
+      ),
+      '',
+      '## Gym — mirrored duos',
+      '',
+      table(mirrored.get('gym') ?? []),
+      '',
+      '## Gym — lead vs lead (Rook partners)',
       '',
       table(strength),
       '',
     ].join('\n');
     mkdirSync('docs/balance', { recursive: true });
-    writeFileSync(`docs/balance/${date}.md`, report);
+    writeFileSync(`docs/balance/${date}-phase-5.md`, report);
     process.stdout.write(`\n${report}\n`);
 
-    expect(homeRate).toBeGreaterThanOrEqual(0.4);
-    expect(homeRate).toBeLessThanOrEqual(0.6);
-    expect(meanTotal).toBeGreaterThanOrEqual(20);
-    expect(meanTotal).toBeLessThanOrEqual(60);
+    // Spec C.7 on the gym; spec D.7's 45–55 % on the aggregate (per court the samples are small).
+    const gymRow = perCourt.find((c) => c.id === 'gym');
+    if (!gymRow) throw new Error('no gym');
+    expect(gymRow.homeRate).toBeGreaterThanOrEqual(0.4);
+    expect(gymRow.homeRate).toBeLessThanOrEqual(0.6);
+    expect(all.homeRate).toBeGreaterThanOrEqual(0.45);
+    expect(all.homeRate).toBeLessThanOrEqual(0.55);
+    for (const c of perCourt) {
+      expect(c.homeRate, c.id).toBeGreaterThanOrEqual(0.35);
+      expect(c.homeRate, c.id).toBeLessThanOrEqual(0.65);
+      expect(c.meanTotal, c.id).toBeGreaterThanOrEqual(20);
+      expect(c.meanTotal, c.id).toBeLessThanOrEqual(ceilingOf(c.id));
+    }
+    for (const c of perCharacter) expect(c.perMatch, c.id).toBeGreaterThan(0);
   });
 });

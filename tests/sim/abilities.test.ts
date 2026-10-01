@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { getCharacter } from '../../src/content/characters';
 import { getCourt } from '../../src/content/courts';
-import { applyChargeGains, ASSIST_WINDOW_TICKS, CHARGE_MAX } from '../../src/sim/abilities';
+import {
+  applyChargeGains,
+  ASSIST_WINDOW_TICKS,
+  CHARGE_GAIN,
+  CHARGE_MAX,
+} from '../../src/sim/abilities';
 import { NO_ABILITIES, type AbilityDef, type AbilityTable } from '../../src/sim/hooks';
 import { createMatch, findPlayer, type RosterEntry } from '../../src/sim/match';
 import { nextFloat } from '../../src/sim/rng';
@@ -256,12 +261,12 @@ describe('charge gains (spec D.2)', () => {
     shotType: 'jumpshot',
   });
 
-  it('baskets pay +12 / +18 to the scorer, steals and blocks +15, capped at 100', () => {
+  it('baskets, steals and blocks pay CHARGE_GAIN, capped at 100', () => {
     const s = live();
     applyChargeGains(s, [basket('a', 2)], null);
-    expect(player(s, 'a').charge).toBe(12);
+    expect(player(s, 'a').charge).toBe(CHARGE_GAIN.basket2);
     applyChargeGains(s, [basket('a', 3)], null);
-    expect(player(s, 'a').charge).toBe(30);
+    expect(player(s, 'a').charge).toBe(CHARGE_GAIN.basket2 + CHARGE_GAIN.basket3);
     applyChargeGains(
       s,
       [
@@ -270,7 +275,7 @@ describe('charge gains (spec D.2)', () => {
       ],
       null,
     );
-    expect(player(s, 'x').charge).toBe(30);
+    expect(player(s, 'x').charge).toBe(CHARGE_GAIN.steal + CHARGE_GAIN.block);
     player(s, 'a').charge = 95;
     applyChargeGains(s, [basket('a', 3)], null);
     expect(player(s, 'a').charge).toBe(CHARGE_MAX);
@@ -290,8 +295,8 @@ describe('charge gains (spec D.2)', () => {
     expect(player(s, 'b').lastCatch).toEqual({ from: 'a', tick: 1000 });
     s.tick = 1000 + ASSIST_WINDOW_TICKS;
     applyChargeGains(s, [basket('b', 2)], null);
-    expect(player(s, 'a').charge).toBe(10);
-    expect(player(s, 'b').charge).toBe(12);
+    expect(player(s, 'a').charge).toBe(CHARGE_GAIN.assist);
+    expect(player(s, 'b').charge).toBe(CHARGE_GAIN.basket2);
     expect(player(s, 'b').lastCatch).toBeNull();
   });
 
