@@ -6,6 +6,7 @@ import { TICK_DT } from './constants';
 import { allPlayers } from './match';
 import { receivingTeam, setPhase, stepClocks, stepPhases } from './phases';
 import { isActionLocked, startJump, stepPlayer, stepTurbo } from './player-movement';
+import { callForPass, startPass, stepPassAction, stepPassFlight } from './passing';
 import { applyRules } from './rules';
 import { detectBasket, startShot, stepFlight } from './shooting';
 import { NO_INTENT } from './types';
@@ -54,7 +55,9 @@ export function tick(
 
   // 5. move ball
   const prevBallPos = { ...next.ball.pos };
-  if (next.ball.mode === 'flight') stepFlight(next.ball, court);
+  if (next.ball.mode === 'flight' && next.ball.flight?.kind === 'pass')
+    stepPassFlight(next, court, events);
+  else if (next.ball.mode === 'flight') stepFlight(next.ball, court);
   else stepBall(next, court, events);
 
   // 6. bodies
@@ -103,11 +106,20 @@ function resolveAction(
   events: SimEvent[],
 ): void {
   if (isActionLocked(player)) {
-    stepLockedAction(state, player, court, events);
+    if (player.action === 'pass') stepPassAction(state, player, court, events);
+    else stepLockedAction(state, player, court, events);
     return;
   }
   const hasBall = state.ball.holder === player.id;
+  const live = state.phase === 'live';
+  if (justPressed(player.prevButtons, intent, 'pass')) {
+    if (hasBall && live && player.onGround) {
+      if (startPass(state, player)) return;
+    } else if (!hasBall) {
+      callForPass(player);
+    }
+  }
   if (!player.onGround || !justPressed(player.prevButtons, intent, 'action')) return;
-  if (hasBall && state.phase === 'live') startShot(state, player, court);
+  if (hasBall && live) startShot(state, player, court);
   else if (!hasBall) startJump(player, player.stats.jumpSpeed);
 }
