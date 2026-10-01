@@ -86,6 +86,24 @@ export function primeHumanInput(
   primeHeldButtons(state, held);
 }
 
+/**
+ * Priming must happen on the first tick, not inside the menu keydown: the keyboard backend
+ * latches the same key after the menu listener ran. `request()` there, `run()` before sampling.
+ */
+export class PendingPrime {
+  private pending = false;
+
+  request(): void {
+    this.pending = true;
+  }
+
+  run(state: MatchState, human: Controller, held: Map<PlayerId, PlayerIntent>): void {
+    if (!this.pending) return;
+    this.pending = false;
+    primeHumanInput(state, human, held);
+  }
+}
+
 /** A match and its controllers for `seed`; built again with `seed + 1` on restart (spec C.6). */
 export function buildSession(
   options: GameOptions,

@@ -1,7 +1,7 @@
 import type { Controller } from './controller';
 import { disposeObject3D } from './dispose';
 import { GameLoop } from './game-loop';
-import { buildSession, HUMAN_ID, primeHumanInput } from './session';
+import { buildSession, HUMAN_ID, PendingPrime } from './session';
 import type { Settings } from './storage';
 import type { GameOptions } from './url-options';
 import { ABILITIES } from '../content/abilities';
@@ -142,7 +142,6 @@ export class MatchScreen {
     /** Pause → Restart: seed + 1, and the buttons held now are not presses in the new match (spec D.6). */
     this.restartMatch = (): void => {
       seed += 1;
-      intents.set(HUMAN_ID, human(session.runner.current)); // fresh sample: the pressed key is held
       session = buildSession(options, court, seed, human, intents);
       weather.reset();
       lastTickNumber = session.runner.current.tick;
@@ -154,6 +153,7 @@ export class MatchScreen {
     this.loop = new GameLoop(
       () => {
         const { runner, controllers } = session;
+        this.prime.run(runner.current, human, intents);
         for (const [id, controller] of controllers) intents.set(id, controller(runner.current));
         // Always step: when finished the sim returns the same state, so previous catches up with
         // current and the render stops blending (no jitter on the final screen).
@@ -242,6 +242,7 @@ export class MatchScreen {
 
   private restartMatch: () => void;
   private primeHuman: () => void;
+  private readonly prime = new PendingPrime();
 
   get paused(): boolean {
     return this.pauseOverlay !== null;

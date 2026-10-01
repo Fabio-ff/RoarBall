@@ -71,22 +71,29 @@ describe('buildSession (spec C.1)', () => {
   });
 });
 
-describe('primeHumanInput (resume/restart must not leak a press)', () => {
-  it('a latched Space used to confirm a menu is not an ACTION press afterwards', async () => {
+describe('PendingPrime (resume/restart must not leak a press, real listener order)', () => {
+  it('a Space that resumes the match, handled before the keyboard latches it, is no ACTION press', async () => {
     const { InputManager } = await import('../../src/input/input-manager');
     const { KeyboardBackend } = await import('../../src/input/keyboard');
-    const { primeHumanInput } = await import('../../src/app/session');
+    const { PendingPrime } = await import('../../src/app/session');
+    const { justPressed } = await import('../../src/sim/buttons');
     const target = new EventTarget() as unknown as Window;
+    const prime = new PendingPrime();
+    // The menu listener is registered first, as AppShell's MenuInput is.
+    (target as unknown as EventTarget).addEventListener('keydown', () => prime.request());
     const input = new InputManager([new KeyboardBackend(target)]);
     const state = buildSession({ ...readGameOptions('', 1) }, court, 1, () => NO_INTENT).runner
       .current;
     (target as unknown as EventTarget).dispatchEvent(
       Object.assign(new Event('keydown', { cancelable: true }), { code: 'Space', repeat: false }),
     );
-    primeHumanInput(state, () => input.sample(), new Map());
-    expect(findPlayer(state, 'home1')?.prevButtons.action).toBe(true);
-    // Still held next tick: prevButtons already true, so the sim sees no new press.
-    expect(input.sample().action).toBe(true);
+    const held = new Map();
+    // First tick: prime, then sample, as MatchScreen's tick does.
+    prime.run(state, () => input.sample(), held);
+    const sample = input.sample();
+    const home = findPlayer(state, 'home1');
+    expect(home?.prevButtons.action).toBe(true);
+    expect(justPressed(home!.prevButtons, sample, 'action')).toBe(false);
     input.dispose();
   });
 });
