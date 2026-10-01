@@ -18,7 +18,7 @@ const settings: MatchSettings = {
   courtId: 'gym',
   mode: 'match',
 };
-const SEEDS_PER_PAIRING = 10;
+const SEEDS_PER_PAIRING = 20;
 const MAX_TICKS = 20_000;
 const ids = characters.map((c) => c.id);
 
