@@ -1,3 +1,5 @@
+import { AudioEngine } from './audio/engine';
+import { NullAudioSink, type AudioSink } from './audio/sink';
 import type { MatchResult } from './app/box-score';
 import { MatchScreen } from './app/match-screen';
 import { transition, type ScreenId, type ShellEvent } from './app/screens';
@@ -24,6 +26,8 @@ export { buildRoster, buildSession, buildSettings, type Session } from './app/se
 
 interface ScreenHandle {
   handleCommand(command: MenuCommand, source: MenuSource): void;
+  /** Only the match has this: true while the pause overlay is open. */
+  readonly paused?: boolean;
   dispose(): void;
 }
 
@@ -38,6 +42,11 @@ export class AppShell {
   private options: GameOptions | null;
   private lastResult: MatchResult | null = null;
   private readonly store: StorageLike | null;
+  private sink: AudioSink = new NullAudioSink();
+  private engine: AudioEngine | null = null;
+  private audioTried = false;
+  /** True while a menu command runs, so the click it triggers does not sound a second time. */
+  private handlingCommand = false;
 
   constructor(
     private readonly root: HTMLElement,
@@ -47,8 +56,12 @@ export class AppShell {
     this.settings = loadSettings(this.store);
     this.setup = loadSetup(this.store);
     this.options = opts.initial;
+    // Registered before MenuInput so the engine exists when the same keydown is a menu command.
+    window.addEventListener('keydown', this.onGesture, true);
+    window.addEventListener('pointerdown', this.onGesture, true);
+    this.root.addEventListener('click', this.onClick);
     this.menuInput = new MenuInput(window);
-    this.menuInput.onCommand = (c, source) => this.handle?.handleCommand(c, source);
+    this.menuInput.onCommand = (c, source) => this.onMenuCommand(c, source);
     const poll = (): void => {
       this.menuInput.poll();
       this.rafId = requestAnimationFrame(poll);
@@ -87,6 +100,7 @@ export class AppShell {
           onFinished: (result) => this.onFinished(result),
           onQuit: () => this.dispatch({ type: 'quit' }),
           onSettingsChange: (s) => this.updateSettings(s),
+          sink: () => this.sink,
         });
         break;
       case 'howToPlay':
@@ -138,8 +152,51 @@ export class AppShell {
     this.dispatch({ type: 'finished' });
   }
 
+  /** First gesture builds the engine (browsers need a gesture); later ones resume it (iOS). */
+  private readonly onGesture = (): void => {
+    this.ensureAudio();
+    this.engine?.resume();
+  };
+
+  private ensureAudio(): void {
+    if (this.audioTried) return;
+    this.audioTried = true;
+    window.removeEventListener('keydown', this.onGesture, true);
+    this.engine = AudioEngine.create();
+    if (!this.engine) {
+      window.removeEventListener('pointerdown', this.onGesture, true);
+      return;
+    }
+    this.engine.setEnabled(this.settings.sound, this.settings.music);
+    this.sink = this.engine;
+  }
+
+  private onMenuCommand(command: MenuCommand, source: MenuSource): void {
+    if (source === 'gamepad') this.ensureAudio();
+    // Live play ignores everything but pause/back, so only menus (and the pause overlay) click.
+    const inMenu = this.current !== 'match' || this.handle?.paused === true;
+    if (inMenu) {
+      if (command === 'confirm') this.sink.playSfx('menuConfirm');
+      else if (['up', 'down', 'left', 'right'].includes(command)) this.sink.playSfx('menuMove');
+    }
+    this.handlingCommand = true;
+    try {
+      this.handle?.handleCommand(command, source);
+    } finally {
+      this.handlingCommand = false;
+    }
+  }
+
+  private readonly onClick = (e: Event): void => {
+    if (this.handlingCommand) return;
+    if ((e.target as Element | null)?.closest('.menu-button, .setup-card')) {
+      this.sink.playSfx('menuConfirm');
+    }
+  };
+
   private updateSettings(settings: Settings): void {
     this.settings = settings;
+    this.sink.setEnabled(settings.sound, settings.music);
     saveSettings(settings, this.store);
   }
 
@@ -147,5 +204,9 @@ export class AppShell {
     cancelAnimationFrame(this.rafId);
     this.handle?.dispose();
     this.menuInput.dispose();
+    window.removeEventListener('keydown', this.onGesture, true);
+    window.removeEventListener('pointerdown', this.onGesture, true);
+    this.root.removeEventListener('click', this.onClick);
+    this.engine?.dispose();
   }
 }
