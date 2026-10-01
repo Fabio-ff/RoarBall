@@ -978,3 +978,118 @@ Recorded at the Phase 5 reassessment; they refine D.2–D.7 and are what the cod
 - **Open feel facts for the playtest**: Brick rarely reaches Rocket Dunk; gust-shifted passes
   (1.5–2.4 m) drop for a receiver standing still; the volcano's orange light darkens the blue
   team; Blur doubles acceleration as well as speed.
+
+## Appendix E — Phase 6 decisions (2026-10-01)
+
+Decisions taken when planning Phase 6 (menus, gamepad, audio, effects, polish). They refine §2,
+§8, §9 and §10.2. **Phase 6 does not change `src/sim/`**: every golden, pinned score and
+determinism test passes unchanged, and reviews check this first.
+
+### E.1 Playable build and screen flow
+
+A bare URL opens the **Title**; the flow is a state machine in `app.ts` with one DOM module per
+screen in `src/ui/screens/`:
+
+```
+Title → Setup → Match ⇄ Pause → Results → Rematch (Match) | Change setup (Setup) | Title
+```
+
+- **URL shortcuts.** Any match parameter (`?mode`, `?character`, `?teammate`, `?opponents`,
+  `?court`, `?ai`, `?seed`, `?duration` in seconds) skips the menus and starts that match directly, as in Phases 1–5;
+  `?debug` alone does not. The smoke test and direct links keep working.
+- **Title**: logo, PLAY, sound on/off. The first gesture unlocks audio (E.4).
+- **Setup**: four rows of cards — You, Teammate, Opponents (two slots, each with a "random"
+  card), Court — and a difficulty toggle Easy / Fair / Hard (the C.3 profiles; default Fair),
+  then START. A character card shows name, ability name and the seven 1..10 stats as bars; a
+  court card shows name, a palette swatch from its `dressing` and a one-line modifier text
+  (a new `CourtDef.blurb` string; content-only). Duplicate characters are allowed (as today).
+  No 3D previews (§9): cards are DOM only until phase 7.
+- **Match**: a `MatchScreen` owns scene, views, HUD, input wiring and loop; it is built on entry
+  and disposes every Three.js geometry, material and texture plus all listeners on exit.
+- **Pause**: Esc, P, gamepad Start or the HUD ⏸ button. Pausing **stops the game loop** (the
+  sim is not stepped; the sim's `paused` phase stays unused). Options: Resume, Restart, Sound,
+  Vibration, Reduce motion, Quit to title. The match auto-pauses when the tab is hidden.
+- **Results**: final score, WIN / LOSS (or OVERTIME WIN), and a box score per player — points,
+  dunks, 3-pointers, assists, steals, blocks, ability uses — built in the app by a pure
+  `BoxScore` aggregator over sim events and tick numbers (assist = a `basket` whose scorer
+  caught a teammate's `pass` within the D.2 window of 180 ticks, with no possession change in
+  between — the rule that pays the assist charge; ability uses = `abilityActivated` events).
+  The game-ending basket's banner plays for 1.5 s before Results appears (Phase 4 deferred).
+  Menus between matches replace C.6's press-to-restart, so the restart press leak cannot occur.
+- All screens: landscape-first, min 56 px targets, safe-area insets, rotate hint in portrait.
+  Navigation by touch, mouse, keyboard (arrows/Tab + Enter/Space, Esc = back) and gamepad
+  (stick/D-pad + A, B = back) through one `MenuNav` helper that moves focus between elements
+  marked focusable by each screen.
+
+### E.2 Persistence
+
+A small `storage` helper keeps **the last setup** and **the settings** (sound, music, SFX
+volume, vibration, reduce motion) in `localStorage` under versioned keys. Every read and write
+is wrapped in try/catch and validated; blocked or corrupt storage falls back to defaults. This
+refines §2 "nothing persisted": these are conveniences, not progress.
+
+### E.3 Gamepad
+
+`src/input/gamepad.ts` implements `InputBackend` (§8) over the standard mapping: left stick or
+D-pad move (radial dead zone 0.2, rescaled), A action, X pass, Y special, RT or B turbo, Start
+pause. Polled per tick through `navigator.getGamepads()`; hot-plug; the most recently pressed
+pad drives the human. Presses between samples are latched like the keyboard's (A.6). Rumble
+(`vibrationActuator`, where supported) on dunk, block suffered and Earthquake; **vibration on by
+default**, toggled in Pause.
+
+### E.4 Audio
+
+All sound is **synthesized with Web Audio** in `src/audio/` (no files; Howler deferred to a
+later audio overhaul). `audio/` reads sim types and events only and never writes state.
+
+- `AudioEngine`: one `AudioContext`, unlocked on the first user gesture, master / music / SFX
+  buses with volumes from E.2, a cap of 12 simultaneous SFX voices (oldest dropped).
+- `SfxBank`: one synth patch per sound — bounce (gain from the `bounce` event's speed), swish,
+  rim clang, backboard thud, shoe squeak (sharp direction change of a running player, from
+  state), pass whoosh, steal snap, block slam, shove/knockdown thud, dunk slam, crowd bed that
+  swells after baskets (more for dunks and threes), buzzer (end of regulation, shot-clock
+  violation), one stinger per ability, menu tick/confirm.
+- `MusicPlayer`: a small step sequencer (bass, drums, lead patterns) with one loop per court, a
+  menu loop and win/lose results jingles; it ducks under dunks and ability stingers.
+- `AudioDirector`: maps sim events and state to `SfxBank`/`MusicPlayer` calls, like the HUD and
+  effects. Swapping synth patches for recorded files later touches `SfxBank` and `MusicPlayer`
+  only.
+
+### E.5 Effects
+
+Event-driven, pooled, in `src/render/`, within the §7.3 budget:
+
+- **Basket bursts** at the rim in the scorer's team colour; big for threes and dunks, plus a rim
+  shake on dunks.
+- **Camera shake**: `BroadcastCamera.shake(strength)` with fast decay — dunk medium, Earthquake
+  strong, block and knockdown light; disabled by Reduce motion.
+- **Ball trail** behind shots and passes; glows orange during Hot Hand and Rocket Dunk.
+- **Ability visuals**: Rocket Dunk flame aura and launch streak; Hot Hand glowing hands and a
+  three-pip floor ring; Blur 3–4 fading afterimages; Earthquake expanding floor shockwave and
+  dust.
+
+### E.6 Polish and carried-over minors
+
+In scope: Three.js disposal (E.1 `MatchScreen`); HUD and weather per-frame allocations; the
+hard-coded `-phase-5` balance report filename; an alley-oop unblockable snapshot test; Three.js
+in its own bundle chunk; Phase 4 test-strength minors (seed test, tip-off formation test with
+swapped teams, `scoreSpot` 4 m boundary, 2 m sweep bucket). Same-tick SPECIAL presses resolving
+in roster order (Phase 5 m-2) is **documented** in §4.2's pipeline notes, not changed.
+
+Deferred to the playtest tuning PRs (they change AI behaviour): §6 "teammate favours where the
+human is heading", spot tie order, `pickOpenSpot` stale-spot rescoring.
+
+Not in Phase 6: local two-player, "on fire", crowd/arena lights (future enhancements).
+
+### E.7 Testing
+
+- Unit (jsdom where DOM is needed): screen state machine transitions; `BoxScore` over scripted
+  event sequences; `MenuNav` focus movement; gamepad mapping, dead zone and press latching
+  with a fake `getGamepads`; `AudioDirector` against a recording fake engine; sequencer step
+  timing; effects event map and pool caps; storage with throwing / corrupt `localStorage`.
+- Smoke (headless Chrome): bare URL → Title → Setup → START by keyboard → match renders → pause
+  and resume → Results reached (short match via a `?duration=` seconds shortcut, an E.1 URL
+  shortcut handled in `url-options.ts`) without
+  console errors; the URL-shortcut path still boots straight into a match.
+- Sim invariant: `git diff main -- src/sim tests/sim` is empty for every Phase 6 PR, except
+  test-only additions listed in E.6.
