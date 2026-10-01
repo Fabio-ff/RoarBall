@@ -10,9 +10,12 @@ import { BALL_RADIUS } from '../sim/constants';
 import type { BallState } from '../sim/types';
 import { lerpVec3 } from './interpolate';
 
+/** Dribble phase speed in radians per tick; |sin| period is π/0.11 ≈ 28.6 ticks ≈ 2.1 bounces per second. */
+const DRIBBLE_RATE = 0.11;
+
 /** Height of a dribbled ball at animation time `t` (ticks): from the hand down to the floor and back. */
 export function dribbleHeight(handY: number, t: number): number {
-  const phase = Math.abs(Math.sin(t * 0.3));
+  const phase = Math.abs(Math.sin(t * DRIBBLE_RATE));
   return BALL_RADIUS + (handY - BALL_RADIUS) * phase;
 }
 
