@@ -34,7 +34,10 @@ describe('SetupScreen (spec E.1)', () => {
     expect(root.querySelectorAll('[data-nav-row="2"]').length).toBe(5);
     expect(root.querySelectorAll('[data-nav-row="4"]').length).toBe(4);
     expect(root.querySelectorAll('[data-nav-row="5"]').length).toBe(3);
-    expect(root.querySelector('[data-nav-row="6"]')?.textContent).toBe('START');
+    expect([...root.querySelectorAll('[data-nav-row="6"]')].map((e) => e.textContent)).toEqual([
+      'BACK',
+      'START',
+    ]);
   });
 
   it('marks the current choices selected', () => {
@@ -75,6 +78,28 @@ describe('SetupScreen (spec E.1)', () => {
     });
     screen.handleCommand('back');
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it('the BACK button calls onBack and START holds the initial focus', () => {
+    const { q, onBack } = make();
+    expect(document.activeElement).toBe(q('[data-action="start"]'));
+    q('[data-action="back"]')?.click();
+    expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  it('character cards label the seven stat bars in order', () => {
+    const { q } = make();
+    const labels = [
+      ...(q('[data-field="characterId"][data-value="ace"]')?.querySelectorAll('.stat-label') ?? []),
+    ].map((e) => e.textContent);
+    expect(labels).toEqual(['SPD', 'JMP', 'SHT', 'DNK', 'DEF', 'POW', 'STA']);
+  });
+
+  it('a clicked card takes focus (iPad Safari does not focus buttons on tap)', () => {
+    const { q } = make();
+    const card = q('[data-field="courtId"][data-value="frozen"]');
+    card?.click();
+    expect(document.activeElement).toBe(card);
   });
 
   it('starts with focus on START so a quick confirm plays the remembered setup', () => {

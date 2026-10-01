@@ -7,6 +7,15 @@ import './setup.css';
 
 const RANDOM = 'random';
 const STAT_ORDER = ['speed', 'jump', 'shooting', 'dunking', 'defense', 'power', 'stamina'] as const;
+const STAT_LABELS: Record<(typeof STAT_ORDER)[number], string> = {
+  speed: 'SPD',
+  jump: 'JMP',
+  shooting: 'SHT',
+  dunking: 'DNK',
+  defense: 'DEF',
+  power: 'POW',
+  stamina: 'STA',
+};
 const hex = (c: number): string => `#${c.toString(16).padStart(6, '0')}`;
 
 export interface SetupCatalog {
@@ -59,10 +68,6 @@ export class SetupScreen {
     this.choice = { ...options.setup, opponentIds: [...options.setup.opponentIds] };
     this.el = document.createElement('div');
     this.el.className = 'screen screen-setup';
-    const heading = document.createElement('h2');
-    heading.className = 'screen-heading';
-    heading.textContent = 'CHOOSE YOUR TEAM';
-    this.el.appendChild(heading);
 
     ROWS.forEach(([label, field], navRow) => {
       const section = document.createElement('section');
@@ -71,6 +76,14 @@ export class SetupScreen {
       this.el.appendChild(section);
     });
 
+    const actions = document.createElement('div');
+    actions.className = 'setup-actions';
+    const back = document.createElement('button');
+    back.className = 'menu-button is-secondary';
+    back.dataset.action = 'back';
+    back.dataset.navRow = String(ROWS.length);
+    back.textContent = 'BACK';
+    back.addEventListener('click', () => options.onBack());
     const start = document.createElement('button');
     start.className = 'menu-button is-primary';
     start.dataset.action = 'start';
@@ -79,12 +92,14 @@ export class SetupScreen {
     start.addEventListener('click', () =>
       options.onStart({ ...this.choice, opponentIds: [...this.choice.opponentIds] }),
     );
-    this.el.appendChild(start);
+    actions.append(back, start);
+    this.el.appendChild(actions);
 
     this.el.addEventListener('click', (e) => {
       const card = (e.target as HTMLElement).closest<HTMLElement>('[data-field]');
       if (!card) return;
       this.select(card.dataset.field as Field, card.dataset.value ?? '');
+      card.focus();
     });
 
     parent.appendChild(this.el);
@@ -121,7 +136,7 @@ export class SetupScreen {
       return catalog.courts
         .map(
           (c) =>
-            `<button class="setup-card is-court" ${attrs(c.id)} style="background:linear-gradient(160deg, ${hex(c.skyColor)} 0%, ${hex(c.floorColor)} 100%)">` +
+            `<button class="setup-card is-court" ${attrs(c.id)} style="background:linear-gradient(rgb(0 0 0 / 0.5), rgb(0 0 0 / 0.5)), linear-gradient(160deg, ${hex(c.skyColor)} 0%, ${hex(c.floorColor)} 100%)">` +
             `<strong>${esc(c.name)}</strong><span>${esc(c.description)}</span>` +
             `<span class="setup-modifier">${esc(c.modifierName)}</span></button>`,
         )
@@ -138,7 +153,7 @@ export class SetupScreen {
     const cards = catalog.characters.map((c) => {
       const bars = STAT_ORDER.map(
         (s) =>
-          `<span class="stat-bar" title="${s} ${c.stats[s]}"><span style="height:${c.stats[s] * 10}%"></span></span>`,
+          `<span class="stat-col" title="${s} ${c.stats[s]}"><span class="stat-bar"><span style="height:${c.stats[s] * 10}%"></span></span><span class="stat-label">${STAT_LABELS[s]}</span></span>`,
       ).join('');
       return (
         `<button class="setup-card" ${attrs(c.id)} style="--card-color:${hex(c.color)}">` +
