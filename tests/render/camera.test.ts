@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { computeCameraPose } from '../../src/render/camera';
+import { PerspectiveCamera } from 'three';
+import { BroadcastCamera, computeCameraPose, shakeOffset } from '../../src/render/camera';
 
 describe('computeCameraPose', () => {
   it('sits on the +Z sideline, elevated, looking at the court', () => {
@@ -29,5 +30,33 @@ describe('computeCameraPose', () => {
     const portrait = computeCameraPose({ x: 0, y: 0, z: 0 }, 9 / 16);
     expect(portrait.position.z).toBeGreaterThan(landscape.position.z);
     expect(portrait.position.y).toBeGreaterThan(landscape.position.y);
+  });
+});
+
+describe('camera shake (plan decision 25)', () => {
+  it('shakeOffset is zero at zero strength and bounded by 0.25 m × strength', () => {
+    expect(shakeOffset(1.23, 0)).toEqual({ x: 0, y: 0, z: 0 });
+    for (let t = 0; t < 2; t += 0.01) {
+      const o = shakeOffset(t, 1);
+      expect(Math.abs(o.x)).toBeLessThanOrEqual(0.25 + 1e-9);
+      expect(Math.abs(o.y)).toBeLessThanOrEqual(0.25 + 1e-9);
+    }
+  });
+
+  it('shake decays and reduce motion disables it', () => {
+    const cam = new PerspectiveCamera();
+    const bc = new BroadcastCamera(cam);
+    const target = { x: 0, y: 0, z: 0 };
+    bc.update(target, 0.016);
+    const rest = cam.position.clone();
+    bc.shake(1);
+    bc.update(target, 0.016);
+    expect(cam.position.distanceTo(rest)).toBeGreaterThan(0);
+    for (let i = 0; i < 120; i++) bc.update(target, 0.016);
+    expect(cam.position.distanceTo(rest)).toBeLessThan(0.01);
+    bc.reduceMotion = true;
+    bc.shake(1);
+    bc.update(target, 0.016);
+    expect(cam.position.distanceTo(rest)).toBeLessThan(0.01);
   });
 });
