@@ -1,3 +1,4 @@
+import type { MatchResult } from './app/box-score';
 import { MatchScreen } from './app/match-screen';
 import { transition, type ScreenId, type ShellEvent } from './app/screens';
 import { buildSetupCatalog, toGameOptions, type SetupChoice } from './app/setup-model';
@@ -12,7 +13,9 @@ import {
 } from './app/storage';
 import type { GameOptions } from './app/url-options';
 import { MenuInput, type MenuCommand } from './input/menu-input';
+import { HUMAN_ID } from './app/session';
 import { HowToPlayScreen } from './ui/screens/how-to-play';
+import { ResultsScreen } from './ui/screens/results';
 import { SetupScreen } from './ui/screens/setup';
 import { TitleScreen } from './ui/screens/title';
 
@@ -33,6 +36,7 @@ export class AppShell {
   private readonly menuInput: MenuInput;
   private rafId = 0;
   private options: GameOptions | null;
+  private lastResult: MatchResult | null = null;
   private readonly store: StorageLike | null;
 
   constructor(
@@ -80,7 +84,7 @@ export class AppShell {
           root: this.root,
           options: this.options,
           settings: this.settings,
-          onFinished: () => this.onFinished(),
+          onFinished: (result) => this.onFinished(result),
           onQuit: () => this.dispatch({ type: 'quit' }),
           onSettingsChange: (s) => this.updateSettings(s),
         });
@@ -98,9 +102,21 @@ export class AppShell {
           onBack: () => this.dispatch({ type: 'back' }),
         });
         break;
-      case 'results':
-        // Task 3 replaces this with the Results screen.
-        return this.show('title');
+      case 'results': {
+        const result = this.lastResult;
+        if (!result) return this.show('title');
+        this.handle = new ResultsScreen(this.root, {
+          result,
+          humanId: HUMAN_ID,
+          onRematch: () => {
+            this.options = { ...result.options, seed: (result.options.seed + 1) >>> 0 };
+            this.dispatch({ type: 'rematch' });
+          },
+          onChangeSetup: () => this.dispatch({ type: 'changeSetup' }),
+          onTitle: () => this.dispatch({ type: 'toTitle' }),
+        });
+        break;
+      }
     }
   }
 
@@ -117,8 +133,8 @@ export class AppShell {
     this.dispatch({ type: 'start' });
   }
 
-  /** Task 3 receives the `MatchFinish` here and shows Results. */
-  private onFinished(): void {
+  private onFinished(result: MatchResult): void {
+    this.lastResult = result;
     this.dispatch({ type: 'finished' });
   }
 

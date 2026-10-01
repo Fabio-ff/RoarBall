@@ -1,7 +1,8 @@
 import type { Controller } from './controller';
 import { disposeObject3D } from './dispose';
 import { GameLoop } from './game-loop';
-import { buildSession, HUMAN_ID, PendingPrime } from './session';
+import { BoxScore, type MatchResult } from './box-score';
+import { buildRoster, buildSession, HUMAN_ID, PendingPrime } from './session';
 import type { Settings } from './storage';
 import type { GameOptions } from './url-options';
 import { ABILITIES } from '../content/abilities';
@@ -21,7 +22,7 @@ import { GameScene } from '../render/scene';
 import { WeatherView } from '../render/weather-view';
 import { CHARGE_MAX } from '../sim/abilities';
 import { findPlayer } from '../sim/match';
-import type { MatchState, PlayerId, PlayerIntent, TeamIndex } from '../sim/types';
+import type { PlayerId, PlayerIntent, TeamIndex } from '../sim/types';
 import { abilityLines, DebugOverlay } from '../ui/debug-overlay';
 import { Hud } from '../ui/hud';
 import { PauseOverlay } from '../ui/screens/pause';
@@ -31,16 +32,11 @@ const TEAM_COLORS = [0x2f80ed, 0xeb5757] as const;
 /** The sticky final banner is shown this long before the match hands over (spec E.1). */
 const FINISH_HOLD_MS = 2500;
 
-export interface MatchFinish {
-  state: MatchState;
-  options: GameOptions;
-}
-
 export interface MatchScreenDeps {
   root: HTMLElement;
   options: GameOptions;
   settings: Settings;
-  onFinished(result: MatchFinish): void;
+  onFinished(result: MatchResult): void;
   onQuit(): void;
   onSettingsChange(settings: Settings): void;
 }
@@ -138,6 +134,15 @@ export class MatchScreen {
     let ticksPerSecond = 0;
 
     const intents = new Map<PlayerId, PlayerIntent>();
+    const newBox = (): BoxScore =>
+      new BoxScore(
+        buildRoster(options).map(({ id, team, characterId }) => ({
+          id,
+          team,
+          name: getCharacter(characterId).name,
+        })),
+      );
+    let box = newBox();
 
     /** Pause → Restart: seed + 1, and the buttons held now are not presses in the new match (spec D.6). */
     this.restartMatch = (): void => {
@@ -146,6 +151,7 @@ export class MatchScreen {
       weather.reset();
       lastTickNumber = session.runner.current.tick;
       this.finishedAt = null;
+      box = newBox();
     };
 
     this.primeHuman = (): void => this.prime.request();
@@ -158,6 +164,7 @@ export class MatchScreen {
         // Always step: when finished the sim returns the same state, so previous catches up with
         // current and the render stops blending (no jitter on the final screen).
         const events = runner.step(intents);
+        box.record(events, runner.current.tick);
         hud.handleEvents(events, runner.current);
         weather.handleEvents(events);
         for (const event of events) {
@@ -227,7 +234,13 @@ export class MatchScreen {
           if (now - this.finishedAt >= FINISH_HOLD_MS) {
             this.done = true;
             this.loop.stop();
-            deps.onFinished({ state: next, options });
+            deps.onFinished({
+              score: [next.score[0], next.score[1]],
+              humanTeam: HUMAN_TEAM,
+              overtime: next.overtime,
+              lines: box.lines(),
+              options,
+            });
           }
         }
       },
