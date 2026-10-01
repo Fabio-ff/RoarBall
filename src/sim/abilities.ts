@@ -148,9 +148,14 @@ export function applyChargeGains(
         const last = scorer?.lastCatch;
         if (scorer && last && state.tick - last.tick <= ASSIST_WINDOW_TICKS)
           add(last.from, CHARGE_GAIN.assist);
-        if (scorer) scorer.lastCatch = null;
+        // A basket by anyone closes every assist window.
+        for (const p of [...state.teams[0].players, ...state.teams[1].players]) p.lastCatch = null;
         break;
       }
+      case 'possessionChange':
+        // The team that lost the ball loses its pending assists.
+        for (const p of state.teams[event.team === 0 ? 1 : 0].players) p.lastCatch = null;
+        break;
       case 'steal':
         add(event.by, CHARGE_GAIN.steal);
         break;

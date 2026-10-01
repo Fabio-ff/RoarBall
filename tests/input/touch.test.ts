@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TouchBackend } from '../../src/input/touch';
 
 const WIDTH = 1000;
@@ -150,6 +150,16 @@ describe('TouchBackend visibility', () => {
 });
 
 describe('TouchBackend SP readiness (spec D.6)', () => {
+  it('writes nothing when the readiness is unchanged', () => {
+    const toggle = vi.spyOn(button('special').classList, 'toggle');
+    backend.setSpecialReady(false); // already dimmed
+    expect(toggle).not.toHaveBeenCalled();
+    backend.setSpecialReady(true);
+    backend.setSpecialReady(true);
+    expect(toggle).toHaveBeenCalledTimes(1);
+    toggle.mockRestore();
+  });
+
   it('dims SP until the ability bar is full, without blocking presses', () => {
     expect(button('special').classList.contains('is-dimmed')).toBe(true);
     backend.setSpecialReady(true);

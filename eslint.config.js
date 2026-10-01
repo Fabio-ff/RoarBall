@@ -94,6 +94,18 @@ export default defineConfig([
           message: 'Content draws randomness through ctx.rng (spec A.7)',
         },
         { object: 'Date', property: 'now', message: 'Content must not read the wall clock' },
+        {
+          object: 'performance',
+          property: 'now',
+          message: 'Content must not read the wall clock',
+        },
+      ],
+      'no-restricted-globals': [
+        'error',
+        ...['Date', 'performance'].map((name) => ({
+          name,
+          message: `${name} is not available to content (hooks run inside tick(): no wall clock)`,
+        })),
       ],
       'no-restricted-imports': 'off',
       '@typescript-eslint/no-restricted-imports': [

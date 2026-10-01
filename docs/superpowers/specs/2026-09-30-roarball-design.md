@@ -951,3 +951,30 @@ opposing holder within 4 m. Profiles add nothing new (the cadence is the reactio
 - Sweep: + 5 seeds per court with abilities on (no stalls, sane scores).
 - Balance report: + ability uses per character per match (target 1.5–3), per-court mean
   totals and side bias (45–55 %).
+
+### D.8 Refinements made during execution (2026-10-01)
+
+Recorded at the Phase 5 reassessment; they refine D.2–D.7 and are what the code does.
+
+- **Hook context** (D.2): content may import only types from `sim/`, so `HookContext` is
+  `{ rng, math, court, emit, knockDown }` — `emit` pushes events, `knockDown` reuses the shove's
+  ball drop, `math` carries the RNG readers so `ctx.math.nextFloat(ctx.rng)` is the only way
+  content draws. `aiWantsToUse(state, player, { math, court })` gets a math without RNG readers.
+  `PlayerState.abilityId` is copied from the character at `createMatch`. `CourtModifier` has a
+  fourth hook, `ballDrift(state)`, read by the sim at shot/pass release; `aiHint` returns the
+  same drift for the brains.
+- **Charge** (D.2): every gain is multiplied by `CHARGE_PACE = 2` (basket 24/36, assist 20,
+  steal 30, block 30). At the D.2 values AI matches averaged 0.86 uses per player; with the pace
+  1.77 (Brick 0.95, Ace 1.67, Dash 2.50, Rook 1.95). A timed ability's stats are rebuilt the tick
+  it ends, so state between ticks never shows stale flags.
+- **Gusts** (D.4): gust timers count and pushes apply only in `live`; a gust active when play
+  stops ends on that tick. The rooftop's draw order is documented in its `onTick`.
+- **AI** (D.5): with Hot Hand, `evaluateShot` reports quality 1, but the brain takes such a shot
+  only within 9 m of the target hoop.
+- **Balance** (D.7): the score ceiling stays 60 on the gym and is 66 on modifier courts (Frozen
+  averages ≈ 61: slick defenders recover late). The 45–55 % side-bias band is asserted on the
+  aggregate of mirrored games (48.9 %); per court 35–65 %. The sweep's idle check ignores frames
+  with a shot in the air (Hot Hand's long shots fly up to ≈ 100 ticks while everyone waits).
+- **Open feel facts for the playtest**: Brick rarely reaches Rocket Dunk; gust-shifted passes
+  (1.5–2.4 m) drop for a receiver standing still; the volcano's orange light darkens the blue
+  team; Blur doubles acceleration as well as speed.

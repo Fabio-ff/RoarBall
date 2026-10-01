@@ -232,7 +232,7 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned 2v2 hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(playTeams().state))).toMatchInlineSnapshot(`"2442356b"`);
+    expect(fnv1a(JSON.stringify(playTeams().state))).toMatchInlineSnapshot(`"0673f216"`);
   });
 
   it('pins each run’s events and score (spec D.7: phase 5 never changes them on the gym without abilities)', () => {
