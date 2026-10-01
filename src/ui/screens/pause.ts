@@ -36,7 +36,7 @@ export class PauseOverlay {
     this.el = document.createElement('div');
     this.el.className = 'screen is-overlay';
     const column = document.createElement('div');
-    column.className = 'menu-column';
+    column.className = 'menu-column pause-column';
     const heading = document.createElement('h2');
     heading.className = 'screen-heading';
     heading.textContent = 'PAUSED';

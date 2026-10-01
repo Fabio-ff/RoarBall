@@ -39,6 +39,21 @@ describe('KeyboardBackend', () => {
     expect(backend.sample().action).toBe(false);
   });
 
+  it('an auto-repeat keydown does not re-latch a press (held state is still tracked)', () => {
+    backend = new KeyboardBackend(window);
+    press('Space');
+    backend.sample();
+    const repeat = (): boolean =>
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { code: 'Space', repeat: true, cancelable: true }),
+      );
+    repeat();
+    expect(backend.sample().action).toBe(true); // still held
+    repeat();
+    release('Space'); // a latched repeat would still read as pressed
+    expect(backend.sample().action).toBe(false);
+  });
+
   it('prevents the default action of mapped keys so Space does not scroll', () => {
     backend = new KeyboardBackend(window);
     const e = new KeyboardEvent('keydown', { code: 'Space', cancelable: true });

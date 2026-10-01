@@ -69,6 +69,31 @@ describe('AudioDirector', () => {
     expect(rec.ducks).toEqual([0.8, 1]);
   });
 
+  it('plays the buzzer when regulation ends tied and overtime begins (M6)', () => {
+    const rec = new Recorder();
+    const director = new AudioDirector(() => rec);
+    const court = getCourt('gym');
+    const base = createMatch(
+      {
+        durationMs: 180_000,
+        shotClockMs: 14_000,
+        seed: 1,
+        ruleIds: [],
+        courtId: 'gym',
+        mode: 'match',
+      },
+      court,
+      [
+        { id: 'home1', team: 0, characterId: 'rook', character: getCharacter('rook') },
+        { id: 'away1', team: 1, characterId: 'rook', character: getCharacter('rook') },
+      ],
+    );
+    director.update(base, { ...base, overtime: true }, 1);
+    expect(rec.sfx.map(([n]) => n)).toEqual(['buzzer']);
+    director.update({ ...base, overtime: true }, { ...base, overtime: true }, 2);
+    expect(rec.sfx.map(([n]) => n)).toEqual(['buzzer']);
+  });
+
   describe('shoe squeaks', () => {
     const court = getCourt('gym');
     const options = {

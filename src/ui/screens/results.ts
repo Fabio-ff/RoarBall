@@ -13,6 +13,9 @@ export interface ResultsOptions {
   onTitle(): void;
 }
 
+/** A mashed confirm right after the final buzzer must not skip the box score (playtest guard). */
+export const RESULTS_INPUT_GUARD_MS = 600;
+
 const COLUMNS = ['PTS', 'DNK', '3PT', 'AST', 'STL', 'BLK', 'ABL'] as const;
 
 export function resultHeadline(result: MatchResult): 'YOU WIN!' | 'YOU LOSE' | 'OVERTIME WIN!' {
@@ -29,6 +32,7 @@ const escapeHtml = (text: string): string =>
 export class ResultsScreen {
   private readonly el: HTMLDivElement;
   private readonly nav: MenuNav;
+  private readonly mountedAt = Date.now();
 
   constructor(parent: HTMLElement, options: ResultsOptions) {
     const { result } = options;
@@ -58,15 +62,22 @@ export class ResultsScreen {
       '</div>';
     parent.appendChild(this.el);
     const on = (action: string, fn: () => void): void =>
-      this.el.querySelector(`[data-action="${action}"]`)?.addEventListener('click', fn);
+      this.el
+        .querySelector(`[data-action="${action}"]`)
+        ?.addEventListener('click', () => this.armed() && fn());
     on('rematch', () => options.onRematch());
     on('setup', () => options.onChangeSetup());
     on('title', () => options.onTitle());
-    this.nav = new MenuNav(this.el, () => options.onTitle());
+    this.nav = new MenuNav(this.el, () => this.armed() && options.onTitle());
     this.nav.focusFirst();
   }
 
+  private armed(): boolean {
+    return Date.now() - this.mountedAt >= RESULTS_INPUT_GUARD_MS;
+  }
+
   handleCommand(command: MenuCommand): void {
+    if ((command === 'confirm' || command === 'back') && !this.armed()) return;
     this.nav.handle(command);
   }
 

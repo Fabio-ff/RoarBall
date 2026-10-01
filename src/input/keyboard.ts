@@ -71,7 +71,8 @@ export class KeyboardBackend implements InputBackend {
     if (!this.mapped.has(e.code)) return;
     e.preventDefault();
     this.down.add(e.code);
-    this.latched.add(e.code);
+    // Auto-repeat of a held key is not a new press.
+    if (!e.repeat) this.latched.add(e.code);
   };
 
   private readonly onKeyUp = (e: KeyboardEvent): void => {
