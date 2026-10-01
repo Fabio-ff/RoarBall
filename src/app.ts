@@ -1,14 +1,19 @@
 import { MatchScreen } from './app/match-screen';
 import { transition, type ScreenId, type ShellEvent } from './app/screens';
+import { buildSetupCatalog, toGameOptions, type SetupChoice } from './app/setup-model';
 import {
   browserStorage,
   loadSettings,
+  loadSetup,
   saveSettings,
+  saveSetup,
   type Settings,
   type StorageLike,
 } from './app/storage';
-import { readGameOptions, type GameOptions } from './app/url-options';
+import type { GameOptions } from './app/url-options';
 import { MenuInput, type MenuCommand } from './input/menu-input';
+import { HowToPlayScreen } from './ui/screens/how-to-play';
+import { SetupScreen } from './ui/screens/setup';
 import { TitleScreen } from './ui/screens/title';
 
 export type { GameOptions } from './app/url-options';
@@ -19,16 +24,12 @@ interface ScreenHandle {
   dispose(): void;
 }
 
-/** Options for a menu-started match: `?debug` still reaches it, everything else is the default. */
-function defaultOptions(): GameOptions {
-  return readGameOptions(window.location.search, Date.now());
-}
-
 /** Spec E.1 / §9: the screen flow as a state machine over DOM screens. */
 export class AppShell {
   private current: ScreenId = 'title';
   private handle: ScreenHandle | null = null;
   private settings: Settings;
+  private setup: SetupChoice;
   private readonly menuInput: MenuInput;
   private rafId = 0;
   private options: GameOptions | null;
@@ -40,6 +41,7 @@ export class AppShell {
   ) {
     this.store = opts.store === undefined ? browserStorage() : opts.store;
     this.settings = loadSettings(this.store);
+    this.setup = loadSetup(this.store);
     this.options = opts.initial;
     this.menuInput = new MenuInput(window);
     this.menuInput.onCommand = (c) => this.handle?.handleCommand(c);
@@ -68,6 +70,7 @@ export class AppShell {
         this.handle = new TitleScreen(this.root, {
           sound: this.settings.sound,
           onPlay: () => this.dispatch({ type: 'play' }),
+          onHowToPlay: () => this.dispatch({ type: 'howToPlay' }),
           onSoundChange: (sound) => this.updateSettings({ ...this.settings, sound }),
         });
         break;
@@ -82,15 +85,36 @@ export class AppShell {
           onSettingsChange: (s) => this.updateSettings(s),
         });
         break;
+      case 'howToPlay':
+        this.handle = new HowToPlayScreen(this.root, {
+          onBack: () => this.dispatch({ type: 'back' }),
+        });
+        break;
       case 'setup':
+        this.handle = new SetupScreen(this.root, {
+          setup: this.setup,
+          catalog: buildSetupCatalog(),
+          onStart: (s) => this.startMatch(s),
+          onBack: () => this.dispatch({ type: 'back' }),
+        });
+        break;
       case 'results':
-        // Task 2 adds Setup and Task 3 adds Results; until then go straight to a default match / back to the title.
-        if (screen === 'setup') {
-          this.options ??= defaultOptions();
-          return this.dispatch({ type: 'start' });
-        }
+        // Task 3 replaces this with the Results screen.
         return this.show('title');
     }
+  }
+
+  /** Every START remembers the setup and builds fresh options with a fresh seed (never a previous match's). */
+  private startMatch(setup: SetupChoice): void {
+    this.setup = setup;
+    saveSetup(setup, this.store);
+    this.options = toGameOptions(
+      setup,
+      Date.now() >>> 0,
+      Math.random,
+      new URLSearchParams(window.location.search).has('debug'),
+    );
+    this.dispatch({ type: 'start' });
   }
 
   /** Task 3 receives the `MatchFinish` here and shows Results. */

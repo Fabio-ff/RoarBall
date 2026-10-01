@@ -4,6 +4,8 @@ import { transition, type ScreenId, type ShellEvent } from '../../src/app/screen
 describe('transition (spec E.1 flow)', () => {
   const cases: [ScreenId, ShellEvent['type'], ScreenId][] = [
     ['title', 'play', 'setup'],
+    ['title', 'howToPlay', 'howToPlay'],
+    ['howToPlay', 'back', 'title'],
     ['setup', 'start', 'match'],
     ['setup', 'back', 'title'],
     ['match', 'finished', 'results'],

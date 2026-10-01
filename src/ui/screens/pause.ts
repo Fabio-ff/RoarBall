@@ -1,5 +1,6 @@
 import type { Settings } from '../../app/storage';
 import type { MenuCommand } from '../../input/menu-input';
+import { HowToPlayScreen } from './how-to-play';
 import { MenuNav } from '../menu-nav';
 import './screens.css';
 
@@ -23,11 +24,14 @@ export class PauseOverlay {
   private readonly el: HTMLDivElement;
   private readonly nav: MenuNav;
   private settings: Settings;
+  private howTo: HowToPlayScreen | null = null;
+  private readonly parent: HTMLElement;
 
   constructor(
     parent: HTMLElement,
     private readonly options: PauseOptions,
   ) {
+    this.parent = parent;
     this.settings = { ...options.settings };
     this.el = document.createElement('div');
     this.el.className = 'screen is-overlay';
@@ -53,6 +57,7 @@ export class PauseOverlay {
     };
     add('resume', 'RESUME', false, () => options.onResume());
     add('restart', 'RESTART', true, () => options.onRestart());
+    add('howToPlay', 'HOW TO PLAY', true, () => this.openHowTo());
     for (const { key, label } of TOGGLES) {
       add(key, `${label}: ${this.settings[key] ? 'ON' : 'OFF'}`, true, (b) => {
         this.settings = { ...this.settings, [key]: !this.settings[key] };
@@ -67,12 +72,26 @@ export class PauseOverlay {
     this.nav.focusFirst();
   }
 
+  private openHowTo(): void {
+    if (this.howTo) return;
+    this.howTo = new HowToPlayScreen(this.parent, {
+      onBack: () => {
+        this.howTo?.dispose();
+        this.howTo = null;
+        this.nav.focusFirst();
+      },
+    });
+  }
+
   handleCommand(command: MenuCommand): void {
-    if (command === 'pause') this.options.onResume();
+    if (this.howTo) this.howTo.handleCommand(command);
+    else if (command === 'pause') this.options.onResume();
     else this.nav.handle(command);
   }
 
   dispose(): void {
+    this.howTo?.dispose();
+    this.howTo = null;
     this.el.remove();
   }
 }

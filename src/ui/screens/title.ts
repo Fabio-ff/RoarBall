@@ -5,6 +5,7 @@ import './screens.css';
 export interface TitleOptions {
   sound: boolean;
   onPlay(): void;
+  onHowToPlay(): void;
   onSoundChange(sound: boolean): void;
 }
 
@@ -23,12 +24,16 @@ export class TitleScreen {
       '<h1 class="screen-title">ROARBALL</h1>' +
       '<div class="menu-column">' +
       '<button class="menu-button is-primary" data-action="play" data-nav-row="0">PLAY</button>' +
-      `<button class="menu-button is-secondary" data-action="sound" data-nav-row="1">${soundLabel(sound)}</button>` +
+      '<button class="menu-button is-secondary" data-action="howToPlay" data-nav-row="1">HOW TO PLAY</button>' +
+      `<button class="menu-button is-secondary" data-action="sound" data-nav-row="2">${soundLabel(sound)}</button>` +
       '</div><p class="rotate-hint">Turn your device sideways to play</p>';
     parent.appendChild(this.el);
     const play = this.el.querySelector<HTMLButtonElement>('[data-action="play"]');
     const toggle = this.el.querySelector<HTMLButtonElement>('[data-action="sound"]');
     play?.addEventListener('click', () => options.onPlay());
+    this.el
+      .querySelector<HTMLButtonElement>('[data-action="howToPlay"]')
+      ?.addEventListener('click', () => options.onHowToPlay());
     toggle?.addEventListener('click', () => {
       sound = !sound;
       toggle.textContent = soundLabel(sound);

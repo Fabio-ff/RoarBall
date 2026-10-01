@@ -1,3 +1,5 @@
+import { sanitizeSetup, type SetupChoice } from './setup-model';
+
 /** Spec E.2: conveniences in localStorage. Blocked or corrupt storage falls back to defaults. */
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -72,4 +74,14 @@ export function saveSettings(
   store: StorageLike | null = browserStorage(),
 ): void {
   writeJson(store, SETTINGS_KEY, settings);
+}
+
+const SETUP_KEY = 'roarball.setup.v1';
+
+export function loadSetup(store: StorageLike | null = browserStorage()): SetupChoice {
+  return sanitizeSetup(readJson(store, SETUP_KEY));
+}
+
+export function saveSetup(setup: SetupChoice, store: StorageLike | null = browserStorage()): void {
+  writeJson(store, SETUP_KEY, setup);
 }
