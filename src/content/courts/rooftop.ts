@@ -48,10 +48,27 @@ export const gusts: CourtModifier = {
   name: 'Gusts',
   description: 'Every 15–25 seconds a gust bends shots and passes and pushes loose balls.',
   onTick(state, ctx) {
+    // RNG draw order (state.rng, shared with the sim; a change here moves every rooftop golden):
+    //   1. First onTick of the match, whatever the phase: one nextInt for the first gap
+    //      (scheduleNext, 900-1500 ticks).
+    //   2. A gust starting (live play only, tick >= nextGustTick): one nextFloat for its angle.
+    //   3. A gust ending, by timeout or because play left `live`: one nextInt for the next gap.
+    // Gust timers and pushes run only in live play: outside it the next-gust tick slips by one per
+    // tick (a countdown that pauses), and a gust still blowing ends on the first non-live tick.
     const s = storm(state);
     if (s.nextGustTick === undefined) {
       s.gust = null;
       scheduleNext(state, ctx);
+    }
+    if (state.phase !== 'live') {
+      if (s.gust) {
+        s.gust = null;
+        ctx.emit({ type: 'gustEnd' });
+        scheduleNext(state, ctx);
+      } else if (s.nextGustTick !== undefined) {
+        s.nextGustTick += 1;
+      }
+      return;
     }
     if (!s.gust && state.tick >= (s.nextGustTick ?? Infinity)) {
       const angle = ctx.math.nextFloat(ctx.rng) * 2 * Math.PI;
