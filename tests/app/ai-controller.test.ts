@@ -47,31 +47,35 @@ describe('createAiController', () => {
     expect(ai.memory.goal.kind).not.toBe('idle');
   });
 
-  it('two controllers with the same seed produce the same intents; a different seed differs eventually', () => {
+  it('two controllers with the same seed produce the same intents; a different brain seed differs eventually', () => {
+    // All four players are AI-driven so the ball is actually played (the brain RNG is drawn when
+    // shooting and defending); the match seed is fixed, only the controllers' seed varies.
+    const ids = ['home1', 'home2', 'away1', 'away2'];
     const make = (seed: number) =>
-      createAiController('home2', court, {
-        profile: AI_PROFILES.fair,
-        seed,
-        slot: 1,
-        favourTeammate: true,
-      });
-    const a = make(5);
-    const b = make(5);
-    const c = make(7);
-    let sa = match(5);
-    let sb = match(5);
-    let sc = match(7);
-    let differed = false;
-    for (let i = 0; i < 600; i++) {
-      const ia = a.controller(sa);
-      const ib = b.controller(sb);
-      const ic = c.controller(sc);
-      expect(ia).toEqual(ib);
-      if (JSON.stringify(ia) !== JSON.stringify(ic)) differed = true;
-      sa = tick(sa, new Map([['home2', ia]]), court).state;
-      sb = tick(sb, new Map([['home2', ib]]), court).state;
-      sc = tick(sc, new Map([['home2', ic]]), court).state;
-    }
-    expect(differed).toBe(true);
+      ids.map((id, slot) =>
+        createAiController(id, court, {
+          profile: AI_PROFILES.fair,
+          seed,
+          slot: slot % 2,
+          favourTeammate: true,
+        }),
+      );
+    const run = (brains: ReturnType<typeof make>): string[] => {
+      let s = match(5);
+      const log: string[] = [];
+      for (let i = 0; i < 1800; i++) {
+        const intents = new Map<string, PlayerIntent>(
+          brains.map((b) => [b.id, b.controller(s)] as const),
+        );
+        log.push(JSON.stringify([...intents]));
+        s = tick(s, intents, court).state;
+      }
+      return log;
+    };
+    const a = run(make(5));
+    const b = run(make(5));
+    const c = run(make(7));
+    expect(a).toEqual(b);
+    expect(a).not.toEqual(c);
   });
 });

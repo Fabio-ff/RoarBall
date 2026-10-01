@@ -57,22 +57,31 @@ export interface AbilityBarView {
 }
 
 /** Spec D.6: what the human's ability bar shows — charge, READY, seconds left, or Hot Hand pips. */
-export function abilityBarView(player: PlayerState, def: AbilityDef): AbilityBarView {
+export function abilityBarView(
+  player: PlayerState,
+  def: AbilityDef,
+  out: AbilityBarView = { fill: 0, status: '', ready: false, active: false },
+): AbilityBarView {
   const active = player.ability;
   if (active !== null) {
+    out.ready = false;
+    out.active = true;
     if (active.ticksLeft !== null) {
       const total = typeof def.durationTicks === 'number' ? def.durationTicks : active.ticksLeft;
-      return {
-        fill: total > 0 ? (100 * active.ticksLeft) / total : 0,
-        status: `${Math.ceil(active.ticksLeft / TICK_RATE)} s`,
-        ready: false,
-        active: true,
-      };
+      out.fill = total > 0 ? (100 * active.ticksLeft) / total : 0;
+      out.status = `${Math.ceil(active.ticksLeft / TICK_RATE)} s`;
+    } else {
+      out.fill = 100;
+      out.status = '●'.repeat(Math.max(0, active.uses));
     }
-    return { fill: 100, status: '●'.repeat(Math.max(0, active.uses)), ready: false, active: true };
+    return out;
   }
   const ready = player.charge >= CHARGE_MAX;
-  return { fill: Math.min(100, player.charge), status: ready ? 'READY' : '', ready, active: false };
+  out.fill = Math.min(100, player.charge);
+  out.status = ready ? 'READY' : '';
+  out.ready = ready;
+  out.active = false;
+  return out;
 }
 
 /** The camera sits on +Z, looking at −Z: court X is screen right and court Z is screen down. */
@@ -120,6 +129,14 @@ export class Hud {
   private finalText = '';
   /** Last text written per element, so a frame with no change writes nothing to the DOM. */
   private readonly written = new Map<HTMLElement, string>();
+  /** Per-frame scratch and last-seen values, so an unchanged frame builds no strings or objects. */
+  private readonly view: AbilityBarView = { fill: 0, status: '', ready: false, active: false };
+  private lastHome = -1;
+  private lastAway = -1;
+  private lastClockKey = Number.NaN;
+  private lastShotSeconds = -1;
+  private lastAbilityDef: AbilityDef | undefined;
+  private lastWidth = -1;
 
   constructor(
     parent: HTMLElement,
@@ -174,12 +191,27 @@ export class Hud {
   }
 
   update(state: MatchState): void {
-    this.setText(this.home, String(state.score[0]));
-    this.setText(this.away, String(state.score[1]));
+    if (state.score[0] !== this.lastHome) {
+      this.lastHome = state.score[0];
+      this.setText(this.home, String(this.lastHome));
+    }
+    if (state.score[1] !== this.lastAway) {
+      this.lastAway = state.score[1];
+      this.setText(this.away, String(this.lastAway));
+    }
     const hideClock = state.settings.mode === 'shootaround';
     if (this.clock.hidden !== hideClock) this.clock.hidden = hideClock;
-    this.setText(this.clock, state.overtime ? 'OT' : formatClock(state.clockMs));
-    this.setText(this.shotClock, String(Math.ceil(state.shotClockMs / 1000)));
+    // -1 stands for overtime ("OT"); otherwise whole seconds left (rounded up, as formatClock does).
+    const clockKey = state.overtime ? -1 : Math.ceil(state.clockMs / 1000);
+    if (clockKey !== this.lastClockKey) {
+      this.lastClockKey = clockKey;
+      this.setText(this.clock, state.overtime ? 'OT' : formatClock(state.clockMs));
+    }
+    const shotSeconds = Math.ceil(state.shotClockMs / 1000);
+    if (shotSeconds !== this.lastShotSeconds) {
+      this.lastShotSeconds = shotSeconds;
+      this.setText(this.shotClock, String(shotSeconds));
+    }
     this.shotClock.classList.toggle('is-low', state.shotClockMs <= 5000);
     this.updateAbility(state);
 
@@ -261,11 +293,17 @@ export class Hud {
     const hidden = !me || !def;
     if (this.ability.hidden !== hidden) this.ability.hidden = hidden;
     if (!me || !def) return;
-    const view = abilityBarView(me, def);
-    this.setText(this.abilityName, `${def.icon} ${def.name}`);
+    const view = abilityBarView(me, def, this.view);
+    if (def !== this.lastAbilityDef) {
+      this.lastAbilityDef = def;
+      this.setText(this.abilityName, `${def.icon} ${def.name}`);
+    }
     this.setText(this.abilityStatus, view.status);
-    const width = `${Math.round(view.fill)}%`;
-    if (this.abilityFill.style.width !== width) this.abilityFill.style.width = width;
+    const width = Math.round(view.fill);
+    if (width !== this.lastWidth) {
+      this.lastWidth = width;
+      this.abilityFill.style.width = `${width}%`;
+    }
     this.ability.classList.toggle('is-ready', view.ready);
     this.ability.classList.toggle('is-active', view.active);
   }

@@ -80,7 +80,11 @@ describe('formation (spec C.6)', () => {
     expect(s.phase).toBe('live');
     const holder = findPlayer(s, s.ball.holder ?? '')!;
     expect(Math.abs(holder.pos.x)).toBeCloseTo(court.playArea.length / 2 - 1.5);
-    for (const p of allPlayers(s))
+    for (const p of allPlayers(s)) {
       expect([0, 4, 1.5]).toContain(Math.abs(Math.round(p.pos.z * 10) / 10));
+      // Each team starts on its own half (home at x < 0, away at x > 0).
+      if (p.team === 0) expect(p.pos.x, p.id).toBeLessThan(0);
+      else expect(p.pos.x, p.id).toBeGreaterThan(0);
+    }
   });
 });

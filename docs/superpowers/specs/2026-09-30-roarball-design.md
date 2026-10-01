@@ -170,6 +170,8 @@ Teams are lists of players; team size is never hard-coded.
 9. Cooldowns, ability timers, turbo regen/drain, charge gains.
 10. Emit events for this tick.
 
+Same-tick SPECIAL presses resolve in roster order (home first); this is deterministic and part of the pipeline (Phase 5 m-2).
+
 ### 4.3 Match phases
 
 - `tipoff`: ball awarded to a random team (seeded); presentation plays a jump

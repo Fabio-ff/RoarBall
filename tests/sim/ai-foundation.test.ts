@@ -9,6 +9,8 @@ import {
   resetAiMemory,
 } from '../../src/sim/ai/memory';
 import {
+  SPOT_LANE_PENALTY_RADIUS,
+  SPOT_LANE_RIM_CLEARANCE,
   SPOT_NAMES,
   farthestSpot,
   namedSpot,
@@ -127,6 +129,20 @@ describe('spots', () => {
     // A spot next to the handler is penalised.
     const nextToHandler = { x: handler.x + 1, y: 0, z: 1 };
     expect(scoreSpot(nextToHandler, handler, rim, [])).toBeLessThan(open);
+  });
+
+  it('the drive lane ends SPOT_LANE_RIM_CLEARANCE short of the rim (spec C.5 boundary)', () => {
+    const handler = { x: rim.x - 10, y: 0, z: 0 };
+    const laneEndX = rim.x - SPOT_LANE_RIM_CLEARANCE;
+    const at = (x: number) => scoreSpot({ x, y: 0, z: 0 }, handler, rim, []);
+    const unpenalised = at(rim.x); // far past the lane end, and 10 m from the handler
+    expect(unpenalised).toBeGreaterThan(0);
+    // 0.1 m before the lane end, on the line: penalised.
+    expect(at(laneEndX - 0.1)).toBeLessThan(unpenalised);
+    // Just inside the lane radius beyond its end (towards the rim): still penalised.
+    expect(at(laneEndX + SPOT_LANE_PENALTY_RADIUS - 0.1)).toBeLessThan(unpenalised);
+    // Just outside the radius beyond the end: not penalised (the lane stops at the clearance).
+    expect(at(laneEndX + SPOT_LANE_PENALTY_RADIUS + 0.1)).toBe(unpenalised);
   });
 
   it('picks the open side and keeps the current spot unless another wins by the hysteresis', () => {

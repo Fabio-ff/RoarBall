@@ -7,6 +7,7 @@ import { giveBall } from '../../src/sim/ball';
 import { resolveSteal } from '../../src/sim/defence';
 import { hoopGeometry } from '../../src/sim/hoop';
 import { createMatch, findPlayer, type RosterEntry } from '../../src/sim/match';
+import { startJump } from '../../src/sim/player-movement';
 import { createRng, nextFloat } from '../../src/sim/rng';
 import {
   chooseShotType,
@@ -189,6 +190,45 @@ describe('Rocket Dunk (Brick)', () => {
     x.pos.y = 0.5;
     x.vel.y = 2;
     expect(tryBlockShot(s, a, court, [])).toBe(false);
+  });
+
+  it('an alley-oop dunk keeps the unblockable snapshot when the ability expires right after the catch', () => {
+    // 'a' lobs to airborne teammate 'b' (Brick, Rocket Dunk active) at the rim.
+    let s = live('ace', 'ace', [cast('b', 0, 'brick')]);
+    const a = place(s, 'a', hoop.rimCenter.x - 6, 0);
+    giveBall(s, a, []);
+    place(s, 'b', hoop.rimCenter.x - 1.2, 0);
+    s = activate(s, 'b').state; // on the ground (activation needs it), then up for the lob
+    startJump(player(s, 'b'), 4.5);
+    expect(player(s, 'b').stats.unblockableDunk).toBe(true);
+    const lob = new Map([['a', { ...NO_INTENT, pass: true }]]);
+    // Step until the tick before the alley-oop catch, so the ability can be cut to its last tick.
+    let before = s;
+    let caught: { state: MatchState; events: SimEvent[] } | null = null;
+    for (let i = 0; i < 150 && !caught; i++) {
+      before = structuredClone(s);
+      const r = tick(s, lob, court, ABILITIES);
+      s = r.state;
+      if (r.events.some((e) => e.type === 'alleyOop')) caught = r;
+    }
+    if (!caught) throw new Error('no alley-oop happened');
+    // Replay the catch tick with the ability on its last tick: it ends within that very tick.
+    const ability = player(before, 'b').ability;
+    if (!ability) throw new Error('Rocket Dunk ended before the catch');
+    ability.ticksLeft = 1;
+    const replay = tick(before, lob, court, ABILITIES);
+    expect(replay.events.some((e) => e.type === 'alleyOop')).toBe(true);
+    const b = player(replay.state, 'b');
+    expect(b.ability).toBeNull(); // expired on the catch tick
+    expect(b.stats.unblockableDunk).toBe(false);
+    expect(b.shot).toMatchObject({ type: 'dunk', unblockable: true });
+    const x = place(replay.state, 'x', hoop.rimCenter.x - 0.5, 0);
+    x.action = 'block';
+    x.actionTicks = 100; // started first
+    x.onGround = false;
+    x.pos.y = 0.5;
+    x.vel.y = 2;
+    expect(tryBlockShot(replay.state, b, court, [])).toBe(false);
   });
 
   it('dunkFromArc is a strict < 6.75 m: 6.74 m dunks, 6.76 m does not', () => {
