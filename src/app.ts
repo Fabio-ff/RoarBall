@@ -59,7 +59,9 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   const playerViews = new Map<PlayerId, PlayerView>();
   for (const team of session.runner.current.teams) {
     for (const player of team.players) {
-      const view = new PlayerView(TEAM_COLORS[player.team]);
+      const view = new PlayerView(TEAM_COLORS[player.team], {
+        highlighted: player.id === HUMAN_ID,
+      });
       scene.scene.add(view.group);
       playerViews.set(player.id, view);
     }
@@ -127,7 +129,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
       for (const [id, view] of playerViews) {
         const a = findPlayer(prev, id);
         const b = findPlayer(next, id);
-        if (a && b) view.update(a, b, alpha);
+        if (a && b) view.update(a, b, alpha, next.tick);
       }
       const holder = next.ball.holder === null ? undefined : findPlayer(next, next.ball.holder);
       ballView.update(prev.ball, next.ball, alpha, dt, holder?.action === 'run', next.tick);
