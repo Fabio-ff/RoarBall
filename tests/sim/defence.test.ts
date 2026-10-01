@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getCourt } from '../../src/content/courts';
 import { giveBall } from '../../src/sim/ball';
-import { canBeShoved, chooseDefensiveAction, resolveSteal } from '../../src/sim/defence';
+import { canBeShoved, chooseDefensiveAction, knockDown, resolveSteal } from '../../src/sim/defence';
 import { ACTION_TIMING, SHOVE_IMMUNITY_TICKS } from '../../src/sim/actions';
 import { defenderFactor } from '../../src/sim/shooting';
 import { hoopGeometry } from '../../src/sim/hoop';
@@ -336,5 +336,23 @@ describe('shove', () => {
     expect(pressNextToVictim()).toEqual([]); // immune
     waitFor((p) => canBeShoved(p));
     expect(pressNextToVictim()).toEqual([{ type: 'shove', by: 'y', target: 'a' }]);
+  });
+});
+
+describe('knockDown (spec D.3, used by Earthquake through the hook context)', () => {
+  it('stuns for exactly the given ticks, ignoring resistance and immunity; a holder drops the ball', () => {
+    const s = setup();
+    const a = findPlayer(s, 'a');
+    const x = findPlayer(s, 'x');
+    if (!a || !x) throw new Error('no players');
+    a.shoveImmunityTicks = 30;
+    const events: SimEvent[] = [];
+    knockDown(s, x, a, 90, events);
+    expect(a.action).toBe('stunned');
+    expect(a.stunTicks).toBe(90);
+    expect(s.ball.holder).toBeNull();
+    expect(s.ball.mode).toBe('free');
+    expect(s.ball.vel.y).toBeGreaterThan(0);
+    expect(events).toEqual([{ type: 'knockdown', by: 'x', target: 'a' }]);
   });
 });

@@ -96,7 +96,8 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
 
   const restart = (): void => {
     seed += 1;
-    session = buildSession(options, court, seed, human);
+    // Spec D.6: the buttons held right now (the restarting press) are not presses in the new match.
+    session = buildSession(options, court, seed, human, intents);
     lastTickNumber = session.runner.current.tick;
   };
 

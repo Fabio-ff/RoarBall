@@ -4,9 +4,17 @@ import { defenderDummy, teammateDummy } from './dummies';
 import { MatchRunner } from './match-runner';
 import type { GameOptions } from './url-options';
 import { getCharacter } from '../content/characters';
+import { buttonsOf } from '../sim/buttons';
 import { AI_PROFILES } from '../sim/ai/profile';
 import { createMatch, type RosterEntry } from '../sim/match';
-import type { CourtDef, MatchSettings, PlayerId, TeamIndex } from '../sim/types';
+import type {
+  CourtDef,
+  MatchSettings,
+  MatchState,
+  PlayerId,
+  PlayerIntent,
+  TeamIndex,
+} from '../sim/types';
 
 export const HUMAN_ID: PlayerId = 'home1';
 
@@ -51,17 +59,30 @@ export interface Session {
   ais: AiController[];
 }
 
+/** Spec D.6: buttons held when a match starts are not presses in it (the restart press must not leak). */
+export function primeHeldButtons(
+  state: MatchState,
+  held: ReadonlyMap<PlayerId, PlayerIntent>,
+): void {
+  for (const team of state.teams) {
+    for (const player of team.players) {
+      const intent = held.get(player.id);
+      if (intent) player.prevButtons = buttonsOf(intent);
+    }
+  }
+}
+
 /** A match and its controllers for `seed`; built again with `seed + 1` on restart (spec C.6). */
 export function buildSession(
   options: GameOptions,
   court: CourtDef,
   seed: number,
   human: Controller,
+  held: ReadonlyMap<PlayerId, PlayerIntent> = new Map(),
 ): Session {
-  const runner = new MatchRunner(
-    court,
-    createMatch(buildSettings(options, court, seed), court, buildRoster(options)),
-  );
+  const state = createMatch(buildSettings(options, court, seed), court, buildRoster(options));
+  primeHeldButtons(state, held);
+  const runner = new MatchRunner(court, state);
   const controllers = new Map<PlayerId, Controller>([[HUMAN_ID, human]]);
   const ais: AiController[] = [];
   if (options.mode === 'shootaround') {

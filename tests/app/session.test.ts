@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getCourt } from '../../src/content/courts';
 import { buildRoster, buildSession, buildSettings } from '../../src/app/session';
 import type { GameOptions } from '../../src/app/url-options';
+import { findPlayer } from '../../src/sim/match';
 import { NO_INTENT } from '../../src/sim/types';
 
 const court = getCourt('gym');
@@ -16,6 +17,21 @@ describe('buildSession (spec C.1)', () => {
     seed: 9,
     debug: false,
   };
+
+  it('seeds every prevButtons with the buttons held at the restart (spec D.6)', () => {
+    const held = new Map([['home1', { ...NO_INTENT, pass: true, special: true }]]);
+    const session = buildSession(base, court, 9, () => NO_INTENT, held);
+    expect(findPlayer(session.runner.current, 'home1')?.prevButtons).toEqual({
+      action: false,
+      pass: true,
+      special: true,
+      turbo: false,
+    });
+    expect(findPlayer(session.runner.current, 'away1')?.prevButtons.pass).toBe(false);
+    // Still holding PASS on the first tick of the new match is not a press: no call for the ball leaks in.
+    session.runner.step(new Map([['home1', { ...NO_INTENT, pass: true }]]));
+    expect(findPlayer(session.runner.current, 'home1')?.callingForPassTicks).toBe(0);
+  });
 
   it('a match has four players, three AI controllers and the chosen characters', () => {
     const session = buildSession(base, court, 9, () => NO_INTENT);

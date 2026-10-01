@@ -1,3 +1,4 @@
+import type { CourtModifier } from './hooks';
 import type { Vec2, Vec3 } from './math';
 import type { RngState } from './rng';
 
@@ -121,6 +122,14 @@ export interface ResolvedStats {
   /** Stun ticks a shove deals, and ticks of stun this player shrugs off. */
   stunTicksDealt: number;
   stunResistTicks: number;
+  /** Spec D.2 ability flags: false unless an active ability sets them. Rocket Dunk: a shot press inside the 3-point line is a dunk. */
+  dunkFromArc: boolean;
+  /** Rocket Dunk: tryBlockShot ignores this player's dunks. */
+  unblockableDunk: boolean;
+  /** Blur: a steal that reaches the holder always succeeds (the draw is still taken). */
+  stealAlwaysSucceeds: boolean;
+  /** Blur: turbo never drains. */
+  unlimitedTurbo: boolean;
 }
 
 export interface ShotInProgress {
@@ -128,6 +137,20 @@ export interface ShotInProgress {
   hoop: HoopIndex;
   /** Horizontal speed at the press, before any wind-up damping; drives the motion penalty. */
   approachSpeed: number;
+}
+
+/** Spec D.2: a signature ability in progress. */
+export interface ActiveAbility {
+  /** Ticks left before it ends; null = no timer (it ends when `uses` reaches 0). */
+  ticksLeft: number | null;
+  /** Shots that cannot miss (Hot Hand, spec D.3); 0 for every other ability. */
+  uses: number;
+}
+
+/** The last pass this player caught from a teammate: the assist window (spec D.2). */
+export interface LastCatch {
+  from: PlayerId;
+  tick: number;
 }
 
 export interface PlayerState {
@@ -164,7 +187,16 @@ export interface PlayerState {
   callingForPassTicks: number;
   /** The player a pass, steal or shove is aimed at. */
   targetId: PlayerId | null;
+  /** Derived every tick (spec D.2): baseStats × court modifier × active ability. */
   stats: ResolvedStats;
+  /** Resolved once from the character; `stats` is rebuilt from it at the start of every tick. */
+  baseStats: ResolvedStats;
+  /** The character's signature ability, or null (placeholders). */
+  abilityId: string | null;
+  /** Ability charge, 0..100; a full bar plus SPECIAL activates (spec D.2). */
+  charge: number;
+  ability: ActiveAbility | null;
+  lastCatch: LastCatch | null;
 }
 
 export interface TeamState {
@@ -188,6 +220,8 @@ export interface ShotFlight {
   receiver: PlayerId | null;
   lob: boolean;
   team: TeamIndex;
+  /** Spec D.4: sideways bow amplitude of a shot released in a gust (sin-shaped, zero at both ends); null otherwise. */
+  bow: Vec3 | null;
 }
 
 /** The shot the loose ball came from; cleared on any pickup and after a basket. */
@@ -227,6 +261,9 @@ export interface MatchSettings {
   mode: MatchMode;
 }
 
+/** Plain, JSON-safe state owned by the court's modifier (spec D.2); `{}` when there is none. */
+export type CourtState = Record<string, unknown>;
+
 export interface MatchState {
   tick: number;
   clockMs: number;
@@ -246,6 +283,7 @@ export interface MatchState {
   teams: [TeamState, TeamState];
   rng: RngState;
   settings: MatchSettings;
+  courtState: CourtState;
 }
 
 export type SimEvent =
@@ -274,7 +312,12 @@ export type SimEvent =
   | { type: 'block'; by: PlayerId; shooter: PlayerId }
   | { type: 'steal'; by: PlayerId; from: PlayerId }
   | { type: 'stealFailed'; by: PlayerId }
-  | { type: 'shove'; by: PlayerId; target: PlayerId };
+  | { type: 'shove'; by: PlayerId; target: PlayerId }
+  | { type: 'abilityActivated'; playerId: PlayerId; abilityId: string }
+  | { type: 'abilityEnded'; playerId: PlayerId; abilityId: string }
+  | { type: 'knockdown'; by: PlayerId; target: PlayerId }
+  | { type: 'gustStart'; dir: Vec3 }
+  | { type: 'gustEnd' };
 
 export interface HoopDef {
   /** Rim centre on the floor plane (y ignored). */
@@ -295,4 +338,6 @@ export interface CourtDef {
     sunColor: number;
     ambient: number;
   };
+  /** Spec §7.1 / D.4: the court's light gameplay modifier (none on the gym). */
+  modifier?: CourtModifier;
 }

@@ -1,3 +1,10 @@
+import {
+  applyChargeGains,
+  rebuildStats,
+  stepAbilityTimer,
+  stepActiveAbility,
+  tryActivateAbility,
+} from './abilities';
 import { stepLockedAction } from './actions';
 import { stepBall, tryPickup } from './ball';
 import { deflectBallOffPlayers, separatePlayers } from './bodies';
@@ -11,6 +18,7 @@ import {
   startSteal,
   stepDefenceAction,
 } from './defence';
+import { createHookContext, NO_ABILITIES, type AbilityTable } from './hooks';
 import { allPlayers, findPlayer } from './match';
 import { receivingTeam, setPhase, stepClocks, stepPhases } from './phases';
 import { isActionLocked, startJump, stepPlayer, stepTurbo } from './player-movement';
@@ -26,23 +34,25 @@ export interface TickResult {
 }
 
 /**
- * Advances the match by one fixed step (spec §4.2). Pure: returns a new state and never
+ * Advances the match by one fixed step (spec §4.2, D.2). Pure: returns a new state and never
  * mutates `state`. Pipeline order is part of the game's definition — keep it stable:
- *   1. court modifier      (phase 5)
- *   2. abilities           (phase 5)
- *   3. resolve intents → actions
+ *   1. court modifier onTick, then every player's stats rebuilt from base
+ *   2. active abilities: onTick, modifyStats
+ *   3. SPECIAL presses (everyone), then intents → actions
  *   4. move players
  *   5. move ball (held / flight / free, incl. floor, rim and board)
  *   6. bodies: player separation, ball deflection, pickup
  *   7. rules
  *   8. scoring / phases
- *   9. timers
+ *   9. timers, charge gains, ability timers
  *  10. events
+ * With `NO_ABILITIES` (the default) nothing activates.
  */
 export function tick(
   state: MatchState,
   intents: ReadonlyMap<PlayerId, PlayerIntent>,
   court: CourtDef,
+  abilities: AbilityTable = NO_ABILITIES,
 ): TickResult {
   if (state.phase === 'paused' || state.phase === 'finished') {
     return { state, events: [] };
@@ -55,8 +65,20 @@ export function tick(
   const players = allPlayers(next);
   const intentFor = (player: PlayerState): PlayerIntent => intents.get(player.id) ?? NO_INTENT;
 
-  // 3. resolve intents → actions
+  const ctx = createHookContext(next, court, events);
+
+  // 1. court modifier, then stats rebuilt from base
+  court.modifier?.onTick?.(next, ctx);
+  rebuildStats(next, court);
+
+  // 2. active abilities
+  for (const player of players) stepActiveAbility(next, player, abilities, ctx);
+
+  // 3. SPECIAL presses for everyone first (an Earthquake locks its victims out this tick), then actions
+  for (const player of players) tryActivateAbility(next, player, intentFor(player), abilities, ctx);
   for (const player of players) resolveAction(next, player, intentFor(player), court, events);
+  // Any catch this tick comes from the pass in the air now (assists, spec D.2).
+  const passer = next.ball.flight?.kind === 'pass' ? next.ball.flight.passer : null;
 
   // 4. move players
   for (const player of players) stepPlayer(player, intentFor(player), court, TICK_DT);
@@ -87,12 +109,13 @@ export function tick(
   if (basket) next.ball.lastShot = null;
   stepPhases(next, court, events, basket);
 
-  // 9. timers
+  // 9. timers, charge, abilities
   stepClocks(
     next,
     events,
     events.some((e) => e.type === 'rimHit'),
   );
+  applyChargeGains(next, events, passer);
   for (const player of players) {
     stepTurbo(player);
     if (player.shotCooldownTicks > 0) player.shotCooldownTicks -= 1;
@@ -101,6 +124,7 @@ export function tick(
     if (player.cooldowns.shove > 0) player.cooldowns.shove -= 1;
     if (player.shoveImmunityTicks > 0) player.shoveImmunityTicks -= 1;
     if (player.callingForPassTicks > 0) player.callingForPassTicks -= 1;
+    stepAbilityTimer(next, player, abilities, ctx);
     player.prevButtons = buttonsOf(intentFor(player));
   }
 

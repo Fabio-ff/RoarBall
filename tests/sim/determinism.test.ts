@@ -202,7 +202,7 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(play().state))).toMatchInlineSnapshot(`"3cbe5a85"`);
+    expect(fnv1a(JSON.stringify(play().state))).toMatchInlineSnapshot(`"8d79e9ca"`);
   });
 
   it('the short-clock run reaches violations and the end of the match, deterministically', () => {
@@ -215,7 +215,7 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned short-clock hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(playShort().state))).toMatchInlineSnapshot(`"c2687487"`);
+    expect(fnv1a(JSON.stringify(playShort().state))).toMatchInlineSnapshot(`"fe0fe01e"`);
   });
 
   it('the 2v2 run passes and defends, deterministically', () => {
@@ -232,7 +232,7 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned 2v2 hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(playTeams().state))).toMatchInlineSnapshot(`"3d776fad"`);
+    expect(fnv1a(JSON.stringify(playTeams().state))).toMatchInlineSnapshot(`"1c8be5f2"`);
   });
 
   it('pins each run’s events and score (spec D.7: phase 5 never changes them on the gym without abilities)', () => {

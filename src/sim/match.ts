@@ -61,6 +61,7 @@ export function createMatch(
     teams,
     rng: createRng(settings.seed),
     settings: { ...settings, ruleIds: [...settings.ruleIds] },
+    courtState: {},
   };
 }
 
@@ -68,6 +69,7 @@ const TEAMMATE_SPACING = 3; // metres across the width
 
 function createPlayer(entry: RosterEntry, indexInTeam: number, court: CourtDef): PlayerState {
   const side = entry.team === 0 ? -1 : 1;
+  const baseStats = entry.character ? resolveStats(entry.character) : { ...DEFAULT_STATS };
   return {
     id: entry.id,
     team: entry.team,
@@ -90,7 +92,12 @@ function createPlayer(entry: RosterEntry, indexInTeam: number, court: CourtDef):
     shoveImmunityTicks: 0,
     callingForPassTicks: 0,
     targetId: null,
-    stats: entry.character ? resolveStats(entry.character) : { ...DEFAULT_STATS },
+    stats: { ...baseStats },
+    baseStats,
+    abilityId: entry.character?.abilityId ?? null,
+    charge: 0,
+    ability: null,
+    lastCatch: null,
   };
 }
 

@@ -400,6 +400,7 @@ export function launchShot(
     receiver: null,
     lob: false,
     team: player.team,
+    bow: null,
   };
   ball.lastShot = {
     shooter: player.id,

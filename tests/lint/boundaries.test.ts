@@ -57,6 +57,23 @@ describe('src/content boundary', () => {
     ).toHaveLength(0);
   });
 
+  it('rejects Math.random', async () => {
+    expect(
+      await errorsFor('src/content/probe.ts', 'export const r = Math.random();'),
+    ).not.toHaveLength(0);
+  });
+
+  it('accepts an ability written against the hook types only', async () => {
+    expect(
+      await errorsFor(
+        'src/content/probe.ts',
+        "import type { AbilityDef } from '../sim/hooks';\n" +
+          "export const a: AbilityDef = { id: 'x', name: 'X', description: '', icon: '', durationTicks: 'instant', " +
+          'effect: { onActivate(state, player, ctx) { void state; void player; ctx.math.nextFloat(ctx.rng); } } };',
+      ),
+    ).toHaveLength(0);
+  });
+
   it('rejects three', async () => {
     expect(
       await errorsFor(
