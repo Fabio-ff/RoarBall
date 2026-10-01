@@ -32,6 +32,12 @@ const SPOT_OFFSETS: Readonly<Record<SpotName, { back: number; side: number }>> =
 /** Spec C.5 penalties: inside the handler→rim lane, and crowding the handler. */
 export const SPOT_LANE_PENALTY_RADIUS = 2.5;
 export const SPOT_HANDLER_PENALTY_RADIUS = 3;
+/**
+ * The drive lane stops this far short of the rim. `underBasket` sits 1.2 m from the rim, so the
+ * lane must end more than SPOT_LANE_PENALTY_RADIUS + 1.2 = 3.7 m short for that spot to be out
+ * of it (a 2 m shortening still left it 0.8 m from the lane's end, i.e. always penalised).
+ */
+export const SPOT_LANE_RIM_CLEARANCE = 4;
 const SPOT_PENALTY = 3;
 /** Openness saturates: a defender 6 m away is as good as one 10 m away. */
 const OPENNESS_CAP = 6;
@@ -52,6 +58,16 @@ function openness(spot: Vec3, opponents: readonly Vec3[]): number {
   return Math.min(OPENNESS_CAP, nearestDistance(spot, opponents));
 }
 
+/** The drive lane: handler → a point SPOT_LANE_RIM_CLEARANCE short of the rim (never behind the handler). */
+function laneEnd(handlerPos: Vec3, rim: Vec3): Vec3 {
+  const dx = handlerPos.x - rim.x;
+  const dz = handlerPos.z - rim.z;
+  const d = Math.hypot(dx, dz);
+  if (d <= SPOT_LANE_RIM_CLEARANCE) return handlerPos;
+  const k = SPOT_LANE_RIM_CLEARANCE / d;
+  return { x: rim.x + dx * k, y: 0, z: rim.z + dz * k };
+}
+
 /** Openness − lane penalty − handler penalty (spec C.5). */
 export function scoreSpot(
   spot: Vec3,
@@ -60,7 +76,8 @@ export function scoreSpot(
   opponents: readonly Vec3[],
 ): number {
   let score = openness(spot, opponents);
-  if (distanceToSegmentXZ(spot, handlerPos, rim) < SPOT_LANE_PENALTY_RADIUS) score -= SPOT_PENALTY;
+  if (distanceToSegmentXZ(spot, handlerPos, laneEnd(handlerPos, rim)) < SPOT_LANE_PENALTY_RADIUS)
+    score -= SPOT_PENALTY;
   if (v3DistanceXZ(spot, handlerPos) < SPOT_HANDLER_PENALTY_RADIUS) score -= SPOT_PENALTY;
   return score;
 }

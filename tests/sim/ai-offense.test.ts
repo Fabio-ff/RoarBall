@@ -4,6 +4,7 @@ import { getCourt } from '../../src/content/courts';
 import { decide, passLanding } from '../../src/sim/ai/brain';
 import { createAiMemory } from '../../src/sim/ai/memory';
 import {
+  INVITE_AT_SPOT_RADIUS,
   INVITE_EVERY_TICKS,
   planOffBall,
   planRebound,
@@ -13,6 +14,7 @@ import {
 import { laneBlocker, perceive, planWithBall, sideStepPoint } from '../../src/sim/ai/offense';
 import { AI_PROFILES, type AiProfile } from '../../src/sim/ai/profile';
 import { namedSpot } from '../../src/sim/ai/spots';
+import { v3DistanceXZ } from '../../src/sim/math';
 import { giveBall } from '../../src/sim/ball';
 import { hoopGeometry } from '../../src/sim/hoop';
 import { createMatch, findPlayer } from '../../src/sim/match';
@@ -266,6 +268,34 @@ describe('off ball', () => {
     expect(wantsAlleyOopInvite(s, me, player(s, 'home1'), m)).toBe(false);
     m.goal = { kind: 'moveTo', spot: namedSpot(hoop, 'top'), name: 'top' };
     expect(wantsAlleyOopInvite(s, me, handler, m)).toBe(false);
+  });
+
+  it('through the real tick, a 2v2 teammate runs to the basket spot and invites the alley-oop', () => {
+    let state = live();
+    // Human at the top of the key area, ~6 m from the rim; defenders sit between the wings/corners.
+    const handler = place(state, 'home1', rim.x - 6, 0);
+    giveBall(state, handler, []);
+    place(state, 'home2', rim.x - 5, 4.5);
+    place(state, 'away1', rim.x - 3, -3.5);
+    place(state, 'away2', rim.x - 3, 3.5);
+    const brain = createAiMemory('home2', 1, 1, true);
+    let atBasket = false;
+    let invites = 0;
+    for (let i = 0; i < 300; i++) {
+      const intent = decide(state, brain, exact, court);
+      const me = player(state, 'home2');
+      if (
+        brain.goal.kind === 'moveTo' &&
+        brain.goal.name === 'underBasket' &&
+        v3DistanceXZ(me.pos, brain.goal.spot) <= INVITE_AT_SPOT_RADIUS
+      ) {
+        atBasket = true;
+        if (intent.action) invites++;
+      }
+      state = tick(state, new Map([['home2', intent]]), court).state;
+    }
+    expect(atBasket).toBe(true);
+    expect(invites).toBeGreaterThanOrEqual(1);
   });
 
   it('chases a loose ball when closest on my team or within 3 m', () => {
