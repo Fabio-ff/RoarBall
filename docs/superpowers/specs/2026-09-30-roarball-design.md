@@ -836,3 +836,118 @@ Recorded at the Phase 4 reassessment; they refine C.2 and C.5 and are what the c
 - **Observed at launch** (fair profile, AI vs AI): no jump shots — a marked holder's quality
   is multiplied by 0.65, so even Ace open at 4 m sits at ≈ 0.50 < 0.55; scoring is dunks and
   layups, ≈ 25–30 points a side. Tuning facts for the tablet playtest, not defects.
+
+## Appendix D — Phase 5 decisions (2026-10-01)
+
+Decisions taken when planning Phase 5 (abilities and the three court modifiers). They refine
+§4.2, §5.3, §6, §7, §9 and A.7.
+
+### D.1 Playable build
+
+Still a 2v2 match by default. `?court=gym|rooftop|volcano|frozen` picks the court (default
+`gym`, which stays the balance baseline). Every player has their character's ability; the AI
+uses abilities too. Court cards arrive with the phase 6 menus.
+
+### D.2 State and pipeline
+
+- **Stats are rebuilt every tick.** `PlayerState` gains `baseStats` (resolved once from the
+  character, §5.1) and `stats` becomes derived: step 1 sets
+  `stats = court.modifier.modifyStats(baseStats, state)`, step 2 applies the active ability's
+  `modifyStats`. Existing logic keeps reading `player.stats`.
+- `ResolvedStats` gains four booleans (default `false`): `dunkFromArc`, `unblockableDunk`,
+  `stealAlwaysSucceeds`, `unlimitedTurbo`. Abilities express themselves through these flags
+  and multipliers; dunk, block, steal and turbo code read the flags.
+- `PlayerState` gains `charge` (0..100) and `ability: { ticksLeft: number | null; uses:
+  number } | null` (`ticksLeft` null = no timer). `MatchState` gains `courtState`: a plain,
+  JSON-safe object owned by the court's modifier (`{}` on the gym).
+- **Content stays outside `sim/`** (§3, A.7). The sim defines the types `AbilityDef`,
+  `AbilityEffect`, `CourtModifier` and `HookContext = { rng: RngState; math }` where `math`
+  is the sim's pure vector/scalar helpers. Ability and modifier code lives in
+  `src/content/abilities/` and on the court defs. The app passes the ability table in:
+  `tick(state, intents, court, abilities = NO_ABILITIES)`, `abilities` keyed by id. With
+  `NO_ABILITIES` nothing activates.
+- **Pipeline** (§4.2 steps 1, 2, 3, 9):
+  1. `court.modifier.onTick(state, ctx)`, then rebuild every player's stats from base.
+  2. For each player with an active ability: `effect.onTick?`, then `effect.modifyStats?`.
+  3. A SPECIAL press activates the ability when `charge === 100`, the phase is `live`, the
+     player is on the ground and not action-locked: `charge = 0`, `ability` set,
+     `effect.onActivate`, event `abilityActivated`.
+  9. Timed abilities count down; at 0 `effect.onEnd?`, `ability = null`, event `abilityEnded`.
+     Charge gains from this tick's events. No charge is gained while one's own ability is
+     active. Charge persists across phases and resets only with a new match.
+- **Charge gains** (≈ 2 uses per player per match): basket +12 (2 points) / +18 (3 points) to
+  the scorer; assist +10 to the passer when the receiver scores within 180 ticks of catching
+  their pass (`lastCatch: { from, tick }` on the receiver); steal +15; block +15. Cap 100.
+- **RNG** (A.7): hooks draw from `state.rng` only through `ctx.rng`. The gym modifier is
+  absent and abilities draw only where a roll already exists, so a gym match with
+  `NO_ABILITIES` keeps its event sequence; only state hashes change (new fields).
+- **Events**: `abilityActivated { playerId, abilityId }`, `abilityEnded { playerId,
+  abilityId }`, `knockdown { by, target }`, `gustStart { dir: Vec3 }`, `gustEnd`.
+
+### D.3 Abilities
+
+| Ability | Who | Duration | Effect |
+|---|---|---|---|
+| Rocket Dunk | Brick | 480 ticks | `dunkFromArc` + `unblockableDunk`. A shot press with the ball inside the 3-point line (< 6.75 m from the target hoop) is a dunk; the dunk launches the player on a line to the rim that arrives on the normal release tick (horizontal speed = distance ÷ release time). `tryBlockShot` ignores unblockable dunks. Normal dunk make chance. |
+| Hot Hand | Ace | until used | `uses = 3`, no timer. Every released shot (any type) consumes one use and is made; the outcome draw is still taken and ignored, so the draw order does not fork. A block still beats it and a blocked shot does not consume a use. Ends on the third shot or with the match. |
+| Blur | Dash | 360 ticks | `runSpeed`, `turboSpeed`, `acceleration`, `deceleration` ×2; `unlimitedTurbo` (no drain); `stealAlwaysSucceeds` (reach, facing and cooldown still apply; the chance draw is taken, result treated as success). |
+| Earthquake | Rook | instant | Every opponent within 4 m (ground or air) is stunned for 90 ticks, ignoring stun resistance and shove immunity; then the normal get-up and immunity follow. A knocked-down holder drops the ball as after a shove. Teammates are unaffected. One `knockdown` event per victim. No RNG. |
+
+### D.4 Courts
+
+Modifier hooks: `onTick?(state, ctx)`, `modifyStats?(stats, state) → stats`,
+`aiHint?(state, player) → { ballDrift?: Vec3 }`.
+
+- **Rooftop Storm — Gusts.** `courtState = { nextGustTick, gust: { ticksLeft, dir } | null }`.
+  The next gust is scheduled 900–1500 ticks ahead (one draw), with a horizontal direction
+  (one draw); a gust lasts 180 ticks.
+  - Shots stay outcome-based (§4.4): a shot released during a gust gets a sideways **bow**
+    in its scripted flight, `sin(π·t) × drift` with `t` = elapsed/total, zero at both ends,
+    so the arc bends visibly and still lands where the outcome says. During a gust
+    `shooting` ×0.85 (via `modifyStats`), which `evaluateShot` sees.
+  - A pass released during a gust has its landing point shifted by the drift (4 m/s² ×
+    flight time² / 2 along `dir`); receivers already run to the landing.
+  - A free ball is accelerated 4 m/s² along `dir`; airborne players 2 m/s².
+  - `aiHint` returns the drift during a gust; the AI's loose-ball chase leads by it.
+- **Volcano Rim — Heat.** `modifyStats` only: `turboDrainPerTick` ×1.5, `stunTicksDealt`
+  ×1.4, `stunResistTicks` ×0.5. Earthquake's fixed 90 ticks is not scaled. No RNG.
+- **Frozen Lake — Slick.** `physics.friction = 0.3` (the free ball rolls further);
+  `modifyStats`: `acceleration` ×0.4, `deceleration` ×0.25 (drift on direction change). No RNG.
+
+All four courts share the gym's play area and hoops.
+
+### D.5 AI
+
+`AbilityDef.aiWantsToUse(state, player)` is checked on decision ticks only; a `true` becomes a
+one-tick SPECIAL press (C.2). Rules: Rocket Dunk — holding the ball 3.5–6.5 m from the target
+hoop; Hot Hand — own team in possession; Blur — defending with the opposing holder within 5 m,
+or holding the ball > 10 m from the target hoop; Earthquake — ≥ 2 opponents within 4 m, or the
+opposing holder within 4 m. Profiles add nothing new (the cadence is the reaction delay).
+`CourtModifier.aiHint` is read by the loose-ball chase only.
+
+### D.6 Presentation
+
+- **HUD**: the human's ability bar at the top centre (§8 sketch) with the ability's name:
+  fills in team colour, pulses "READY" at 100, shows remaining time while active, three pips
+  for Hot Hand. Banners on every `abilityActivated` ("ROCKET DUNK!", "HOT HAND!", "BLUR!",
+  "EARTHQUAKE!") in the activating team's colour. A "GUST" chip with an arrow during a gust.
+  The touch SP button is dimmed until the bar is full. The `?debug` overlay shows each
+  player's charge and active ability.
+- **Court dressing** (placeholder until phase 7): `CourtDef` gains `dressing: { floorColor,
+  lineColor, floorRoughness, weather: 'none' | 'rain' | 'embers' }`. Rooftop: dark slate sky,
+  wet dark floor, instanced rain streaks that slant with the gust. Volcano: dark red sky,
+  orange key light, rising embers, an emissive glow strip beyond each baseline. Frozen:
+  pale-blue glossy floor, teal sky. Gym unchanged. Render reads state and events only.
+- **Restart press leak** (Phase 4 deferred): a new match seeds every player's `prevButtons`
+  with the buttons held at restart, so the restarting press is not a press in the new match.
+
+### D.7 Testing and balance
+
+- Unit tests per hook: activation gating, charge gains (incl. the assist window), each
+  ability's effect and expiry, each modifier's stats, gust scheduling, the bow is zero at both
+  ends, Hot Hand keeps the RNG draw order, Earthquake ignores immunity.
+- Determinism: a gym match with `NO_ABILITIES` keeps the Phase 4 golden event sequences and
+  scores (hashes re-pinned for the new fields). One new AI golden per court with abilities on.
+- Sweep: + 5 seeds per court with abilities on (no stalls, sane scores).
+- Balance report: + ability uses per character per match (target 1.5–3), per-court mean
+  totals and side bias (45–55 %).
