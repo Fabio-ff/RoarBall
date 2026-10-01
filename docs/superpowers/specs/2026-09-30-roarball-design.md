@@ -805,3 +805,34 @@ fastest reaction is 8 ticks): getting inside is the human's reward. Recorded des
 Cheap leftovers folded into this phase: favicon, `sourcemap: 'hidden'`, HUD per-frame DOM
 writes (the final banner touches the HUD anyway). Still deferred: chunk split, 2 m sweep
 bucket.
+
+### C.8 Refinements made during execution (2026-10-01)
+
+Recorded at the Phase 4 reassessment; they refine C.2 and C.5 and are what the code does.
+
+- **Cadence** (C.2): brains re-plan every 6 ticks on the *match clock*, at phase `slot · 3`
+  where `slot` is the player's index within their team (0 or 1); both teams share the same
+  two phases. The roster-index offset of C.2 gave team 0 a two-tick head start worth ≈ 62 %
+  of mirrored wins. A **possession change** (including the first plan after a reset) forces an
+  immediate re-plan on every brain without rescheduling the cadence, so both defenders assign
+  marks from the same snapshot.
+- **Pass receiver** (C.5): a receiver with a pass in flight runs to the pass landing point
+  (the sim leads the pass to where the receiver was heading); standing still dropped every pass.
+- **Block window** (C.5): press block only while `reactionTicks ≤ holder.actionTicks <
+  releaseTick`. A press on the release tick itself only worked for the team the sim steps first.
+  Consequence: fair and easy cannot block layups (release tick 15); hard can.
+- **Steals** (C.5): no steal attempt at a holder who is moving away or driving at the rim
+  (the sim halves the odds and a failed reach freezes the stealer for 18 ticks). Since the
+  marker stands 0.8 m from the holder, inside steal reach, the sim's chooser picks steal
+  there — so the AI has **no press against a driving holder it marks**. Getting inside is
+  the human's reward (recorded decision); tuning lever for the playtest.
+- **Spot lane penalty** (C.5): the drive lane is the handler→rim segment stopped **4 m short
+  of the rim**, so the under-basket spot (1.2 m from the rim) can be chosen and the alley-oop
+  invite is reachable; `top` and the wings are still penalised on a deep handler's line.
+- Small deviations: drive turbo also needs > 4 m to the rim; on a loose ball the second
+  defender marks instead of staying home in the key; §6 "teammate favours where the human is
+  heading" is not implemented (phase 5/6); the balance side-bias band is checked on the
+  aggregate of mirrored games (320), not per pairing.
+- **Observed at launch** (fair profile, AI vs AI): no jump shots — a marked holder's quality
+  is multiplied by 0.65, so even Ace open at 4 m sits at ≈ 0.50 < 0.55; scoring is dunks and
+  layups, ≈ 25–30 points a side. Tuning facts for the tablet playtest, not defects.
