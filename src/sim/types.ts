@@ -181,7 +181,8 @@ export interface ShotFlight {
   velocity: Vec3;
   totalTicks: number;
   elapsedTicks: number;
-  /** Passes: who it is for, whether it is an alley-oop lob, and the passing team. */
+  /** Passes: who threw it (null for shots), who it is for, whether it is an alley-oop lob, and the passing team. */
+  passer: PlayerId | null;
   receiver: PlayerId | null;
   lob: boolean;
   team: TeamIndex;

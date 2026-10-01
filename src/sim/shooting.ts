@@ -396,6 +396,7 @@ export function launchShot(
     velocity,
     totalTicks: flightTicks,
     elapsedTicks: 0,
+    passer: null,
     receiver: null,
     lob: false,
     team: player.team,

@@ -3,6 +3,7 @@ import { getCourt } from '../../src/content/courts';
 import { giveBall } from '../../src/sim/ball';
 import { hoopGeometry } from '../../src/sim/hoop';
 import { createMatch, findPlayer } from '../../src/sim/match';
+import { passLaneOpen } from '../../src/sim/passing';
 import { startJump } from '../../src/sim/player-movement';
 import { tick } from '../../src/sim/tick';
 import {
@@ -100,6 +101,72 @@ describe('passing', () => {
     expect(events.some((e) => e.type === 'intercept' && e.playerId === 'x')).toBe(true);
     expect(state.ball.holder).toBe('x');
     expect(state.possession).toBe(1);
+  });
+
+  it('an opponent pressed against the passer cannot intercept at release (B.3 shield)', () => {
+    const s = setup();
+    const x = findPlayer(s, 'x');
+    if (!x) throw new Error('no x');
+    // At the separation minimum, straight in the pass direction: this used to take every pass.
+    x.pos = { x: 0.7, y: 0, z: 0 };
+    const { state, events } = run(s, 120, new Map([['a', passPress]]), (ev) =>
+      ev.some((e) => e.type === 'intercept' || e.type === 'catch'),
+    );
+    expect(events.some((e) => e.type === 'intercept')).toBe(false);
+    expect(state.ball.holder).toBe('b');
+  });
+
+  it('the release shield ends at 1 m: an opponent just outside it on the line still intercepts', () => {
+    const s = setup();
+    const x = findPlayer(s, 'x');
+    if (!x) throw new Error('no x');
+    x.pos = { x: 1.2, y: 0, z: 0 };
+    const { state, events } = run(s, 120, new Map([['a', passPress]]), (ev) =>
+      ev.some((e) => e.type === 'intercept' || e.type === 'catch'),
+    );
+    expect(events.some((e) => e.type === 'intercept' && e.playerId === 'x')).toBe(true);
+    expect(state.ball.holder).toBe('x');
+  });
+
+  describe('passLaneOpen', () => {
+    function lane(xPos: { x: number; z: number } | null): boolean {
+      const s = setup();
+      const a = findPlayer(s, 'a');
+      const b = findPlayer(s, 'b');
+      const x = findPlayer(s, 'x');
+      if (!a || !b || !x) throw new Error('no players');
+      if (xPos) x.pos = { x: xPos.x, y: 0, z: xPos.z };
+      return passLaneOpen(s, a, b, court);
+    }
+
+    it('is open with nobody near the line', () => {
+      expect(lane(null)).toBe(true);
+    });
+
+    it('is closed by an opponent 0.3 m off the line at mid-point', () => {
+      expect(lane({ x: 2.5, z: 0.3 })).toBe(false);
+    });
+
+    it('is open past an opponent 1.5 m off the line', () => {
+      expect(lane({ x: 2.5, z: 1.5 })).toBe(true);
+    });
+
+    it('ignores an opponent inside the release shield, like the flight does', () => {
+      expect(lane({ x: 0.7, z: 0 })).toBe(true);
+    });
+
+    it('agrees with the simulated flight', () => {
+      for (const z of [0, 0.3, 0.5, 0.6, 0.7, 0.9, 1.5]) {
+        const s = setup();
+        const x = findPlayer(s, 'x');
+        if (!x) throw new Error('no x');
+        x.pos = { x: 2.5, y: 0, z };
+        const { events } = run(s, 120, new Map([['a', passPress]]), (ev) =>
+          ev.some((e) => e.type === 'intercept' || e.type === 'catch'),
+        );
+        expect(lane({ x: 2.5, z })).toBe(!events.some((e) => e.type === 'intercept'));
+      }
+    });
   });
 
   it('a pass with no teammate on court does nothing', () => {
