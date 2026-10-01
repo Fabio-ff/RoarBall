@@ -1933,6 +1933,30 @@ describe('dummies', () => {
     expect(events.some((e) => e.type === 'pass' && e.lob)).toBe(true);
   });
 
+  it('the human can steal from the defender holding the ball at its spot', () => {
+    const s = setup();
+    const h = findPlayer(s, 'home1');
+    const d = findPlayer(s, 'away1');
+    if (!h || !d) throw new Error('no players');
+    d.pos = { x: hoop.rimCenter.x - 3.5, y: 0, z: 0 };
+    giveBall(s, d, []);
+    h.pos = { x: d.pos.x - 0.8, y: 0, z: 0 };
+    h.facing = Math.PI / 2;
+    const { events } = play(s, 30, (st) => (st.tick === 1 ? { ...NO_INTENT, action: true } : NO_INTENT));
+    expect(events.some((e) => e.type === 'steal' || e.type === 'stealFailed')).toBe(true);
+    expect(events.some((e) => e.type === 'block')).toBe(false);
+  });
+
+  it('the defender chases a loose ball nearby', () => {
+    const s = setup();
+    const d = findPlayer(s, 'away1');
+    if (!d) throw new Error('no d');
+    d.pos = { x: hoop.rimCenter.x - 3.5, y: 0, z: 0 };
+    s.ball = { ...s.ball, mode: 'free', holder: null, flight: null, pos: { x: d.pos.x + 2, y: s.ball.radius, z: 1 }, vel: { x: 0, y: 0, z: 0 } };
+    const { state } = play(s, 90, () => NO_INTENT);
+    expect(state.ball.holder).toBe('away1');
+  });
+
   it('the defender raises for a block when the handler comes close', () => {
     const s = setup();
     const h = findPlayer(s, 'home1');
@@ -1961,7 +1985,10 @@ export type Controller = (state: MatchState) => PlayerIntent;
 const ARRIVE_RADIUS = 0.5;
 const WING_BACK = 5;
 const WING_SIDE = 4;
-const KEY_BACK = 2.5;
+/** Outside the sim's 3 m near-hoop block zone, so a press next to the holding dummy can steal (B.1). */
+const KEY_BACK = 3.5;
+/** The defender chases a loose ball this close, so rebounds (and steals from it) happen. */
+const DEFENDER_CHASE_RANGE = 4;
 const TEAMMATE_HOLD_TICKS = 60;
 const DEFENDER_BLOCK_RANGE = 2.5;
 const DEFENDER_BLOCK_EVERY_TICKS = 120;
@@ -2007,10 +2034,14 @@ export function defenderDummy(id: PlayerId, humanId: PlayerId, court: CourtDef):
     if (!me || !human) return NO_INTENT;
     const hoop = humanHoop(state, human, court);
     const spot = { x: hoop.rimCenter.x - hoop.side * KEY_BACK, y: 0, z: hoop.rimCenter.z };
+    // A loose ball nearby is worth collecting: that is how the human gets to steal from this dummy.
+    const ball = state.ball;
+    const chase = ball.mode === 'free' && v3DistanceXZ(ball.pos, me.pos) <= DEFENDER_CHASE_RANGE;
+    const goal = chase ? ball.pos : spot;
     const handlerClose = state.ball.holder === humanId && v3DistanceXZ(human.pos, me.pos) <= DEFENDER_BLOCK_RANGE;
     const block = handlerClose && me.onGround && state.tick - lastBlockTick >= DEFENDER_BLOCK_EVERY_TICKS;
     if (block) lastBlockTick = state.tick;
-    return { ...NO_INTENT, move: stepTowards(me, spot), action: block };
+    return { ...NO_INTENT, move: state.ball.holder === id ? { x: 0, y: 0 } : stepTowards(me, goal), action: block };
   };
 }
 ```
@@ -2036,7 +2067,7 @@ Note: `stepTowards` returns court-space intents (the sim expects court space; on
     expect(bannerFor({ type: 'shove', by: 'x', target: 'a' })).toBeNull();
 ```
 
-`src/render/player-view.ts` poses: replace the arm logic with a target angle per action — raise **forward** (negative rotation, fixing the Phase 2 note): `jump`/`block`/`shoot`/`layup`/`dunk` → `-Math.PI`; `pass`/`steal`/`shove` → `-Math.PI / 2`; else `0`; keep the 0.25 lerp. Stunned/getup: tilt the body mesh — keep a `private tilt = 0` and lerp it towards `1` for `stunned`, `0.5` for `getup`, `0` otherwise; apply `body.rotation.x = -tilt * (Math.PI / 2)` and `body.position.y = 0.85 - tilt * 0.5` (the capsule lies down); the head and arms follow by sitting in the same group — acceptable for placeholders.
+`src/render/player-view.ts` poses: replace the arm logic with a target angle per action — raise **forward** (negative rotation, fixing the Phase 2 note): `jump`/`block`/`shoot`/`layup`/`dunk` → `-Math.PI`; `pass`/`steal`/`shove` → `-Math.PI / 2`; else `0`; keep the 0.25 lerp. Stunned/getup: tilt the **whole figure** — put body, head, nose and arms in a `figure` sub-group pivoted at the feet (`figure.position.y = 0`), keep a `private tilt = 0` lerped towards `1` for `stunned`, `0.5` for `getup`, `0` otherwise, and apply `figure.rotation.x = -tilt * (Math.PI / 2)` plus `figure.position.z = tilt * 0.9` so the lying figure stays roughly over the player's position.
 
 - [ ] **Step 4: Check, browser verification, commit**
 
