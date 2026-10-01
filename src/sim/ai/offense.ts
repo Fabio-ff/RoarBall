@@ -92,6 +92,9 @@ export function planWithBall(
   const mate = teammateOf(state, me);
   const laneOpen = mate !== undefined && passLaneOpen(state, me, mate, court);
   const perceived = perceive(mine.quality, memory, profile);
+  // Only a run of consecutive drive decisions counts as a closed lane: any early return resets it.
+  const previousClosed = memory.laneClosedCount;
+  memory.laneClosedCount = 0;
 
   // 1. Shot clock panic.
   if (state.shotClockMs < PANIC_SHOT_CLOCK_MS) {
@@ -119,7 +122,7 @@ export function planWithBall(
   }
   // 6–7. Drive, side-step around a blocker, or reset to an open spot.
   const blocker = laneBlocker(me, hoop.rimCenter, opponents);
-  memory.laneClosedCount = blocker ? memory.laneClosedCount + 1 : 0;
+  memory.laneClosedCount = blocker ? previousClosed + 1 : 0;
   if (
     blocker &&
     memory.laneClosedCount >= RESET_AFTER_CLOSED_DECISIONS &&
