@@ -160,3 +160,17 @@ describe('steering', () => {
     expect(wantsTurbo(fake(0.3), 6, AI_PROFILES.hard)).toBe(true);
   });
 });
+
+describe('Task 1 review fixes', () => {
+  it('memory survives a JSON round trip (finite lastInviteTick)', () => {
+    const m = createAiMemory('home1', 1, 0, false);
+    expect(JSON.parse(JSON.stringify(m)).lastInviteTick).toBe(m.lastInviteTick);
+  });
+
+  it('farthestSpot picks the truly farthest spot, not the first one that ties at the cap', () => {
+    // The defender sits left of centre: both corners are beyond the 6 m cap from it, but the
+    // right corner is much farther than the left one.
+    const top = namedSpot(hoop, 'top');
+    expect(farthestSpot(hoop, [{ x: top.x, y: 0, z: -3 }]).name).toBe('rightCorner');
+  });
+});
