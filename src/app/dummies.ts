@@ -17,7 +17,10 @@ export type Controller = (state: MatchState) => PlayerIntent;
 const ARRIVE_RADIUS = 0.5;
 const WING_BACK = 5;
 const WING_SIDE = 4;
-const KEY_BACK = 2.5;
+/** Outside the sim's 3 m near-hoop block zone, so a press next to the holding dummy can steal (B.1). */
+const KEY_BACK = 3.5;
+/** The defender chases a loose ball this close, so rebounds (and steals from it) happen. */
+const DEFENDER_CHASE_RANGE = 4;
 const TEAMMATE_HOLD_TICKS = 60;
 const DEFENDER_BLOCK_RANGE = 2.5;
 const DEFENDER_BLOCK_EVERY_TICKS = 120;
@@ -33,7 +36,7 @@ function stepTowards(player: PlayerState, spot: Vec3): PlayerIntent['move'] {
 }
 
 /** The hoop the human is working on: the nearer one in shootaround. */
-function humanHoop(state: MatchState, human: PlayerState, court: CourtDef) {
+function humanHoop(human: PlayerState, court: CourtDef) {
   return hoopGeometry(court, nearestHoopIndex(court, human.pos));
 }
 
@@ -45,7 +48,7 @@ export function teammateDummy(id: PlayerId, humanId: PlayerId, court: CourtDef):
     const me = findPlayer(state, id);
     const human = findPlayer(state, humanId);
     if (!me || !human) return NO_INTENT;
-    const hoop = humanHoop(state, human, court);
+    const hoop = humanHoop(human, court);
     const spot = {
       x: hoop.rimCenter.x - hoop.side * WING_BACK,
       y: 0,
@@ -80,8 +83,12 @@ export function defenderDummy(id: PlayerId, humanId: PlayerId, court: CourtDef):
     const me = findPlayer(state, id);
     const human = findPlayer(state, humanId);
     if (!me || !human) return NO_INTENT;
-    const hoop = humanHoop(state, human, court);
+    const hoop = humanHoop(human, court);
     const spot = { x: hoop.rimCenter.x - hoop.side * KEY_BACK, y: 0, z: hoop.rimCenter.z };
+    // A loose ball nearby is worth collecting: that is how the human gets to steal from this dummy.
+    const chase =
+      state.ball.mode === 'free' && v3DistanceXZ(state.ball.pos, me.pos) <= DEFENDER_CHASE_RANGE;
+    const goal = chase ? state.ball.pos : spot;
     const handlerClose =
       state.ball.holder === humanId && v3DistanceXZ(human.pos, me.pos) <= DEFENDER_BLOCK_RANGE;
     const handlerOnTop = handlerClose && v3DistanceXZ(human.pos, me.pos) <= DEFENDER_JUMP_RANGE;
@@ -92,6 +99,7 @@ export function defenderDummy(id: PlayerId, humanId: PlayerId, court: CourtDef):
       (handlerShooting ||
         (handlerOnTop && state.tick - lastBlockTick >= DEFENDER_BLOCK_EVERY_TICKS));
     if (block) lastBlockTick = state.tick;
-    return { ...NO_INTENT, move: stepTowards(me, spot), action: block };
+    const holding = state.ball.holder === id;
+    return { ...NO_INTENT, move: holding ? { x: 0, y: 0 } : stepTowards(me, goal), action: block };
   };
 }

@@ -19,16 +19,17 @@ const ARMS_FORWARD = new Set<PlayerState['action']>(['pass', 'steal', 'shove']);
 export class PlayerView {
   readonly group = new Group();
   private readonly arms: Group;
-  private readonly body: Mesh;
+  /** Body, head, nose and arms, pivoted at the feet so the stun tilt lays the whole figure down. */
+  private readonly figure = new Group();
   private tilt = 0;
 
   constructor(color: number) {
-    this.body = new Mesh(
+    const body = new Mesh(
       new CapsuleGeometry(0.35, 1.0, 4, 12),
       new MeshStandardMaterial({ color }),
     );
-    this.body.position.y = 0.85;
-    this.body.castShadow = true;
+    body.position.y = 0.85;
+    body.castShadow = true;
 
     const head = new Mesh(
       new BoxGeometry(0.3, 0.3, 0.3),
@@ -54,7 +55,8 @@ export class PlayerView {
       this.arms.add(arm);
     }
 
-    this.group.add(this.body, head, nose, this.arms);
+    this.figure.add(body, head, nose, this.arms);
+    this.group.add(this.figure);
   }
 
   update(prev: PlayerState, next: PlayerState, alpha: number): void {
@@ -70,7 +72,7 @@ export class PlayerView {
     this.arms.rotation.x += (target - this.arms.rotation.x) * 0.25;
     const tiltTarget = next.action === 'stunned' ? 1 : next.action === 'getup' ? 0.5 : 0;
     this.tilt += (tiltTarget - this.tilt) * 0.25;
-    this.body.rotation.x = -this.tilt * (Math.PI / 2);
-    this.body.position.y = 0.85 - this.tilt * 0.5;
+    this.figure.rotation.x = -this.tilt * (Math.PI / 2);
+    this.figure.position.z = this.tilt * 0.9;
   }
 }

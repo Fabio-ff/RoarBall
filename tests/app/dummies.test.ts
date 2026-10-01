@@ -102,6 +102,39 @@ describe('dummies', () => {
     expect(events.some((e) => e.type === 'pass' && e.lob)).toBe(true);
   });
 
+  it('the human can steal from the defender holding the ball at its spot', () => {
+    const s = setup();
+    const h = findPlayer(s, 'home1');
+    const d = findPlayer(s, 'away1');
+    if (!h || !d) throw new Error('no players');
+    d.pos = { x: hoop.rimCenter.x - 3.5, y: 0, z: 0 };
+    giveBall(s, d, []);
+    h.pos = { x: d.pos.x - 0.8, y: 0, z: 0 };
+    h.facing = Math.PI / 2;
+    const { events } = play(s, 30, (st) =>
+      st.tick === 1 ? { ...NO_INTENT, action: true } : NO_INTENT,
+    );
+    expect(events.some((e) => e.type === 'steal' || e.type === 'stealFailed')).toBe(true);
+    expect(events.some((e) => e.type === 'block')).toBe(false);
+  });
+
+  it('the defender chases a loose ball nearby', () => {
+    const s = setup();
+    const d = findPlayer(s, 'away1');
+    if (!d) throw new Error('no d');
+    d.pos = { x: hoop.rimCenter.x - 3.5, y: 0, z: 0 };
+    s.ball = {
+      ...s.ball,
+      mode: 'free',
+      holder: null,
+      flight: null,
+      pos: { x: d.pos.x + 2, y: s.ball.radius, z: 1 },
+      vel: { x: 0, y: 0, z: 0 },
+    };
+    const { state } = play(s, 90, () => NO_INTENT);
+    expect(state.ball.holder).toBe('away1');
+  });
+
   it('the defender raises for a block when the handler comes close', () => {
     const s = setup();
     const h = findPlayer(s, 'home1');
@@ -118,8 +151,10 @@ describe('dummies', () => {
     const h = findPlayer(s, 'home1');
     const d = findPlayer(s, 'away1');
     if (!h || !d) throw new Error('no players');
-    d.pos = { x: hoop.rimCenter.x - 2.5, y: 0, z: 0 };
-    h.pos = { x: hoop.rimCenter.x - 5.08, y: 0, z: 0 };
+    // Defender at its spot (3.5 m out); the human starts 2.6 m further out, runs at it and shoots on tick 12,
+    // which is the ~130 ms window where the defender is grounded and the shooter is within block reach.
+    d.pos = { x: hoop.rimCenter.x - 3.5, y: 0, z: 0 };
+    h.pos = { x: hoop.rimCenter.x - 6.08, y: 0, z: 0 };
     const { events } = play(s, 150, (st) =>
       st.tick < 22 ? { ...NO_INTENT, move: { x: 1, y: 0 }, action: st.tick === 12 } : NO_INTENT,
     );
