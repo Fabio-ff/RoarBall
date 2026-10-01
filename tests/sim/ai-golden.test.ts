@@ -33,4 +33,11 @@ describe('AI golden (spec C.7)', () => {
     for (const frame of a.intents) state = tick(state, frame, court).state;
     expect(state.rng.seed).toBe(a.state.rng.seed);
   });
+
+  it('pins the events and score (spec D.7: phase 5 never changes them on the gym without abilities)', () => {
+    const run = playAiMatch(7);
+    expect(
+      `${fnv1a(JSON.stringify(run.events))} ${run.state.score[0]}-${run.state.score[1]} ${run.events.length}`,
+    ).toMatchInlineSnapshot(`"f4662376 16-30 441"`);
+  });
 });
