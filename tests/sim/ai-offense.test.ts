@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getCharacter } from '../../src/content/characters';
 import { getCourt } from '../../src/content/courts';
+import { decide, passLanding } from '../../src/sim/ai/brain';
 import { createAiMemory } from '../../src/sim/ai/memory';
 import {
   INVITE_EVERY_TICKS,
@@ -17,7 +18,9 @@ import { hoopGeometry } from '../../src/sim/hoop';
 import { createMatch, findPlayer } from '../../src/sim/match';
 import { startJump } from '../../src/sim/player-movement';
 import { evaluateShot } from '../../src/sim/shooting';
-import type { MatchSettings, MatchState, PlayerState } from '../../src/sim/types';
+import { tick } from '../../src/sim/tick';
+import { NO_INTENT } from '../../src/sim/types';
+import type { MatchSettings, MatchState, PlayerState, SimEvent } from '../../src/sim/types';
 
 const court = getCourt('gym');
 const matchSettings: MatchSettings = {
@@ -313,5 +316,39 @@ describe('off ball', () => {
     }
     const far = place(s, 'home2', rim.x - 9, 0);
     expect(planRebound(s, far, court)).toEqual({ kind: 'idle' });
+  });
+
+  it('a running receiver keeps running to where the led pass lands, and catches it', () => {
+    const s = live();
+    const passer = place(s, 'home1', 0, 0);
+    const receiver = place(s, 'home2', 0, 4);
+    place(s, 'away1', -10, -6);
+    place(s, 'away2', -10, 6);
+    giveBall(s, passer, []);
+    receiver.vel = { x: 6, y: 0, z: 0 }; // running across: the sim leads the pass by this velocity
+    receiver.action = 'run';
+    const brain = createAiMemory('home2', 1, 0, false);
+    let state = s;
+    const events: SimEvent[] = [];
+    for (let i = 0; i < 120 && !events.some((e) => e.type === 'catch'); i++) {
+      const toReceiver = decide(state, brain, exact, court);
+      // Keep the receiver running across until the pass is out, as a human would.
+      const runAcross =
+        state.ball.mode === 'held' ? { ...NO_INTENT, move: { x: 1, y: 0 } } : toReceiver;
+      const intents = new Map([
+        ['home1', { ...NO_INTENT, pass: i === 0 }],
+        ['home2', runAcross],
+      ]);
+      const r = tick(state, intents, court);
+      state = r.state;
+      events.push(...r.events);
+      if (state.ball.mode === 'flight' && state.ball.flight?.kind === 'pass') {
+        const goal = brain.goal;
+        if (goal.kind === 'moveTo' && goal.name === null)
+          expect(goal.spot).toEqual(passLanding(state.ball.flight, court));
+      }
+    }
+    expect(events.some((e) => e.type === 'pass')).toBe(true);
+    expect(events.some((e) => e.type === 'catch' && e.playerId === 'home2')).toBe(true);
   });
 });

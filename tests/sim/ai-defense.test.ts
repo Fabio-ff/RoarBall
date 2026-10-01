@@ -8,7 +8,7 @@ import { AI_PROFILES, type AiProfile, type AiProfileId } from '../../src/sim/ai/
 import { giveBall } from '../../src/sim/ball';
 import { hoopGeometry } from '../../src/sim/hoop';
 import { createMatch, findPlayer } from '../../src/sim/match';
-import { startShot } from '../../src/sim/shooting';
+import { SHOT_TIMING, startShot } from '../../src/sim/shooting';
 import { tick } from '../../src/sim/tick';
 import {
   NO_INTENT,
@@ -175,6 +175,32 @@ describe('decidePress', () => {
     expect(decidePress(s, me, m, AI_PROFILES.fair, court, true)).toBe(true);
   });
 
+  it('never jumps on or after the release tick: that block would land only by roster order', () => {
+    const { s, me } = stealSetup();
+    const holder = player(s, 'home1');
+    startShot(s, holder, court); // a jump shot from 6 m
+    const release = SHOT_TIMING.jumpshot.releaseTick;
+    const m = createAiMemory('away1', 1, 0, false);
+    holder.actionTicks = release - 1;
+    expect(decidePress(s, me, m, AI_PROFILES.fair, court, false)).toBe(true);
+    holder.actionTicks = release;
+    expect(decidePress(s, me, m, AI_PROFILES.fair, court, false)).toBe(false);
+  });
+
+  it('reaches for the ball only at a holder who is neither running away nor driving', () => {
+    const { s, me } = stealSetup(); // I stand between the holder and the rim (+X)
+    const holder = player(s, 'home1');
+    const m = createAiMemory('away1', 1, 0, false);
+    const always = { ...AI_PROFILES.fair, stealRate: 1 };
+    expect(decidePress(s, me, m, always, court, true)).toBe(true); // standing
+    holder.vel = { x: -3, y: 0, z: 0 }; // running away from me
+    expect(decidePress(s, me, m, always, court, true)).toBe(false);
+    holder.vel = { x: 4, y: 0, z: 0 }; // driving at the rim: a shove's job, not a reach
+    expect(decidePress(s, me, m, always, court, true)).toBe(false);
+    holder.vel = { x: 2, y: 0, z: 0 }; // walking it up
+    expect(decidePress(s, me, m, always, court, true)).toBe(true);
+  });
+
   it('shoves a driving mark by the profile rate, never a standing one, and only with turbo', () => {
     const s = live();
     const driver = place(s, 'home2', rim.x - 6, 0); // no ball: shove is what the press does
@@ -251,18 +277,18 @@ describe('decide (brain)', () => {
     place(s, 'home2', -8, 6);
     place(s, 'away1', -8, -6);
     place(s, 'away2', -8, 0);
-    const m = createAiMemory('home1', 1, 2, false);
+    const m = createAiMemory('home1', 1, 1, false); // a team's second slot: phase 3
     m.lastPlannedPossession = s.possession; // a plan already exists: only the cadence plans now
     s.tick = 0;
-    expect(decide(s, m, exact, court)).toEqual(NO_INTENT); // before the offset: idle goal
-    s.tick = 2;
+    expect(decide(s, m, exact, court)).toEqual(NO_INTENT); // before its phase: idle goal
+    s.tick = 3;
     const first = decide(s, m, exact, court);
     expect(m.goal).toEqual({ kind: 'shoot' });
     expect(first.action).toBe(true);
-    expect(m.nextDecisionTick).toBe(2 + DECISION_INTERVAL_TICKS);
-    s.tick = 3;
-    expect(decide(s, m, exact, court).action).toBe(false); // forced release
+    expect(m.nextDecisionTick).toBe(3 + DECISION_INTERVAL_TICKS);
     s.tick = 4;
+    expect(decide(s, m, exact, court).action).toBe(false); // forced release
+    s.tick = 5;
     expect(decide(s, m, exact, court).action).toBe(true); // still wants to shoot (the sim would have locked it)
   });
 
@@ -292,7 +318,7 @@ describe('decide (brain)', () => {
     decide(s, m, exact, court);
     expect(m.goal).toEqual({ kind: 'idle' });
     expect(m.markId).toBeNull();
-    expect(m.nextDecisionTick).toBe(301);
+    expect(m.nextDecisionTick).toBe(303); // index 1: phase 3 of the match clock
     expect(m.rng.seed).toBe(seed);
     expect(m.lastPhase).toBe('inbound');
   });

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { getCourt } from '../../src/content/courts';
 import { AI_PROFILES, isAiProfileId } from '../../src/sim/ai/profile';
-import { createAiMemory, hashSeed, resetAiMemory } from '../../src/sim/ai/memory';
+import {
+  cadencePhase,
+  createAiMemory,
+  hashSeed,
+  nextCadenceTick,
+  resetAiMemory,
+} from '../../src/sim/ai/memory';
 import {
   SPOT_NAMES,
   farthestSpot,
@@ -51,9 +57,10 @@ describe('memory', () => {
     expect(nextFloat(a.rng)).toBe(nextFloat(b.rng));
   });
 
-  it('starts planning at its offset and resets goals but keeps the RNG stream', () => {
-    const m = createAiMemory('away1', 5, 2, false);
-    expect(m.nextDecisionTick).toBe(2);
+  it('starts planning at its phase and resets goals but keeps the RNG stream', () => {
+    // Roster index 3 is a team's second slot: it plans half a cycle (3 ticks) after the first.
+    const m = createAiMemory('away2', 5, 3, false);
+    expect(m.nextDecisionTick).toBe(3);
     expect(m.goal).toEqual({ kind: 'idle' });
     expect(m.favourTeammate).toBe(false);
     nextFloat(m.rng);
@@ -67,8 +74,19 @@ describe('memory', () => {
     expect(m.markId).toBeNull();
     expect(m.laneClosedCount).toBe(0);
     expect(m.pressedLastTick).toBe(false);
-    expect(m.nextDecisionTick).toBe(602);
+    expect(m.nextDecisionTick).toBe(603);
+    resetAiMemory(m, 604); // the phase is on the match clock, not counted from the reset
+    expect(m.nextDecisionTick).toBe(609);
     expect(m.rng.seed).toBe(rngAfterDraw);
+  });
+
+  it('both teams share the same two decision phases (no team always plans first)', () => {
+    expect([0, 1, 2, 3].map(cadencePhase)).toEqual([0, 3, 0, 3]);
+    expect(nextCadenceTick(0, 0)).toBe(0);
+    expect(nextCadenceTick(1, 0)).toBe(6);
+    expect(nextCadenceTick(1, 2)).toBe(6);
+    expect(nextCadenceTick(4, 1)).toBe(9);
+    expect(nextCadenceTick(9, 3)).toBe(9);
   });
 
   it('is plain data', () => {
