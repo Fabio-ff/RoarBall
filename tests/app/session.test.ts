@@ -97,3 +97,28 @@ describe('PendingPrime (resume/restart must not leak a press, real listener orde
     input.dispose();
   });
 });
+
+describe('PendingPrime with a gamepad (the A that confirms Resume must not leak)', () => {
+  it('a held A at resume is held in prevButtons, so it is no ACTION press', async () => {
+    const { InputManager } = await import('../../src/input/input-manager');
+    const { GamepadBackend } = await import('../../src/input/gamepad');
+    const { PendingPrime } = await import('../../src/app/session');
+    const { justPressed } = await import('../../src/sim/buttons');
+    const buttons = Array.from({ length: 17 }, (_, i) => ({
+      pressed: i === 0,
+      touched: false,
+      value: i === 0 ? 1 : 0,
+    }));
+    const pad = { index: 0, axes: [0, 0, 0, 0], buttons } as unknown as Gamepad;
+    const input = new InputManager([new GamepadBackend(() => [pad])]);
+    const prime = new PendingPrime();
+    prime.request();
+    const state = buildSession({ ...readGameOptions('', 1) }, court, 1, () => NO_INTENT).runner
+      .current;
+    prime.run(state, () => input.sample(), new Map());
+    const home = findPlayer(state, 'home1');
+    expect(home?.prevButtons.action).toBe(true);
+    expect(justPressed(home!.prevButtons, input.sample(), 'action')).toBe(false);
+    input.dispose();
+  });
+});

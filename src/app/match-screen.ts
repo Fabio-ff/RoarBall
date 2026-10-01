@@ -8,9 +8,10 @@ import type { GameOptions } from './url-options';
 import { ABILITIES } from '../content/abilities';
 import { getCharacter } from '../content/characters';
 import { getCourt } from '../content/courts';
+import { GamepadBackend, playRumble, rumbleFor } from '../input/gamepad';
 import { InputManager } from '../input/input-manager';
 import { KeyboardBackend } from '../input/keyboard';
-import type { MenuCommand } from '../input/menu-input';
+import type { MenuCommand, MenuSource } from '../input/menu-input';
 import { TouchBackend } from '../input/touch';
 import { BallView } from '../render/ball-view';
 import { BroadcastCamera } from '../render/camera';
@@ -39,6 +40,14 @@ export interface MatchScreenDeps {
   onFinished(result: MatchResult): void;
   onQuit(): void;
   onSettingsChange(settings: Settings): void;
+}
+
+/**
+ * During play: 'pause' (P, gamepad Start) always pauses; 'back' pauses only from the keyboard
+ * (Escape), because a gamepad B is turbo and must not pause the match.
+ */
+export function shouldPause(command: MenuCommand, source: MenuSource): boolean {
+  return command === 'pause' || (command === 'back' && source === 'keyboard');
 }
 
 /** One match on screen: sim, views, HUD, input and the pause overlay (spec E.1). */
@@ -77,7 +86,8 @@ export class MatchScreen {
     scene.scene.add(buildCourtView(court));
 
     const touch = new TouchBackend(container);
-    const input = new InputManager([new KeyboardBackend(window), touch]);
+    const gamepad = new GamepadBackend();
+    const input = new InputManager([new KeyboardBackend(window), touch, gamepad]);
     this.input = input;
     input.onActiveKindChange = (kind) => (kind === 'touch' ? touch.show() : touch.hide());
     this.onFirstTouch = (e: PointerEvent): void => {
@@ -168,6 +178,10 @@ export class MatchScreen {
         hud.handleEvents(events, runner.current);
         weather.handleEvents(events);
         for (const event of events) {
+          if (this.settings.vibration) {
+            const rumble = rumbleFor(event, HUMAN_ID, HUMAN_TEAM);
+            if (rumble) playRumble(gamepad.activePad(), rumble);
+          }
           if (event.type === 'basket') effects.spawnFlash(runner.current.ball.pos);
           if (event.type === 'abilityActivated') {
             const p = findPlayer(runner.current, event.playerId);
@@ -288,9 +302,9 @@ export class MatchScreen {
   }
 
   /** Spec E.1: while paused the overlay navigates; during play only pause/back act. */
-  handleCommand(command: MenuCommand): void {
+  handleCommand(command: MenuCommand, source: MenuSource): void {
     if (this.pauseOverlay) this.pauseOverlay.handleCommand(command);
-    else if (command === 'pause' || command === 'back') this.pause();
+    else if (shouldPause(command, source)) this.pause();
   }
 
   dispose(): void {
