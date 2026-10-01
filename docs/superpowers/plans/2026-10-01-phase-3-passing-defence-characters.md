@@ -1307,7 +1307,7 @@ Add `export * from './passing';` to the barrel.
 import { describe, expect, it } from 'vitest';
 import { getCourt } from '../../src/content/courts';
 import { giveBall } from '../../src/sim/ball';
-import { chooseDefensiveAction } from '../../src/sim/defence';
+import { chooseDefensiveAction, resolveSteal } from '../../src/sim/defence';
 import { defenderFactor } from '../../src/sim/shooting';
 import { hoopGeometry } from '../../src/sim/hoop';
 import { createMatch, findPlayer } from '../../src/sim/match';
@@ -1445,6 +1445,28 @@ describe('block', () => {
     expect(all.some((e) => e.type === 'shotReleased')).toBe(true);
   });
 
+  it('a block pressed after the dunk press never blocks it', () => {
+    const s = setup();
+    const a = findPlayer(s, 'a');
+    const x = findPlayer(s, 'x');
+    if (!a || !x) throw new Error('no players');
+    a.pos.x = hoop.rimCenter.x - 1.5;
+    a.vel = { x: 4, y: 0, z: 0 };
+    x.pos.x = hoop.rimCenter.x - 0.9;
+    let state = s;
+    const all: SimEvent[] = [];
+    for (let i = 0; i < 90; i++) {
+      const intents = new Map<string, PlayerIntent>();
+      if (i >= 0) intents.set('a', press);
+      if (i === 2) intents.set('x', press);
+      const r = tick(state, intents, court);
+      state = r.state;
+      all.push(...r.events);
+    }
+    expect(all.some((e) => e.type === 'block')).toBe(false);
+    expect(all.some((e) => e.type === 'shotReleased' && e.shotType === 'dunk')).toBe(true);
+  });
+
   it('a dunk is only blocked by a block that started first', () => {
     const s = setup();
     const a = findPlayer(s, 'a');
@@ -1486,22 +1508,26 @@ describe('steal', () => {
     expect(Math.abs(wins / n - 0.3)).toBeLessThan(0.1);
   });
 
-  it('is half as likely against a handler running away', () => {
-    let wins = 0;
-    const n = 120;
-    for (let seed = 1; seed <= n; seed++) {
-      const s = setup(seed);
-      const a = findPlayer(s, 'a');
-      if (!a) throw new Error('no a');
-      a.vel = { x: -5, y: 0, z: 0 };
-      const intents = new Map<string, PlayerIntent>([
-        ['x', press],
-        ['a', { ...NO_INTENT, move: { x: -1, y: 0 } }],
-      ]);
-      const { events } = run(s, 30, intents, (ev) => ev.some((e) => e.type === 'steal' || e.type === 'stealFailed'));
-      if (events.some((e) => e.type === 'steal')) wins += 1;
-    }
-    expect(wins / n).toBeLessThan(0.25);
+  it('is half as likely against a handler running away (resolved directly, within reach)', () => {
+    const rate = (vx: number): number => {
+      let wins = 0;
+      const n = 300;
+      for (let seed = 1; seed <= n; seed++) {
+        const s = setup(seed);
+        const a = findPlayer(s, 'a');
+        const x = findPlayer(s, 'x');
+        if (!a || !x) throw new Error('no players');
+        a.vel = { x: vx, y: 0, z: 0 }; // x stands at +X of a: negative vx runs away from x
+        const events: SimEvent[] = [];
+        resolveSteal(s, x, events);
+        if (events.some((e) => e.type === 'steal')) wins += 1;
+      }
+      return wins / n;
+    };
+    const still = rate(0);
+    const away = rate(-3);
+    expect(Math.abs(still - 0.3)).toBeLessThan(0.08);
+    expect(Math.abs(away - 0.15)).toBeLessThan(0.08);
   });
 });
 
@@ -1772,7 +1798,8 @@ In `src/sim/tick.ts` import `chooseDefensiveAction, startBlock, startShove, star
     if (live) startShot(state, player, court);
     return;
   }
-  switch (chooseDefensiveAction(state, player, court)) {
+  // Defensive moves only during play; a jump is always allowed.
+  switch (live ? chooseDefensiveAction(state, player, court) : 'jump') {
     case 'block':
       if (player.cooldowns.block === 0) startBlock(player);
       else startJump(player, player.stats.jumpSpeed);
