@@ -620,8 +620,9 @@ Until menus exist (phase 6) the human's character is chosen with `?character=<id
   (0.9 m); otherwise it is loose.
 - Interception: during a pass flight any **opponent** whose capsule overlaps the ball takes
   it (`intercept` event, possession change), except opponents within 1 m of the passer
-  during the first 6 ticks of the flight (the ball is still leaving the hands). Teammates
-  other than the receiver do not.
+  (the ball is leaving the hands past them; such a defender can only reach the first
+  ~1.6 m of the flight, which a short pass needs up to 15 ticks to clear, so the shield
+  is not limited to a number of ticks). Teammates other than the receiver do not.
 - Alley-oop: PASS while the teammate is airborne within 3 m of the attacking hoop makes a
   lob (higher, slower arc to a point above the rim); if the receiver is still airborne
   near the rim at arrival, the catch starts a dunk immediately.

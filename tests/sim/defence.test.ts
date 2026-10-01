@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import { getCourt } from '../../src/content/courts';
 import { giveBall } from '../../src/sim/ball';
-import { chooseDefensiveAction, resolveSteal } from '../../src/sim/defence';
+import { canBeShoved, chooseDefensiveAction, resolveSteal } from '../../src/sim/defence';
+import { ACTION_TIMING, SHOVE_IMMUNITY_TICKS } from '../../src/sim/actions';
 import { defenderFactor } from '../../src/sim/shooting';
 import { hoopGeometry } from '../../src/sim/hoop';
 import { createMatch, findPlayer } from '../../src/sim/match';
 import { tick } from '../../src/sim/tick';
-import { NO_INTENT, type MatchState, type PlayerIntent, type SimEvent } from '../../src/sim/types';
+import {
+  NO_INTENT,
+  type MatchState,
+  type PlayerIntent,
+  type PlayerState,
+  type SimEvent,
+} from '../../src/sim/types';
 
 const court = getCourt('gym');
 const hoop = hoopGeometry(court, 1);
@@ -64,7 +71,10 @@ describe('chooseDefensiveAction', () => {
     a.shot = null;
     a.pos.x = hoop.rimCenter.x - 2;
     x.pos.x = hoop.rimCenter.x - 3;
-    expect(chooseDefensiveAction(s, x, court)).toBe('block'); // handler near the hoop
+    expect(chooseDefensiveAction(s, x, court)).toBe('steal'); // near the hoop, but in steal reach
+    x.pos.x = hoop.rimCenter.x - 3.5;
+    expect(chooseDefensiveAction(s, x, court)).toBe('block'); // handler near the hoop, 1.5 m away
+    x.pos.x = hoop.rimCenter.x - 3;
     s.ball.holder = null;
     s.ball.mode = 'free';
     x.facing = Math.PI / 2; // face +X, towards the opponent
@@ -110,7 +120,7 @@ describe('block', () => {
     if (!x) throw new Error('no x');
     x.pos.x = hoop.rimCenter.x - 4.4; // 0.6 m from the shooter
     // Shooter presses at tick 0 (release at tick 27). The defender jumps at tick 10: at the release
-    // they are 17 ticks up (0.88 m, hand at 3.18 m ≥ the 3.13 m release point) and still rising.
+    // they are 17 ticks up (0.88 m, hand at 3.48 m ≥ the 3.13 m release point) and still rising.
     let state = s;
     const all: SimEvent[] = [];
     for (let i = 0; i < 120; i++) {
@@ -173,7 +183,8 @@ describe('block', () => {
     if (!a || !x) throw new Error('no players');
     a.pos.x = hoop.rimCenter.x - 1.5;
     a.vel = { x: 4, y: 0, z: 0 };
-    x.pos.x = hoop.rimCenter.x - 0.9;
+    // 1.1 m from the driver: in block reach but outside steal reach, which now comes first (B.4).
+    x.pos.x = hoop.rimCenter.x - 0.4;
     // Block pressed at tick 0, dunk pressed at tick 1: the block started first.
     let state = s;
     const all: SimEvent[] = [];
@@ -252,5 +263,78 @@ describe('shove', () => {
     expect(state.ball.holder).toBeNull();
     expect(state.ball.mode).toBe('free');
     expect(findPlayer(state, 'x')?.cooldowns.shove).toBeGreaterThan(0);
+  });
+
+  it('cannot stun-lock: no shove on a player who is down, getting up or just got up', () => {
+    const s = createMatch(
+      {
+        durationMs: 60_000,
+        shotClockMs: 14_000,
+        seed: 1,
+        ruleIds: [],
+        courtId: 'gym',
+        mode: 'match',
+      },
+      court,
+      [
+        { id: 'a', team: 0, characterId: 'placeholder' },
+        { id: 'b', team: 0, characterId: 'placeholder' },
+        { id: 'x', team: 1, characterId: 'placeholder' },
+        { id: 'y', team: 1, characterId: 'placeholder' },
+      ],
+    );
+    s.phase = 'live';
+    const [a, b, x, y] = ['a', 'b', 'x', 'y'].map((id) => findPlayer(s, id));
+    if (!a || !b || !x || !y) throw new Error('no players');
+    a.pos = { x: 0, y: 0, z: 0 };
+    b.pos = { x: -8, y: 0, z: 5 };
+    x.pos = { x: 1.1, y: 0, z: 0 };
+    x.facing = -Math.PI / 2;
+    y.pos = { x: 6, y: 0, z: -5 };
+    giveBall(s, a, []);
+    let state = run(s, 40, new Map([['x', press]]), (ev) =>
+      ev.some((e) => e.type === 'shove'),
+    ).state;
+    expect(findPlayer(state, 'a')?.action).toBe('stunned');
+    const bState = findPlayer(state, 'b');
+    if (!bState) throw new Error('no b');
+    giveBall(state, bState, []); // a teammate of the victim holds it, so presses near 'a' mean shove
+
+    /** Plants a fresh 'y' 1.1 m in front of 'a' and presses once; returns the shove events. */
+    function pressNextToVictim(): SimEvent[] {
+      const victim = findPlayer(state, 'a');
+      const shover = findPlayer(state, 'y');
+      if (!victim || !shover) throw new Error('no players');
+      shover.pos = { x: victim.pos.x + 1.1, y: 0, z: victim.pos.z };
+      shover.vel = { x: 0, y: 0, z: 0 };
+      shover.onGround = true;
+      shover.action = 'idle';
+      shover.actionTicks = 0;
+      shover.facing = -Math.PI / 2;
+      shover.cooldowns.shove = 0;
+      shover.prevButtons = { ...NO_INTENT };
+      const r = run(state, ACTION_TIMING.shove.hitTick + 2, new Map([['y', press]]));
+      state = r.state;
+      return r.events.filter((e) => e.type === 'shove');
+    }
+    /** Advances with no input until `done` holds for 'a'. */
+    function waitFor(done: (p: PlayerState) => boolean): void {
+      for (let i = 0; i < 300; i++) {
+        const victim = findPlayer(state, 'a');
+        if (victim && done(victim)) return;
+        state = tick(state, new Map(), court).state;
+      }
+      throw new Error('condition never reached');
+    }
+
+    expect(pressNextToVictim()).toEqual([]); // stunned
+    waitFor((p) => p.action === 'getup');
+    expect(pressNextToVictim()).toEqual([]); // getting up
+    waitFor((p) => p.action !== 'stunned' && p.action !== 'getup');
+    const up = findPlayer(state, 'a');
+    expect(up?.shoveImmunityTicks).toBe(SHOVE_IMMUNITY_TICKS - 1); // set at getup end, one timer step
+    expect(pressNextToVictim()).toEqual([]); // immune
+    waitFor((p) => canBeShoved(p));
+    expect(pressNextToVictim()).toEqual([{ type: 'shove', by: 'y', target: 'a' }]);
   });
 });

@@ -12,6 +12,8 @@ export const ACTION_TIMING = {
 } as const;
 
 export const STUN_MIN_TICKS = 20;
+/** Spec B.4: after getting up a player cannot be shoved again for this long (no stun-lock). */
+export const SHOVE_IMMUNITY_TICKS = 30;
 
 /** Knocks a player down: input ignored, any shot cancelled, horizontal motion decays. */
 export function applyStun(player: PlayerState, ticks: number): void {
@@ -53,7 +55,10 @@ export function stepLockedAction(
       if (player.actionTicks >= player.stunTicks) beginAction(player, 'getup');
       return;
     case 'getup':
-      if (player.actionTicks >= ACTION_TIMING.getup.totalTicks) endAction(player);
+      if (player.actionTicks >= ACTION_TIMING.getup.totalTicks) {
+        endAction(player);
+        player.shoveImmunityTicks = SHOVE_IMMUNITY_TICKS;
+      }
       return;
     case 'block':
       if (player.onGround && player.actionTicks >= ACTION_TIMING.block.minTicks) endAction(player);

@@ -1,5 +1,5 @@
 import { ACTION_TIMING, beginAction, endAction } from './actions';
-import { solveArcVelocity } from './arc';
+import { arcPoint, solveArcVelocity } from './arc';
 import { giveBall, holdPosition } from './ball';
 import { PLAYER_BODY_BOTTOM, PLAYER_BODY_TOP } from './bodies';
 import { sphereVsCapsule } from './collision';
@@ -25,6 +25,8 @@ const LOB_TOWARDS_RECEIVER = 0.4;
 export const CALL_FOR_PASS_TICKS = 60;
 /** Reach used for interceptions: body plus arms. */
 const INTERCEPT_RADIUS = 0.45;
+/** B.3: opponents this close to the passer (XZ) cannot intercept the pass. */
+export const PASS_RELEASE_SHIELD_RADIUS = 1.0;
 
 /** The other player on this player's team (2v2: exactly one). */
 export function teammateOf(state: MatchState, player: PlayerState): PlayerState | undefined {
@@ -50,17 +52,22 @@ function isNearAttackingHoop(state: MatchState, player: PlayerState, court: Cour
   return v3DistanceXZ(player.pos, hoop.rimCenter) <= ALLEY_OOP_RANGE;
 }
 
-/** Launches the ball at the receiver: a fast low arc, or a lob above the rim for an alley-oop (B.3). */
-export function releasePass(
+/** The arc a pass from `passer` to `receiver` would take if released now. */
+interface PassPlan {
+  from: Vec3;
+  velocity: Vec3;
+  totalTicks: number;
+  lob: boolean;
+}
+
+/** A fast low arc at the receiver's chest (led by their velocity), or a lob above the rim (B.3). */
+function planPass(
   state: MatchState,
-  player: PlayerState,
+  passer: PlayerState,
+  receiver: PlayerState,
   court: CourtDef,
-  events: SimEvent[],
-): void {
-  const receiver = player.targetId === null ? undefined : findPlayer(state, player.targetId);
-  const { ball } = state;
-  if (!receiver || ball.holder !== player.id) return;
-  const from = holdPosition(player);
+): PassPlan {
+  const from = holdPosition(passer);
   const lob = !receiver.onGround && isNearAttackingHoop(state, receiver, court);
   let target: Vec3;
   let flightTime: number;
@@ -76,7 +83,7 @@ export function releasePass(
     };
     flightTime = LOB_TIME;
   } else {
-    const distance = v3DistanceXZ(player.pos, receiver.pos);
+    const distance = v3DistanceXZ(passer.pos, receiver.pos);
     flightTime = PASS_BASE_TIME + PASS_TIME_PER_METRE * distance;
     // Lead a moving receiver by where they will be at arrival.
     target = {
@@ -87,6 +94,20 @@ export function releasePass(
   }
   const totalTicks = Math.max(1, Math.round(flightTime * TICK_RATE));
   const velocity = solveArcVelocity(from, target, totalTicks * TICK_DT, court.physics.gravity);
+  return { from, velocity, totalTicks, lob };
+}
+
+/** Launches the ball at the receiver: a fast low arc, or a lob above the rim for an alley-oop (B.3). */
+export function releasePass(
+  state: MatchState,
+  player: PlayerState,
+  court: CourtDef,
+  events: SimEvent[],
+): void {
+  const receiver = player.targetId === null ? undefined : findPlayer(state, player.targetId);
+  const { ball } = state;
+  if (!receiver || ball.holder !== player.id) return;
+  const { from, velocity, totalTicks, lob } = planPass(state, player, receiver, court);
   ball.mode = 'flight';
   ball.holder = null;
   ball.pos = { ...from };
@@ -97,6 +118,7 @@ export function releasePass(
     velocity,
     totalTicks,
     elapsedTicks: 0,
+    passer: player.id,
     receiver: receiver.id,
     lob,
     team: player.team,
@@ -116,10 +138,23 @@ export function stepPassAction(
   if (player.actionTicks >= PASS_TIMING.totalTicks) endAction(player);
 }
 
-function overlapsBall(state: MatchState, player: PlayerState, radius: number): boolean {
+function overlapsBall(player: PlayerState, ballPos: Vec3, ballRadius: number): boolean {
   const bottom = { x: player.pos.x, y: player.pos.y + PLAYER_BODY_BOTTOM, z: player.pos.z };
   const top = { x: player.pos.x, y: player.pos.y + PLAYER_BODY_TOP, z: player.pos.z };
-  return sphereVsCapsule(state.ball.pos, state.ball.radius, bottom, top, radius);
+  return sphereVsCapsule(ballPos, ballRadius, bottom, top, INTERCEPT_RADIUS);
+}
+
+/**
+ * B.3 release shield: an opponent pressed against the passer cannot take the ball as it leaves
+ * the hands. A fixed number of flight ticks is not enough: a defender at the separation minimum
+ * reaches 1.27 m out, which a 5 m pass needs 7 ticks to clear and a 2 m pass 15, so the shield
+ * lasts the whole flight. Anyone within the radius can only touch the ball while it is within
+ * radius + reach of the passer, so this never protects a pass further down the line.
+ */
+function shielded(opponent: PlayerState, passer: PlayerState | undefined): boolean {
+  return (
+    passer !== undefined && v3DistanceXZ(opponent.pos, passer.pos) <= PASS_RELEASE_SHIELD_RADIUS
+  );
 }
 
 function canHold(player: PlayerState): boolean {
@@ -138,9 +173,11 @@ export function stepPassFlight(state: MatchState, court: CourtDef, events: SimEv
     return;
   }
   stepFlight(ball, court);
+  const passer = flight.passer === null ? undefined : findPlayer(state, flight.passer);
   for (const opponent of allPlayers(state)) {
     if (opponent.team === flight.team || !canHold(opponent)) continue;
-    if (overlapsBall(state, opponent, INTERCEPT_RADIUS)) {
+    if (shielded(opponent, passer)) continue;
+    if (overlapsBall(opponent, ball.pos, ball.radius)) {
       giveBall(state, opponent, events);
       events.push({ type: 'intercept', playerId: opponent.id });
       return;
@@ -171,4 +208,29 @@ export function stepPassFlight(state: MatchState, court: CourtDef, events: SimEv
     giveBall(state, receiver, events);
     events.push({ type: 'catch', playerId: receiver.id });
   }
+}
+
+/**
+ * Whether a pass from `passer` to `receiver` released now would get through: true when no
+ * opponent who can hold the ball overlaps it at any tick of the planned arc (the same capsule
+ * test and release shield as `stepPassFlight`, against everyone's current position). An arc
+ * above an opponent's reach (body top + intercept radius, about feet + 2.0 m) passes over them.
+ * Pure; used by the AI (spec §6).
+ */
+export function passLaneOpen(
+  state: MatchState,
+  passer: PlayerState,
+  receiver: PlayerState,
+  court: CourtDef,
+): boolean {
+  const { from, velocity, totalTicks } = planPass(state, passer, receiver, court);
+  const opponents = allPlayers(state).filter((p) => p.team !== passer.team && canHold(p));
+  for (let k = 1; k <= totalTicks; k++) {
+    const ballPos = arcPoint(from, velocity, court.physics.gravity, k * TICK_DT);
+    for (const opponent of opponents) {
+      if (shielded(opponent, passer)) continue;
+      if (overlapsBall(opponent, ballPos, state.ball.radius)) return false;
+    }
+  }
+  return true;
 }

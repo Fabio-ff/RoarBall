@@ -74,5 +74,7 @@ export class PlayerView {
     this.tilt += (tiltTarget - this.tilt) * 0.25;
     this.figure.rotation.x = -this.tilt * (Math.PI / 2);
     this.figure.position.z = this.tilt * 0.9;
+    // Lying down, the body's half-thickness would sink into the floor: lift it by about the radius.
+    this.figure.position.y = this.tilt * 0.35;
   }
 }

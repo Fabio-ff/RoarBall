@@ -43,7 +43,18 @@ function inFront(player: PlayerState, target: Vec3): boolean {
   return (Math.sin(player.facing) * dx + Math.cos(player.facing) * dz) / len > SHOVE_FACING_COS;
 }
 
-/** Spec B.4: what the action button means for a player without the ball. */
+/** Spec B.4: a player who is down, getting up or just got up cannot be shoved (no stun-lock). */
+export function canBeShoved(player: PlayerState): boolean {
+  return (
+    player.action !== 'stunned' && player.action !== 'getup' && player.shoveImmunityTicks === 0
+  );
+}
+
+/**
+ * Spec B.4: what the action button means for a player without the ball, in order: block a holder
+ * mid-shot; steal from a grounded holder in reach; block a holder within 3 m of their hoop; shove
+ * the nearest opponent in reach and in front (if shovable); else jump.
+ */
 export function chooseDefensiveAction(
   state: MatchState,
   player: PlayerState,
@@ -54,12 +65,18 @@ export function chooseDefensiveAction(
   const opponent = nearestOpponent(state, player);
   if (!opponent) return 'jump';
   if (holder && holder.id === opponent.id) {
+    // Steal before the near-hoop block, so a holder in the paint can still be stolen from.
+    if (SHOT_ACTIONS.has(holder.action)) return 'block';
+    if (holder.onGround && v3DistanceXZ(player.pos, holder.pos) <= player.stats.stealReach)
+      return 'steal';
     const hoop = hoopGeometry(court, targetHoopIndex(state, holder, court));
-    const shooting = SHOT_ACTIONS.has(holder.action);
-    if (shooting || v3DistanceXZ(holder.pos, hoop.rimCenter) <= BLOCK_NEAR_HOOP) return 'block';
-    if (v3DistanceXZ(player.pos, holder.pos) <= player.stats.stealReach) return 'steal';
+    if (v3DistanceXZ(holder.pos, hoop.rimCenter) <= BLOCK_NEAR_HOOP) return 'block';
   }
-  if (v3DistanceXZ(player.pos, opponent.pos) <= SHOVE_REACH && inFront(player, opponent.pos))
+  if (
+    v3DistanceXZ(player.pos, opponent.pos) <= SHOVE_REACH &&
+    inFront(player, opponent.pos) &&
+    canBeShoved(opponent)
+  )
     return 'shove';
   return 'jump';
 }
@@ -131,7 +148,7 @@ export function resolveSteal(state: MatchState, stealer: PlayerState, events: Si
 /** Spec B.4 shove: the nearest opponent in reach and in front is knocked down; the ball pops loose. */
 export function resolveShove(state: MatchState, shover: PlayerState, events: SimEvent[]): void {
   const target = shover.targetId === null ? undefined : findPlayer(state, shover.targetId);
-  if (!target || target.team === shover.team) return;
+  if (!target || target.team === shover.team || !canBeShoved(target)) return;
   if (v3DistanceXZ(shover.pos, target.pos) > SHOVE_REACH || !inFront(shover, target.pos)) return;
   const dealt = shover.stats.stunTicksDealt * (shover.turboActive ? SHOVE_TURBO_MULTIPLIER : 1);
   const stun = dealt - target.stats.stunResistTicks;

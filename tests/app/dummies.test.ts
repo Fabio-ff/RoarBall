@@ -118,6 +118,22 @@ describe('dummies', () => {
     expect(events.some((e) => e.type === 'block')).toBe(false);
   });
 
+  it('the defender walks a rebound back to its spot instead of holding it under the rim', () => {
+    const s = setup();
+    const h = findPlayer(s, 'home1');
+    const d = findPlayer(s, 'away1');
+    if (!h || !d) throw new Error('no players');
+    d.pos = { x: hoop.rimCenter.x - 1, y: 0, z: 0 };
+    giveBall(s, d, []);
+    const spot = { x: hoop.rimCenter.x - 3.5, z: hoop.rimCenter.z };
+    const { state } = play(s, 120, () => NO_INTENT);
+    const after = findPlayer(state, 'away1');
+    if (!after) throw new Error('no d');
+    expect(state.ball.holder).toBe('away1');
+    expect(Math.hypot(after.pos.x - spot.x, after.pos.z - spot.z)).toBeLessThan(0.8);
+    expect(Math.hypot(after.vel.x, after.vel.z)).toBeLessThan(0.1); // standing there
+  });
+
   it('the defender chases a loose ball nearby', () => {
     const s = setup();
     const d = findPlayer(s, 'away1');
