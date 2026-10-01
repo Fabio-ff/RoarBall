@@ -5,6 +5,7 @@ import {
   HemisphereLight,
   Mesh,
   MeshBasicMaterial,
+  type Object3D,
   MeshStandardMaterial,
   ConeGeometry,
   PlaneGeometry,
@@ -71,7 +72,13 @@ export function buildCourtView(court: CourtDef): Group {
     }
   }
 
-  for (const index of [0, 1] as const) group.add(buildHoop(hoopGeometry(court, index)));
+  const rims: Object3D[] = [];
+  for (const index of [0, 1] as const) {
+    const { group: hoop, rimGroup } = buildHoop(hoopGeometry(court, index));
+    group.add(hoop);
+    rims.push(rimGroup);
+  }
+  group.userData.rims = rims as [Object3D, Object3D];
 
   const { lighting } = court;
   const sun = new DirectionalLight(lighting.sunColor, 2.5);
@@ -109,7 +116,7 @@ function line(
   return mesh;
 }
 
-function buildHoop(hoop: HoopGeometry): Group {
+function buildHoop(hoop: HoopGeometry): { group: Group; rimGroup: Group } {
   const group = new Group();
   const { rimCenter, boardCenter, side } = hoop;
 
@@ -118,14 +125,16 @@ function buildHoop(hoop: HoopGeometry): Group {
     new MeshStandardMaterial({ color: 0xff5a1f }),
   );
   rim.rotation.x = Math.PI / 2;
-  rim.position.set(rimCenter.x, rimCenter.y, rimCenter.z);
+  // rim and net live in a group pivoted at the rim centre so the rim can wobble (EffectsView).
+  const rimGroup = new Group();
+  rimGroup.position.set(rimCenter.x, rimCenter.y, rimCenter.z);
 
   const net = new Mesh(
     new ConeGeometry(RIM_RADIUS, 0.45, 12, 1, true),
     new MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.6 }),
   );
   net.rotation.x = Math.PI; // wide end up, under the rim
-  net.position.set(rimCenter.x, rimCenter.y - 0.225, rimCenter.z);
+  net.position.set(0, -0.225, 0);
 
   const board = new Mesh(
     new BoxGeometry(BOARD_HALF.x * 2, BOARD_HALF.y * 2, BOARD_HALF.z * 2),
@@ -148,6 +157,7 @@ function buildHoop(hoop: HoopGeometry): Group {
   arm.position.set((boardCenter.x + poleX) / 2, rimCenter.y + 0.6, rimCenter.z);
 
   for (const m of [rim, board, pole, arm]) m.castShadow = true;
-  group.add(rim, net, board, pole, arm);
-  return group;
+  rimGroup.add(rim, net);
+  group.add(rimGroup, board, pole, arm);
+  return { group, rimGroup };
 }
