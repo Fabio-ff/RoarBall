@@ -589,3 +589,65 @@ Phase 5 implements this; the boundary lint stays as is.
 
 - Release-timing bonus: a small quality bonus when the shot button is released at
   the top of the jump.
+
+## Appendix B — Phase 3 decisions (2026-10-01)
+
+Decisions taken when planning Phase 3 (passing, defence, characters). They refine §4.5,
+§4.6 and §5.
+
+### B.1 Playable build: training dummies
+
+AI arrives in phase 4. Phase 3's shootaround adds two scripted placeholders through the
+same `controllers` map the AI will use (`(state) => PlayerIntent`): a **teammate dummy**
+that walks to the wing of the hoop the human attacks, passes back one second after
+catching or at once when the human calls for the ball, and lobs an alley-oop when the
+human is airborne near the rim; and a **defender dummy** that walks to the key of that
+hoop, raises for a block whenever the ball handler comes within 2.5 m, and can be stolen
+from and shoved. Dummies never decide anything else.
+
+### B.2 Characters
+
+`CharacterDef` per §5.1. Launch cast: **Brick** (dunker), **Ace** (sniper), **Dash**
+(speedster), **Rook** (all-rounder). One tuning table in `sim/stats.ts` resolves 1–10
+stats to simulation units; `createMatch` receives `CharacterDef`s and resolves them.
+Until menus exist (phase 6) the human's character is chosen with `?character=<id>`
+(default `rook`).
+
+### B.3 Passing details
+
+- A pass is a `flight` of kind `pass` with a receiver id; flight time grows with distance
+  (0.35 s + 0.05 s/m), low arc. At arrival the receiver takes the ball if within reach
+  (0.9 m); otherwise it is loose.
+- Interception: during a pass flight any **opponent** whose capsule overlaps the ball takes
+  it (`intercept` event, possession change). Teammates other than the receiver do not.
+- Alley-oop: PASS while the teammate is airborne within 3 m of the attacking hoop makes a
+  lob (higher, slower arc to a point above the rim); if the receiver is still airborne
+  near the rim at arrival, the catch starts a dunk immediately.
+- PASS without the ball sets `callingForPass` on the player for 1 s; controllers read it.
+
+### B.4 Defence details
+
+- Context-sensitive action without the ball: **block** if the nearest opponent holds the
+  ball and is mid-shot or within 3 m of the hoop; else **steal** if the ball handler is
+  within reach; else **shove** the nearest opponent within reach in front.
+- Block: a jump with arms up. A shot released within 1.2 m horizontally while the blocker
+  is rising and whose hand (feet + 2.3 m) is at or above the release height is deflected:
+  the flight is cancelled and the ball goes free, knocked down and away. Dunks are blocked
+  only by a block that started before the dunk did.
+- Defender term in `shotQuality`: multiplied by `clamp(0.45 + 0.25·d, 0.45, 1)` for the
+  nearest opponent distance `d` (m), and by 0.6 more if that opponent is airborne within
+  1.5 m. The no-defender sweep contract is unchanged.
+- Steal: 18-tick reach, 45-tick cooldown; at tick 6, if the holder is within reach
+  (0.9 m + defense bonus) the seeded roll succeeds with
+  `clamp(0.2 + 0.05·defense − 0.03·holderPower, 0.1, 0.7)`, halved if the holder is moving
+  away. Failure just costs the animation and cooldown.
+- Shove: 20-tick lunge, 60-tick cooldown; at tick 5 the nearest opponent within 1.2 m in
+  front is `stunned` for `30 + 6·power` ticks (×1.5 with turbo), minus `3·victimPower`,
+  min 20; the ball pops loose; a shot in progress is cancelled; `getup` (20 ticks) follows.
+- Player–player soft separation (§4.2 step 6) and ball-vs-player deflection for free
+  balls above pickup height (A.2) arrive with this phase.
+
+### B.5 Buzzer-beaters
+
+When the match clock reaches zero while a shot is in flight, the finish waits for the
+flight to resolve; a make counts, then the match finishes or goes to overtime.
