@@ -207,6 +207,7 @@ export function stepPassFlight(state: MatchState, court: CourtDef, events: SimEv
       type: 'dunk',
       hoop: targetHoopIndex(state, receiver, court),
       approachSpeed: 0,
+      ...(receiver.stats.unblockableDunk ? { unblockable: true as const } : {}),
     };
     receiver.action = 'dunk';
     receiver.actionTicks = SHOT_TIMING.dunk.releaseTick - 1;

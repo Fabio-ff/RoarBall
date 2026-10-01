@@ -137,13 +137,22 @@ export interface ShotInProgress {
   hoop: HoopIndex;
   /** Horizontal speed at the press, before any wind-up damping; drives the motion penalty. */
   approachSpeed: number;
+  /**
+   * Snapshot at the press of `stats.unblockableDunk` (Rocket Dunk), so expiry mid-wind-up cannot
+   * make the dunk blockable. Present only when true, so the serialised state of every other shot
+   * (and the determinism goldens) is unchanged.
+   */
+  unblockable?: true;
 }
 
 /** Spec D.2: a signature ability in progress. */
 export interface ActiveAbility {
   /** Ticks left before it ends; null = no timer (it ends when `uses` reaches 0). */
   ticksLeft: number | null;
-  /** Shots that cannot miss (Hot Hand, spec D.3); 0 for every other ability. */
+  /**
+   * Shots that cannot miss (Hot Hand, spec D.3); 0 for every other ability. shooting.ts treats
+   * any `uses > 0` as a sure shot, so a future counting ability needs its own field.
+   */
   uses: number;
 }
 

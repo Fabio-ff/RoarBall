@@ -166,9 +166,38 @@ describe('Rocket Dunk (Brick)', () => {
     x.vel.y = 2;
     const normal = structuredClone(s);
     expect(tryBlockShot(normal, player(normal, 'a'), court, [])).toBe(true);
-    a.stats.unblockableDunk = true;
+    a.shot.unblockable = true;
     expect(tryBlockShot(s, a, court, [])).toBe(false);
     expect(s.ball.holder).toBe('a');
+  });
+
+  it('stays unblockable if the ability expires between the dunk press and its release', () => {
+    let s = live('brick', 'ace');
+    giveBall(s, place(s, 'a', hoop.rimCenter.x - 6, 0), []);
+    s = activate(s, 'a').state;
+    s = run(s, 478).state;
+    expect(player(s, 'a').ability?.ticksLeft).toBe(1); // the last ability tick is next
+    s = run(s, 1, new Map([['a', press]])).state;
+    const a = player(s, 'a');
+    expect(a.shot).toMatchObject({ type: 'dunk', unblockable: true });
+    expect(a.ability).toBeNull(); // expired right after the press
+    expect(a.stats.unblockableDunk).toBe(false);
+    const x = place(s, 'x', hoop.rimCenter.x - 5.5, 0);
+    x.action = 'block';
+    x.actionTicks = 100; // started first
+    x.onGround = false;
+    x.pos.y = 0.5;
+    x.vel.y = 2;
+    expect(tryBlockShot(s, a, court, [])).toBe(false);
+  });
+
+  it('dunkFromArc is a strict < 6.75 m: 6.74 m dunks, 6.76 m does not', () => {
+    const s = live('brick', 'ace');
+    const a = place(s, 'a', hoop.rimCenter.x - 6.74, 0);
+    a.stats.dunkFromArc = true;
+    expect(chooseShotType(a, hoop)).toBe('dunk');
+    place(s, 'a', hoop.rimCenter.x - 6.76, 0);
+    expect(chooseShotType(a, hoop)).toBe('jumpshot');
   });
 });
 
@@ -263,6 +292,17 @@ describe('Blur (Dash)', () => {
     expect(a.ability).toEqual({ ticksLeft: 359, uses: 0 });
   });
 
+  it('expires after 360 ticks and the stats revert', () => {
+    let { state } = activate(live('dash', 'brick'), 'a');
+    ({ state } = run(state, 358));
+    expect(player(state, 'a').ability).not.toBeNull();
+    const end = run(state, 1);
+    expect(end.events).toContainEqual({ type: 'abilityEnded', playerId: 'a', abilityId: 'blur' });
+    const a = player(end.state, 'a');
+    expect(a.ability).toBeNull();
+    expect(a.stats).toEqual(a.baseStats);
+  });
+
   it('turbo never drains, even from an empty bar', () => {
     const s = activate(live('dash', 'brick'), 'a').state;
     player(s, 'a').turbo = 0;
@@ -343,6 +383,16 @@ describe('Earthquake (Rook)', () => {
     expect(types).toContain('abilityEnded');
     expect(player(state, 'a').ability).toBeNull();
     expect(state.rng.seed).toBe(seed); // no RNG
+  });
+
+  it('the 4 m radius is inclusive: 4.0 m is hit, 4.01 m is not', () => {
+    const s = live('rook', 'brick', [cast('y', 1, 'dash')]);
+    place(s, 'a', 0, 0);
+    place(s, 'x', 4, 0);
+    place(s, 'y', 0, 4.01);
+    const { state } = activate(s, 'a');
+    expect(player(state, 'x').action).toBe('stunned');
+    expect(player(state, 'y').action).not.toBe('stunned');
   });
 
   it('victims get up and are immune afterwards, as after a shove', () => {

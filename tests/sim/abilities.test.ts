@@ -311,6 +311,27 @@ describe('charge gains (spec D.2)', () => {
     expect(player(s, 'b').lastCatch).toBeNull();
   });
 
+  it('a turnover or anyone’s basket closes the assist window', () => {
+    const s = live();
+    s.tick = 1000;
+    applyChargeGains(s, [{ type: 'catch', playerId: 'b' }], 'a');
+    // b's team loses the ball, regains it and b scores within 180 ticks: no assist.
+    applyChargeGains(s, [{ type: 'possessionChange', team: 1 }], null);
+    expect(player(s, 'b').lastCatch).toBeNull();
+    s.tick = 1100;
+    applyChargeGains(s, [{ type: 'possessionChange', team: 0 }], null);
+    applyChargeGains(s, [basket('b', 2)], null);
+    expect(player(s, 'a').charge).toBe(0);
+
+    // A catch by the team that keeps possession is not cleared by its own possessionChange.
+    applyChargeGains(s, [{ type: 'catch', playerId: 'b' }], 'a');
+    applyChargeGains(s, [{ type: 'possessionChange', team: 0 }], null);
+    expect(player(s, 'b').lastCatch).not.toBeNull();
+    // Another scorer's basket clears it.
+    applyChargeGains(s, [basket('x', 2)], null);
+    expect(player(s, 'b').lastCatch).toBeNull();
+  });
+
   it('charge persists across phases', () => {
     let s = live();
     player(s, 'a').charge = 40;

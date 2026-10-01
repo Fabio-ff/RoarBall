@@ -303,7 +303,12 @@ export function startShot(state: MatchState, player: PlayerState, court: CourtDe
   const hoopIndex = targetHoopIndex(state, player, court);
   const hoop = hoopGeometry(court, hoopIndex);
   const type = chooseShotType(player, hoop);
-  player.shot = { type, hoop: hoopIndex, approachSpeed: Math.hypot(player.vel.x, player.vel.z) };
+  player.shot = {
+    type,
+    hoop: hoopIndex,
+    approachSpeed: Math.hypot(player.vel.x, player.vel.z),
+    ...(player.stats.unblockableDunk ? { unblockable: true as const } : {}),
+  };
   player.action = ACTION_FOR_SHOT[type];
   player.actionTicks = 0;
   player.facing = Math.atan2(hoop.rimCenter.x - player.pos.x, hoop.rimCenter.z - player.pos.z);
@@ -338,7 +343,10 @@ export interface ShotOutcome {
   jitter: ShotJitter | null;
 }
 
-/** Spec D.3 Hot Hand: the player still has shots that cannot miss. */
+/**
+ * Spec D.3 Hot Hand: the player still has shots that cannot miss. `ActiveAbility.uses` means
+ * exactly that; a future counting ability must get its own field rather than reuse `uses`.
+ */
 export function hasSureShot(player: PlayerState): boolean {
   return player.ability !== null && player.ability.uses > 0;
 }
@@ -485,7 +493,7 @@ export function tryBlockShot(
   const shot = shooter.shot;
   if (!shot) return false;
   // Spec D.3 Rocket Dunk: unblockable, even by a block that started first.
-  if (shot.type === 'dunk' && shooter.stats.unblockableDunk) return false;
+  if (shot.type === 'dunk' && shot.unblockable === true) return false;
   const releaseHeight = shooter.pos.y + RELEASE_HEIGHT;
   for (const blocker of allPlayers(state)) {
     if (blocker.team === shooter.team || blocker.action !== 'block' || blocker.vel.y <= 0) continue;
