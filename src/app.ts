@@ -12,7 +12,7 @@ import {
   type StorageLike,
 } from './app/storage';
 import type { GameOptions } from './app/url-options';
-import { MenuInput, type MenuCommand } from './input/menu-input';
+import { MenuInput, type MenuCommand, type MenuSource } from './input/menu-input';
 import { HUMAN_ID } from './app/session';
 import { HowToPlayScreen } from './ui/screens/how-to-play';
 import { ResultsScreen } from './ui/screens/results';
@@ -23,7 +23,7 @@ export type { GameOptions } from './app/url-options';
 export { buildRoster, buildSession, buildSettings, type Session } from './app/session';
 
 interface ScreenHandle {
-  handleCommand(command: MenuCommand): void;
+  handleCommand(command: MenuCommand, source: MenuSource): void;
   dispose(): void;
 }
 
@@ -48,7 +48,7 @@ export class AppShell {
     this.setup = loadSetup(this.store);
     this.options = opts.initial;
     this.menuInput = new MenuInput(window);
-    this.menuInput.onCommand = (c) => this.handle?.handleCommand(c);
+    this.menuInput.onCommand = (c, source) => this.handle?.handleCommand(c, source);
     const poll = (): void => {
       this.menuInput.poll();
       this.rafId = requestAnimationFrame(poll);

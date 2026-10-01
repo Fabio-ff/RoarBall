@@ -1,4 +1,7 @@
-import { defaultPadSource, type PadSource } from './gamepad';
+import { B, defaultPadSource, held as buttonHeld, type PadSource } from './gamepad';
+
+/** Where a command came from; a gamepad B is turbo in play, so the match treats sources differently. */
+export type MenuSource = 'keyboard' | 'gamepad';
 
 /** Spec E.1: one navigation vocabulary for every menu and the in-match pause key. */
 export type MenuCommand = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'back' | 'pause';
@@ -27,7 +30,7 @@ const DIRECTIONS: readonly MenuCommand[] = ['up', 'down', 'left', 'right'];
 
 /** Keyboard (and, from Task 4, gamepad) → MenuCommand. Repeats are ignored. */
 export class MenuInput {
-  onCommand: ((command: MenuCommand) => void) | null = null;
+  onCommand: ((command: MenuCommand, source: MenuSource) => void) | null = null;
 
   /** Commands held on the previous poll; null until the first poll (that state is the baseline). */
   private previous: Set<MenuCommand> | null = null;
@@ -56,14 +59,14 @@ export class MenuInput {
       if (!previous.has(command)) {
         this.heldSince.set(command, t);
         this.lastRepeat.set(command, t);
-        this.emit(command);
+        this.emit(command, 'gamepad');
       } else if (DIRECTIONS.includes(command)) {
         const since = this.heldSince.get(command) ?? t;
         const last = this.lastRepeat.get(command) ?? t;
         const due = last === since ? since + REPEAT_DELAY_MS : last + REPEAT_INTERVAL_MS;
         if (t >= due) {
           this.lastRepeat.set(command, t);
-          this.emit(command);
+          this.emit(command, 'gamepad');
         }
       }
     }
@@ -83,22 +86,19 @@ export class MenuInput {
     } catch {
       return held;
     }
-    const down = (pad: Gamepad, i: number): boolean => {
-      const b = pad.buttons[i];
-      return !!b && (b.pressed || b.value > 0.5);
-    };
+    const down = buttonHeld;
     for (const pad of pads) {
-      if (!pad || !pad.connected) continue;
+      if (!pad || pad.connected === false) continue;
       const ax = pad.axes[0] ?? 0;
       const ay = pad.axes[1] ?? 0;
       const horizontal = Math.abs(ax) >= Math.abs(ay);
-      if (down(pad, 12) || (!horizontal && ay < -STICK_THRESHOLD)) held.add('up');
-      if (down(pad, 13) || (!horizontal && ay > STICK_THRESHOLD)) held.add('down');
-      if (down(pad, 14) || (horizontal && ax < -STICK_THRESHOLD)) held.add('left');
-      if (down(pad, 15) || (horizontal && ax > STICK_THRESHOLD)) held.add('right');
-      if (down(pad, 0)) held.add('confirm');
-      if (down(pad, 1)) held.add('back');
-      if (down(pad, 9)) held.add('pause');
+      if (down(pad, B.up) || (!horizontal && ay < -STICK_THRESHOLD)) held.add('up');
+      if (down(pad, B.down) || (!horizontal && ay > STICK_THRESHOLD)) held.add('down');
+      if (down(pad, B.left) || (horizontal && ax < -STICK_THRESHOLD)) held.add('left');
+      if (down(pad, B.right) || (horizontal && ax > STICK_THRESHOLD)) held.add('right');
+      if (down(pad, B.a)) held.add('confirm');
+      if (down(pad, B.b)) held.add('back');
+      if (down(pad, B.start)) held.add('pause');
     }
     return held;
   }
@@ -108,8 +108,8 @@ export class MenuInput {
     this.onCommand = null;
   }
 
-  protected emit(command: MenuCommand): void {
-    this.onCommand?.(command);
+  protected emit(command: MenuCommand, source: MenuSource): void {
+    this.onCommand?.(command, source);
   }
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
@@ -118,6 +118,6 @@ export class MenuInput {
     if (!command) return;
     // Handled here: stops the browser's native activation of the focused button (a second click).
     e.preventDefault();
-    this.emit(command);
+    this.emit(command, 'keyboard');
   };
 }

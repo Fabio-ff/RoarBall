@@ -11,7 +11,7 @@ import { getCourt } from '../content/courts';
 import { GamepadBackend, playRumble, rumbleFor } from '../input/gamepad';
 import { InputManager } from '../input/input-manager';
 import { KeyboardBackend } from '../input/keyboard';
-import type { MenuCommand } from '../input/menu-input';
+import type { MenuCommand, MenuSource } from '../input/menu-input';
 import { TouchBackend } from '../input/touch';
 import { BallView } from '../render/ball-view';
 import { BroadcastCamera } from '../render/camera';
@@ -40,6 +40,14 @@ export interface MatchScreenDeps {
   onFinished(result: MatchResult): void;
   onQuit(): void;
   onSettingsChange(settings: Settings): void;
+}
+
+/**
+ * During play: 'pause' (P, gamepad Start) always pauses; 'back' pauses only from the keyboard
+ * (Escape), because a gamepad B is turbo and must not pause the match.
+ */
+export function shouldPause(command: MenuCommand, source: MenuSource): boolean {
+  return command === 'pause' || (command === 'back' && source === 'keyboard');
 }
 
 /** One match on screen: sim, views, HUD, input and the pause overlay (spec E.1). */
@@ -294,9 +302,9 @@ export class MatchScreen {
   }
 
   /** Spec E.1: while paused the overlay navigates; during play only pause/back act. */
-  handleCommand(command: MenuCommand): void {
+  handleCommand(command: MenuCommand, source: MenuSource): void {
     if (this.pauseOverlay) this.pauseOverlay.handleCommand(command);
-    else if (command === 'pause' || command === 'back') this.pause();
+    else if (shouldPause(command, source)) this.pause();
   }
 
   dispose(): void {

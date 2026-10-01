@@ -19,7 +19,7 @@ export function applyDeadZone(x: number, y: number): { x: number; y: number } {
   return { x: (x / len) * scaled, y: (y / len) * scaled };
 }
 
-const B = {
+export const B = {
   a: 0,
   b: 1,
   x: 2,
@@ -32,7 +32,7 @@ const B = {
   right: 15,
 } as const;
 
-function held(pad: Gamepad, i: number): boolean {
+export function held(pad: Gamepad, i: number): boolean {
   const b = pad.buttons[i];
   return !!b && (b.pressed || b.value > 0.5);
 }
@@ -86,7 +86,12 @@ export class GamepadBackend implements InputBackend {
       this.lastPads = [];
     }
     for (const pad of this.lastPads) {
-      if (pad && pad.index !== this.activeIndex && isActive(readPad(pad)))
+      if (
+        pad &&
+        pad.connected !== false &&
+        pad.index !== this.activeIndex &&
+        isActive(readPad(pad))
+      )
         this.activeIndex = pad.index;
     }
     const active = this.activePad();
@@ -99,7 +104,9 @@ export class GamepadBackend implements InputBackend {
   }
 
   activePad(): Gamepad | null {
-    return this.lastPads.find((p) => p?.index === this.activeIndex) ?? null;
+    return (
+      this.lastPads.find((p) => p?.index === this.activeIndex && p.connected !== false) ?? null
+    );
   }
 
   dispose(): void {

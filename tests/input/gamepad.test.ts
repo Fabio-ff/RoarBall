@@ -84,6 +84,13 @@ describe('GamepadBackend (hot-plug, most recent pad drives)', () => {
     expect(backend.activePad()).toBeNull();
   });
 
+  it('ignores a pad with connected === false', () => {
+    const gone = { ...pad(0, { pressed: [0] }), connected: false } as Gamepad;
+    const backend = new GamepadBackend(() => [gone]);
+    expect(backend.sample().action).toBe(false);
+    expect(backend.activePad()).toBeNull();
+  });
+
   it('survives a pad source that throws (no Gamepad API)', () => {
     const backend = new GamepadBackend(() => {
       throw new Error('not supported');

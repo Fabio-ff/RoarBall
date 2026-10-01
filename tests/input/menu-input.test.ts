@@ -106,6 +106,21 @@ describe('MenuInput gamepad (spec E.1)', () => {
     expect(got).toEqual(['down', 'right', 'confirm', 'back', 'pause']);
   });
 
+  it('reports the source: gamepad for pad commands, keyboard for keys', () => {
+    let pads: (Gamepad | null)[] = [pad(0)];
+    input = new MenuInput(window, () => pads);
+    const got: [MenuCommand, string][] = [];
+    input.onCommand = (c, source) => got.push([c, source]);
+    input.poll();
+    pads = [pad(0, { pressed: [1] })];
+    input.poll();
+    press('Escape');
+    expect(got).toEqual([
+      ['back', 'gamepad'],
+      ['back', 'keyboard'],
+    ]);
+  });
+
   it('buttons already held when polling starts are the baseline, not presses', () => {
     let pads: (Gamepad | null)[] = [pad(0, { pressed: [0, 12] })];
     input = new MenuInput(window, () => pads);
