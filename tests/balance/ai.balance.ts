@@ -6,6 +6,7 @@ import { courts, getCourt } from '../../src/content/courts';
 import { decide } from '../../src/sim/ai/brain';
 import { createAiMemory } from '../../src/sim/ai/memory';
 import { AI_PROFILES } from '../../src/sim/ai/profile';
+import { NO_ABILITIES, type AbilityTable } from '../../src/sim/hooks';
 import { createMatch, type RosterEntry } from '../../src/sim/match';
 import { tick } from '../../src/sim/tick';
 import type { CourtDef, MatchSettings } from '../../src/sim/types';
@@ -94,6 +95,63 @@ function series(
   return { label, homeWins, games: seeds, meanHome: sumHome / seeds, meanAway: sumAway / seeds };
 }
 
+/**
+ * Issue #92: the app's default matchup with the human's teammate brain (home2 favours home1, as
+ * in tests/sim/ai-match.ts). The mirrored duos above never build that brain, so a change that
+ * hurts only the teammate is invisible there. Gym, both with and without abilities.
+ */
+const TEAMMATE_SEEDS = 30;
+interface TeammateRow {
+  label: string;
+  meanHome: number;
+  meanAway: number;
+  homeWins: number;
+  minHome: number;
+  games: number;
+}
+
+function teammateSeries(label: string, abilities: AbilityTable): TeammateRow {
+  const gym = getCourt('gym');
+  const entries = roster(['rook', 'ace'], ['brick', 'dash']);
+  let sumHome = 0;
+  let sumAway = 0;
+  let homeWins = 0;
+  let minHome = Infinity;
+  for (let seed = 1; seed <= TEAMMATE_SEEDS; seed++) {
+    const [h, a] = playWith(seed, entries, gym, abilities);
+    sumHome += h;
+    sumAway += a;
+    minHome = Math.min(minHome, h);
+    if (h > a) homeWins++;
+  }
+  return {
+    label,
+    meanHome: sumHome / TEAMMATE_SEEDS,
+    meanAway: sumAway / TEAMMATE_SEEDS,
+    homeWins,
+    minHome,
+    games: TEAMMATE_SEEDS,
+  };
+}
+
+/** `play` with home2 as the teammate brain and a chosen ability table (no ability counting). */
+function playWith(
+  seed: number,
+  entries: RosterEntry[],
+  court: CourtDef,
+  abilities: AbilityTable,
+): [number, number] {
+  let state = createMatch({ ...settings, seed, courtId: court.id }, court, entries);
+  const memories = entries.map((e, i) => createAiMemory(e.id, seed, i % 2, e.id === 'home2'));
+  while (state.phase !== 'finished' && state.tick < MAX_TICKS) {
+    const frame = new Map(
+      memories.map((m) => [m.playerId, decide(state, m, AI_PROFILES.fair, court, abilities)]),
+    );
+    state = tick(state, frame, court, abilities).state;
+  }
+  return [state.score[0], state.score[1]];
+}
+
 function summary(rows: Row[]): { games: number; homeRate: number; meanTotal: number } {
   const games = rows.reduce((n, r) => n + r.games, 0);
   const homeWins = rows.reduce((n, r) => n + r.homeWins, 0);
@@ -130,6 +188,10 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
           series(`${a}+rook vs ${c}+rook`, [a, 'rook'], [c, 'rook'], gym, GYM_STRENGTH_SEEDS),
         );
 
+    const teammate = [
+      teammateSeries('rook+ace (home2 teammate brain) vs brick+dash, no abilities', NO_ABILITIES),
+      teammateSeries('rook+ace (home2 teammate brain) vs brick+dash, abilities', ABILITIES),
+    ];
     const perCourt = courts.map((c) => ({ id: c.id, ...summary(mirrored.get(c.id) ?? []) }));
     const all = summary([...mirrored.values()].flat());
     const perCharacter = ids.map((id) => ({ id, perMatch: (uses[id] ?? 0) / (slots[id] ?? 1) }));
@@ -162,6 +224,17 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
         (c) => `| ${c.id} | ${c.perMatch.toFixed(2)} | ${inTarget(c.perMatch)} |`,
       ),
       '',
+      `## Default matchup with the teammate brain (gym, ${TEAMMATE_SEEDS} seeds)`,
+      '',
+      "Home2 favours home1 as the app's teammate does; the human slot is an AI stand-in. Issue #92 floor: team-0 mean within 2 of the pre-#92 baseline (19.2 without abilities), no seed under 6.",
+      '',
+      '| matchup | team-0 mean | opponents mean | team-0 wins | team-0 min |',
+      '|---|---|---|---|---|',
+      ...teammate.map(
+        (r) =>
+          `| ${r.label} | ${r.meanHome.toFixed(1)} | ${r.meanAway.toFixed(1)} | ${r.homeWins}/${r.games} (${((100 * r.homeWins) / r.games).toFixed(0)} %) | ${r.minHome} |`,
+      ),
+      '',
       '## Gym — mirrored duos',
       '',
       table(mirrored.get('gym') ?? []),
@@ -189,5 +262,7 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
       expect(c.meanTotal, c.id).toBeLessThanOrEqual(ceilingOf(c.id));
     }
     for (const c of perCharacter) expect(c.perMatch, c.id).toBeGreaterThan(0);
+    // Issue #92: the teammate brain must not collapse again (sweep floor ≥ 6 per seed).
+    for (const r of teammate) expect(r.minHome, r.label).toBeGreaterThanOrEqual(6);
   });
 });

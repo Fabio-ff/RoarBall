@@ -1,7 +1,7 @@
-import { hoopGeometry } from '../hoop';
+import { hoopGeometry, type HoopGeometry } from '../hoop';
 import { clamp, distanceToSegmentXZ, v3DistanceXZ, type Vec3 } from '../math';
 import { allPlayers } from '../match';
-import { ALLEY_OOP_RANGE, passLaneOpen, teammateOf } from '../passing';
+import { ALLEY_OOP_RANGE, PASS_RELEASE_SHIELD_RADIUS, passLaneOpen, teammateOf } from '../passing';
 import { nextFloat } from '../rng';
 import { evaluateShot, hasSureShot, shotQuality, type ShotEvaluation } from '../shooting';
 import type { CourtDef, MatchState, PlayerState } from '../types';
@@ -57,6 +57,13 @@ export function laneBlocker(
 
 /** A blocker this close to the me→rim line (lateral, m) is dead ahead: no side is "away" (issue #92). */
 export const SIDE_STEP_TIE = 0.4;
+/**
+ * A side-step point must stay this far in front of the rim (towards centre court) and this far
+ * inside the sideline; past either it is a dead end against the baseline, the board or the
+ * sideline, where the marker traps the ball (issue #92).
+ */
+export const SIDE_STEP_MIN_DEPTH = 1;
+export const SIDE_STEP_SIDELINE_MARGIN = 1;
 
 /** +1: the left-hand side of me→rim (−uz, ux); −1: the right-hand side. */
 export type DriveSide = 1 | -1;
@@ -69,16 +76,27 @@ function lateralOf(me: PlayerState, rim: Vec3, p: Vec3): number {
   return (-dz / len) * (p.x - me.pos.x) + (dx / len) * (p.z - me.pos.z);
 }
 
+/** Room left at `p`: negative when it is behind SIDE_STEP_MIN_DEPTH or past the sideline margin. */
+function sideStepRoom(hoop: HoopGeometry, p: Vec3, halfWidth: number): number {
+  const depth = -hoop.side * (p.x - hoop.rimCenter.x);
+  const fromSideline = halfWidth - Math.abs(p.z - hoop.rimCenter.z);
+  return Math.min(depth - SIDE_STEP_MIN_DEPTH, fromSideline - SIDE_STEP_SIDELINE_MARGIN);
+}
+
 /**
  * A point SIDE_STEP_DISTANCE perpendicular to me→rim on the side away from the blocker (C.5
  * step 6). A blocker dead ahead (|lateral| < SIDE_STEP_TIE) has no "away" side: `tieSide` picks.
+ * When that point is a dead end (sideStepRoom < 0: a drive along the baseline or the sideline,
+ * typically from a corner) and the other side has more room, the other side is taken.
  */
 export function sideStepPoint(
   me: PlayerState,
-  rim: Vec3,
+  hoop: HoopGeometry,
   blocker: PlayerState,
   tieSide: DriveSide = 1,
+  halfWidth = Infinity,
 ): Vec3 {
+  const rim = hoop.rimCenter;
   const dx = rim.x - me.pos.x;
   const dz = rim.z - me.pos.z;
   const len = Math.hypot(dx, dz) || 1;
@@ -86,25 +104,30 @@ export function sideStepPoint(
   const uz = dz / len;
   const lateral = lateralOf(me, rim, blocker.pos);
   const sign = Math.abs(lateral) < SIDE_STEP_TIE ? tieSide : lateral > 0 ? -1 : 1;
-  return {
-    x: me.pos.x - uz * sign * SIDE_STEP_DISTANCE + ux * SIDE_STEP_FORWARD,
+  const at = (s: number): Vec3 => ({
+    x: me.pos.x - uz * s * SIDE_STEP_DISTANCE + ux * SIDE_STEP_FORWARD,
     y: 0,
-    z: me.pos.z + ux * sign * SIDE_STEP_DISTANCE + uz * SIDE_STEP_FORWARD,
-  };
+    z: me.pos.z + ux * s * SIDE_STEP_DISTANCE + uz * SIDE_STEP_FORWARD,
+  });
+  const step = at(sign);
+  const room = sideStepRoom(hoop, step, halfWidth);
+  if (room >= 0) return step;
+  const other = at(-sign);
+  return sideStepRoom(hoop, other, halfWidth) > room ? other : step;
 }
 
 /**
- * The side for a dead-ahead blocker: the stored `driveSide`, else away from the nearest other
- * opponent (the help defender; C.5 "on the side of the farther defender"). No RNG.
+ * The side for a dead-ahead blocker: away from the nearest other opponent, the help defender
+ * (C.5 step 6 steps around the blocker on the side where the other defender is not). No RNG.
+ * The side varies with where the help stands; a seeded coin flip here stepped into the help half
+ * the time (issue #92).
  */
 export function deadAheadSide(
   me: PlayerState,
   rim: Vec3,
   blocker: PlayerState,
   opponents: readonly PlayerState[],
-  driveSide: DriveSide | null,
 ): DriveSide {
-  if (driveSide !== null) return driveSide;
   let help: PlayerState | null = null;
   for (const o of opponents) {
     if (o === blocker) continue;
@@ -112,6 +135,33 @@ export function deadAheadSide(
   }
   if (!help) return 1;
   return lateralOf(me, rim, help.pos) > 0 ? -1 : 1;
+}
+
+/** Mirrors B.3's pass timing (`planPass` in passing.ts) to estimate where a led pass arrives. */
+const PASS_LEAD_BASE_TIME = 0.35;
+const PASS_LEAD_TIME_PER_METRE = 0.05;
+/** A voluntary pass needs every opponent at least this far from the passer→lead-point segment. */
+export const LEAD_LANE_CLEARANCE = 1;
+
+/**
+ * Spec C.5 step 5 extra check (issue #92). `passLaneOpen` tests the led arc against opponents
+ * where they stand now, with the bare intercept reach. The receiver's marker keeps moving during
+ * the flight and took most passes to a cutting teammate, so a voluntary pass also wants the
+ * passer→lead-point segment clear by LEAD_LANE_CLEARANCE. Opponents within the B.3 release
+ * shield of the passer cannot intercept and are ignored.
+ */
+export function leadLaneClear(
+  me: PlayerState,
+  mate: PlayerState,
+  opponents: readonly PlayerState[],
+): boolean {
+  const t = PASS_LEAD_BASE_TIME + PASS_LEAD_TIME_PER_METRE * v3DistanceXZ(me.pos, mate.pos);
+  const lead = { x: mate.pos.x + mate.vel.x * t, y: 0, z: mate.pos.z + mate.vel.z * t };
+  return !opponents.some(
+    (o) =>
+      v3DistanceXZ(o.pos, me.pos) > PASS_RELEASE_SHIELD_RADIUS &&
+      distanceToSegmentXZ(o.pos, me.pos, lead) < LEAD_LANE_CLEARANCE,
+  );
 }
 
 const SHOOT: AiGoal = { kind: 'shoot' };
@@ -137,7 +187,7 @@ export function evaluateShotForAi(
 
 /**
  * Spec C.5 "has ball", evaluated at a decision tick. RNG: one `perceive` draw per call.
- * Mutates memory.laneClosedCount only (reads memory.driveSide).
+ * Mutates memory.laneClosedCount only.
  */
 export function planWithBall(
   state: MatchState,
@@ -176,7 +226,7 @@ export function planWithBall(
   }
   if (perceived >= profile.shootThreshold) return SHOOT;
   // 5. Pass to a better shot.
-  if (mate && laneOpen) {
+  if (mate && laneOpen && leadLaneClear(me, mate, opponents)) {
     const bias = profile.passBias + (memory.favourTeammate ? TEAMMATE_PASS_BIAS : 0);
     if (evaluateShotForAi(state, mate, court).quality >= mine.quality + bias) return PASS;
   }
@@ -196,6 +246,9 @@ export function planWithBall(
     return { kind: 'moveTo', spot, name };
   }
   if (!blocker) return { kind: 'drive', sideStep: null };
-  const tieSide = deadAheadSide(me, hoop.rimCenter, blocker, opponents, memory.driveSide);
-  return { kind: 'drive', sideStep: sideStepPoint(me, hoop.rimCenter, blocker, tieSide) };
+  const tieSide = deadAheadSide(me, hoop.rimCenter, blocker, opponents);
+  return {
+    kind: 'drive',
+    sideStep: sideStepPoint(me, hoop, blocker, tieSide, court.playArea.width / 2),
+  };
 }

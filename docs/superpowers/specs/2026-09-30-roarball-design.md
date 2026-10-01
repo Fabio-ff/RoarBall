@@ -690,7 +690,8 @@ decide(state, memory, profile, court) → PlayerIntent
   state. It is reset on the `phaseChange` to `inbound` or `tipoff`.
 - **RNG**: seeded from `hash(settings.seed, playerId)` and kept in the memory; the AI never
   reads or advances `state.rng`, so a match remains replayable from seed + intents (§4.10)
-  and AI-vs-AI runs are deterministic.
+  and AI-vs-AI runs are deterministic. A brain draws at most once per decision tick, in a
+  draw order documented at each draw site (rule recorded with C.8 "AI variety").
 - **Cadence** (§6): re-plan when `tick ≥ memory.nextDecisionTick` (every 6 ticks, offset by
   the player's index in the roster); steer towards the goal every tick. Button presses are
   one tick of `true` followed by a forced `false` (the simulation detects edges).
@@ -841,11 +842,21 @@ Recorded at the Phase 4 reassessment; they refine C.2 and C.5 and are what the c
   ties went to the first spot name.
   - *Spot pick*: a fresh pick (no spot held) chooses uniformly among the spots scoring within
     `SPOT_TIE_MARGIN` 0.25 of the best, using one draw from the brain's private RNG. Off-ball
-    decision ticks drew nothing before, so the one-draw rule holds. Hysteresis is unchanged.
-  - *Drive side*: a lane blocker within 0.4 m of the me→rim line has no "away" side. The
-    side-step then uses `memory.driveSide`, set from the same spot roll, or, when no roll is
-    stored (it is cleared at the inbound reset, with no draw), the side away from the help
-    defender.
+    decision ticks drew nothing before, so the at-most-one-draw rule (C.2) holds. Hysteresis is
+    unchanged.
+  - *Drive side*: a lane blocker within 0.4 m of the me→rim line has no "away" side; the
+    side-step then goes away from the other (help) defender. That is how C.5 step 6's "on the
+    side of the farther defender" is read: away from the blocker, and for a dead-ahead blocker
+    away from the help. No RNG. (The first cut used a seeded side; it stepped into the help
+    half the time.)
+  - *Dead ends* (fix round 1): a side-step point less than 1 m in front of the rim or within
+    1 m of the sideline is replaced by the other side's point when that has more room.
+  - *Corners* move from 6.3 m to 5.5 m across: from 6.3 the run to the near corner hugs the
+    sideline, and a catch there is trapped by the marker, the sideline and the baseline.
+  - *Led passes* (fix round 1): C.5 step 5 also needs the lane from the passer to where the
+    pass is led (receiver position + velocity × flight time, B.3 timing) clear by 1 m of every
+    opponent outside the release shield. A receiver cutting past their own marker ran the
+    lead point into that marker, which intercepted.
   - *Jumpers*: fair `shootThreshold` 0.55 → 0.48, for the occasional open catch-and-shoot.
 
 ## Appendix D — Phase 5 decisions (2026-10-01)

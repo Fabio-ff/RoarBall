@@ -35,12 +35,6 @@ export interface AiMemory {
   lastPlannedPossession: TeamIndex | null;
   /** Offense: consecutive decisions with the driving lane closed (C.5 step 7). */
   laneClosedCount: number;
-  /**
-   * The side (+1: left of me→rim, −1: right) to side-step a blocker standing dead ahead; set from
-   * the off-ball spot roll, null after a reset (then the side away from the help defender).
-   * Issue #92.
-   */
-  driveSide: 1 | -1 | null;
   /** Off ball: tick of the last alley-oop invite jump. */
   lastInviteTick: number;
   /** One-tick presses: true when the button was emitted last tick (forced false next). */
@@ -80,7 +74,6 @@ export function createAiMemory(
     marksForPossession: null,
     lastPlannedPossession: null,
     laneClosedCount: 0,
-    driveSide: null,
     lastInviteTick: NEVER_TICK,
     pressedLastTick: false,
     passedLastTick: false,
@@ -116,7 +109,7 @@ export function nextCadenceTick(from: number, slot: number): number {
   return behind === 0 ? from : from + DECISION_INTERVAL_TICKS - behind;
 }
 
-/** Forgets goals, marks and the drive side (not the RNG; no draw); the next cadence plan is the brain's next phase tick. */
+/** Forgets goals and marks (not the RNG); the next cadence plan is the brain's next phase tick. */
 export function resetAiMemory(memory: AiMemory, tick: number): void {
   memory.nextDecisionTick = nextCadenceTick(tick, memory.slot);
   memory.goal = { kind: 'idle' };
@@ -124,7 +117,6 @@ export function resetAiMemory(memory: AiMemory, tick: number): void {
   memory.marksForPossession = null;
   memory.lastPlannedPossession = null;
   memory.laneClosedCount = 0;
-  memory.driveSide = null;
   memory.lastInviteTick = NEVER_TICK;
   memory.pressedLastTick = false;
   memory.passedLastTick = false;

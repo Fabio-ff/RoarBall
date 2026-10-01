@@ -20,7 +20,7 @@ describe('AI golden (spec C.7)', () => {
   });
 
   it('matches the pinned hash — update it only for an intentional simulation or AI change', () => {
-    expect(fnv1a(JSON.stringify(playAiMatch(7).state))).toMatchInlineSnapshot(`"7de9d20d"`);
+    expect(fnv1a(JSON.stringify(playAiMatch(7).state))).toMatchInlineSnapshot(`"242059f6"`);
   });
 
   it('replays from seed + recorded intents to the identical state (spec §4.10)', () => {
@@ -41,7 +41,7 @@ describe('AI golden (spec C.7)', () => {
     const run = playAiMatch(7);
     expect(
       `${fnv1a(JSON.stringify(run.events))} ${run.state.score[0]}-${run.state.score[1]} ${run.events.length}`,
-    ).toMatchInlineSnapshot(`"8e0164d1 8-34 403"`);
+    ).toMatchInlineSnapshot(`"01f058fd 28-24 398"`);
   });
 });
 
@@ -81,10 +81,10 @@ describe('AI goldens with abilities, one per court (spec D.7)', () => {
     );
     expect(pins).toMatchInlineSnapshot(`
       {
-        "frozen": "363457b3 24-26",
-        "gym": "0e1fe7cf 14-32",
-        "rooftop": "148d50ba 18-30",
-        "volcano": "60642655 19-30",
+        "frozen": "6e606d11 27-20",
+        "gym": "c7d64471 28-34",
+        "rooftop": "3a4b12bf 20-32",
+        "volcano": "549c4dfe 26-38",
       }
     `);
   });

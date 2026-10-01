@@ -21,8 +21,10 @@ export interface NamedSpot {
 
 /** Offsets from the rim: `back` towards centre court (−side·X), `side` across the width (Z). */
 const SPOT_OFFSETS: Readonly<Record<SpotName, { back: number; side: number }>> = {
-  leftCorner: { back: 1.0, side: -6.3 },
-  rightCorner: { back: 1.0, side: 6.3 },
+  // Issue #92: 6.3 → 5.5. From 6.3 the run to the near corner hugs the sideline, and a catch
+  // there is trapped (marker in front, sideline beside, baseline behind).
+  leftCorner: { back: 1.0, side: -5.5 },
+  rightCorner: { back: 1.0, side: 5.5 },
   leftWing: { back: 5.0, side: -4.5 },
   rightWing: { back: 5.0, side: 4.5 },
   top: { back: 6.5, side: 0 },
