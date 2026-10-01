@@ -179,6 +179,10 @@ export function finishOrOvertime(state: MatchState, events: SimEvent[]): boolean
   return true;
 }
 
+/**
+ * Spec B.5: the buzzer waits for a *scripted* shot flight only. A miss hands over to free physics
+ * just before the rim, so a lucky bounce-in after the buzzer does not count.
+ */
 function shotInFlight(state: MatchState): boolean {
   return (
     state.ball.mode === 'flight' &&
