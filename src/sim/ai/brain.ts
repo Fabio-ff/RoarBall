@@ -1,7 +1,9 @@
+import { canActivateAbility } from '../abilities';
 import { arcPoint } from '../arc';
 import { TICK_DT } from '../constants';
 import { nearestOpponent } from '../defence';
 import { hoopGeometry } from '../hoop';
+import { HOOK_MATH, NO_ABILITIES, type AbilityTable } from '../hooks';
 import { v3DistanceXZ, type Vec3 } from '../math';
 import { findPlayer } from '../match';
 import { isActionLocked } from '../player-movement';
@@ -29,6 +31,7 @@ export function decide(
   memory: AiMemory,
   profile: AiProfile,
   court: CourtDef,
+  abilities: AbilityTable = NO_ABILITIES,
 ): PlayerIntent {
   const me = findPlayer(state, memory.playerId);
   if (!me) return NO_INTENT;
@@ -49,18 +52,23 @@ export function decide(
     if (cadenceTick) memory.nextDecisionTick = nextCadenceTick(state.tick + 1, memory.slot);
     memory.lastPlannedPossession = state.possession;
   }
-  return finish(memory, act(state, me, memory, profile, court, isDecisionTick));
+  const intent = act(state, me, memory, profile, court, isDecisionTick);
+  // Spec D.5: abilities are considered on decision ticks only; a yes is a one-tick SPECIAL press.
+  const special = isDecisionTick && wantsAbility(state, me, court, abilities);
+  return finish(memory, special ? { ...intent, special: true } : intent);
 }
 
-/** One-tick presses: a button emitted last tick is forced off this tick (spec C.2). */
+/** One-tick presses: a button emitted last tick is forced off this tick (spec C.2, D.5). */
 function finish(memory: AiMemory, intent: PlayerIntent): PlayerIntent {
   const out: PlayerIntent = {
     ...intent,
     action: intent.action && !memory.pressedLastTick,
     pass: intent.pass && !memory.passedLastTick,
+    special: intent.special && !memory.specialLastTick,
   };
   memory.pressedLastTick = out.action;
   memory.passedLastTick = out.pass;
+  memory.specialLastTick = out.special;
   return out;
 }
 
@@ -108,6 +116,31 @@ export function passLanding(flight: ShotFlight, court: CourtDef): Vec3 {
   return { x: end.x, y: 0, z: end.z };
 }
 
+/** Spec D.5: the sim would activate my ability now and its `aiWantsToUse` says yes. */
+export function wantsAbility(
+  state: MatchState,
+  me: PlayerState,
+  court: CourtDef,
+  abilities: AbilityTable,
+): boolean {
+  if (me.abilityId === null || !canActivateAbility(state, me, abilities)) return false;
+  return abilities[me.abilityId]?.aiWantsToUse?.(state, me, { math: HOOK_MATH, court }) ?? false;
+}
+
+/** Spec D.5: a loose ball is chased where the court's drift (aiHint) carries it in this long. */
+export const CHASE_DRIFT_LEAD_SECONDS = 0.75;
+
+export function chaseTarget(state: MatchState, me: PlayerState, court: CourtDef): Vec3 {
+  const drift = court.modifier?.aiHint?.(state, me).ballDrift;
+  if (!drift) return state.ball.pos;
+  const k = 0.5 * CHASE_DRIFT_LEAD_SECONDS * CHASE_DRIFT_LEAD_SECONDS;
+  return {
+    x: state.ball.pos.x + drift.x * k,
+    y: state.ball.pos.y,
+    z: state.ball.pos.z + drift.z * k,
+  };
+}
+
 function act(
   state: MatchState,
   me: PlayerState,
@@ -145,10 +178,11 @@ function act(
       return { ...NO_INTENT, move: steerTowards(me.pos, goal.spot), action: invite };
     }
     case 'chase': {
-      const d = v3DistanceXZ(me.pos, state.ball.pos);
+      const target = chaseTarget(state, me, court);
+      const d = v3DistanceXZ(me.pos, target);
       return {
         ...NO_INTENT,
-        move: steerTowards(me.pos, state.ball.pos, CHASE_ARRIVE_RADIUS),
+        move: steerTowards(me.pos, target, CHASE_ARRIVE_RADIUS),
         turbo: wantsTurbo(me, d, profile),
       };
     }

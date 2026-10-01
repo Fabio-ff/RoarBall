@@ -1,5 +1,6 @@
 import { decide } from '../sim/ai/brain';
 import { createAiMemory, type AiMemory } from '../sim/ai/memory';
+import type { AbilityTable } from '../sim/hooks';
 import type { AiProfile } from '../sim/ai/profile';
 import type { CourtDef, PlayerId } from '../sim/types';
 import type { Controller } from './controller';
@@ -11,6 +12,8 @@ export interface AiControllerOptions {
   /** Slot in team: 0 or 1; cadence phase = slot * 3 on the match clock. */
   slot: number;
   favourTeammate: boolean;
+  /** The ability table the match runs with (spec D.5); none by default. */
+  abilities?: AbilityTable;
 }
 
 export interface AiController {
@@ -27,5 +30,9 @@ export function createAiController(
   options: AiControllerOptions,
 ): AiController {
   const memory = createAiMemory(id, options.seed, options.slot, options.favourTeammate);
-  return { id, memory, controller: (state) => decide(state, memory, options.profile, court) };
+  return {
+    id,
+    memory,
+    controller: (state) => decide(state, memory, options.profile, court, options.abilities),
+  };
 }

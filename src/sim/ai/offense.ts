@@ -3,7 +3,7 @@ import { clamp, distanceToSegmentXZ, v3DistanceXZ, type Vec3 } from '../math';
 import { allPlayers } from '../match';
 import { ALLEY_OOP_RANGE, passLaneOpen, teammateOf } from '../passing';
 import { nextFloat } from '../rng';
-import { evaluateShot } from '../shooting';
+import { evaluateShot, hasSureShot, shotQuality, type ShotEvaluation } from '../shooting';
 import type { CourtDef, MatchState, PlayerState } from '../types';
 import type { AiGoal, AiMemory } from './memory';
 import type { AiProfile } from './profile';
@@ -75,6 +75,24 @@ export function sideStepPoint(me: PlayerState, rim: Vec3, blocker: PlayerState):
 const SHOOT: AiGoal = { kind: 'shoot' };
 const PASS: AiGoal = { kind: 'pass' };
 
+/** Deviation from spec D.5: a Hot Hand sure shot only counts as a shot within this range of the hoop. */
+export const SURE_SHOT_AI_RANGE = 9;
+
+/**
+ * `evaluateShot` as the brain uses it: sure shots (Hot Hand) report quality 1 at any range, so
+ * beyond SURE_SHOT_AI_RANGE the ordinary quality is used and normal offence (drive/pass) follows.
+ */
+export function evaluateShotForAi(
+  state: MatchState,
+  player: PlayerState,
+  court: CourtDef,
+): ShotEvaluation {
+  const e = evaluateShot(state, player, court);
+  if (!hasSureShot(player) || e.distance <= SURE_SHOT_AI_RANGE) return e;
+  const defenders = opponentsOf(state, player);
+  return { ...e, quality: shotQuality(player, e.type, hoopGeometry(court, e.hoop), defenders) };
+}
+
 /**
  * Spec C.5 "has ball", evaluated at a decision tick. RNG: one `perceive` draw per call.
  * Mutates memory.laneClosedCount only.
@@ -86,7 +104,7 @@ export function planWithBall(
   profile: AiProfile,
   court: CourtDef,
 ): AiGoal {
-  const mine = evaluateShot(state, me, court);
+  const mine = evaluateShotForAi(state, me, court);
   const hoop = hoopGeometry(court, mine.hoop);
   const opponents = opponentsOf(state, me);
   const mate = teammateOf(state, me);
@@ -118,7 +136,7 @@ export function planWithBall(
   // 5. Pass to a better shot.
   if (mate && laneOpen) {
     const bias = profile.passBias + (memory.favourTeammate ? TEAMMATE_PASS_BIAS : 0);
-    if (evaluateShot(state, mate, court).quality >= mine.quality + bias) return PASS;
+    if (evaluateShotForAi(state, mate, court).quality >= mine.quality + bias) return PASS;
   }
   // 6–7. Drive, side-step around a blocker, or reset to an open spot.
   const blocker = laneBlocker(me, hoop.rimCenter, opponents);

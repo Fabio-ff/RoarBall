@@ -40,6 +40,8 @@ export interface AiMemory {
   /** One-tick presses: true when the button was emitted last tick (forced false next). */
   pressedLastTick: boolean;
   passedLastTick: boolean;
+  /** One-tick SPECIAL press (spec D.5), like the action and pass buttons. */
+  specialLastTick: boolean;
   lastPhase: MatchPhase;
   /** The teammate brain favours passing to the human (passBias − 0.15, spec C.3). */
   favourTeammate: boolean;
@@ -75,6 +77,7 @@ export function createAiMemory(
     lastInviteTick: NEVER_TICK,
     pressedLastTick: false,
     passedLastTick: false,
+    specialLastTick: false,
     lastPhase: 'tipoff',
     favourTeammate,
   };
@@ -117,4 +120,5 @@ export function resetAiMemory(memory: AiMemory, tick: number): void {
   memory.lastInviteTick = NEVER_TICK;
   memory.pressedLastTick = false;
   memory.passedLastTick = false;
+  memory.specialLastTick = false;
 }

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ABILITIES } from '../../src/content/abilities';
 import { getCourt } from '../../src/content/courts';
 import { buildRoster, buildSession, buildSettings } from '../../src/app/session';
 import type { GameOptions } from '../../src/app/url-options';
@@ -22,6 +23,7 @@ describe('buildSession (spec C.1)', () => {
   it('seeds every prevButtons with the buttons held at the restart (spec D.6)', () => {
     const held = new Map([['home1', { ...NO_INTENT, pass: true, special: true }]]);
     const session = buildSession(base, court, 9, () => NO_INTENT, held);
+    expect(session.runner.abilities).toBe(ABILITIES);
     expect(findPlayer(session.runner.current, 'home1')?.prevButtons).toEqual({
       action: false,
       pass: true,

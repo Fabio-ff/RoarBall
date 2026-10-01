@@ -1,3 +1,4 @@
+import { NO_ABILITIES, type AbilityTable } from '../sim/hooks';
 import { tick } from '../sim/tick';
 import type { CourtDef, MatchState, PlayerId, PlayerIntent, SimEvent } from '../sim/types';
 
@@ -9,6 +10,7 @@ export class MatchRunner {
   constructor(
     readonly court: CourtDef,
     initial: MatchState,
+    readonly abilities: AbilityTable = NO_ABILITIES,
   ) {
     this.prev = initial;
     this.next = initial;
@@ -23,7 +25,7 @@ export class MatchRunner {
   }
 
   step(intents: ReadonlyMap<PlayerId, PlayerIntent>): SimEvent[] {
-    const result = tick(this.next, intents, this.court);
+    const result = tick(this.next, intents, this.court, this.abilities);
     this.prev = this.next;
     this.next = result.state;
     return result.events;
