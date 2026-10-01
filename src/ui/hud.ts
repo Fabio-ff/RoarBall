@@ -85,6 +85,8 @@ export interface HudOptions {
   humanId?: PlayerId;
   /** Names for the ability bar and banners (the app passes the content table). */
   abilities?: AbilityTable;
+  /** Shows a pause button (the touch way to pause, spec E.1) that calls this. */
+  onPause?: () => void;
 }
 
 interface Banner {
@@ -113,6 +115,9 @@ export class Hud {
   private bannerLeft = 0;
   private wasOvertime = false;
   private final = false;
+  /** The sticky final banner is on screen (it waits for the event banners to drain). */
+  private finalShown = false;
+  private finalText = '';
   /** Last text written per element, so a frame with no change writes nothing to the DOM. */
   private readonly written = new Map<HTMLElement, string>();
 
@@ -133,8 +138,15 @@ export class Hud {
       '<span class="hud-ability-bar"><span class="hud-ability-fill"></span></span>' +
       '<span class="hud-ability-status"></span></div>' +
       '<div class="hud-gust" hidden><span class="hud-gust-arrow">➜</span>GUST</div>' +
-      '<div class="hud-banner" hidden></div>';
+      '<div class="hud-banner" hidden></div>' +
+      '<button class="hud-pause" type="button" aria-label="Pause" hidden>⏸</button>';
     parent.appendChild(this.root);
+    const pause = this.query<HTMLButtonElement>('.hud-pause');
+    if (options.onPause) {
+      const onPause = options.onPause;
+      pause.hidden = false;
+      pause.addEventListener('click', () => onPause());
+    }
     this.home = this.query('.hud-home');
     this.away = this.query('.hud-away');
     this.clock = this.query('.hud-clock');
@@ -176,13 +188,11 @@ export class Hud {
 
     const final = state.phase === 'finished';
     if (final) {
-      this.setText(this.banner, finalBanner(state, this.humanTeam));
-      if (!this.final) {
-        this.gust.hidden = true; // the sim stops ticking, so no gustEnd will come
-        this.banner.classList.remove('team-0', 'team-1');
-        this.banner.classList.add('is-final');
-        this.banner.hidden = false;
-      }
+      this.finalText = finalBanner(state, this.humanTeam);
+      if (!this.final) this.gust.hidden = true; // the sim stops ticking, so no gustEnd will come
+      // Event banners (the game-ending basket) play out first; the sticky final follows.
+      if (this.queue.length === 0 && this.bannerLeft <= 0) this.showFinal();
+      else if (this.finalShown) this.setText(this.banner, this.finalText);
     } else if (this.final) {
       // A new match started: drop the sticky banner, any stale queue and the gust chip.
       this.banner.classList.remove('is-final');
@@ -191,8 +201,18 @@ export class Hud {
       this.queue.length = 0;
       this.bannerLeft = 0;
       this.gust.hidden = true;
+      this.finalShown = false;
     }
     this.final = final;
+  }
+
+  private showFinal(): void {
+    this.setText(this.banner, this.finalText);
+    if (this.finalShown) return;
+    this.finalShown = true;
+    this.banner.classList.remove('team-0', 'team-1');
+    this.banner.classList.add('is-final');
+    this.banner.hidden = false;
   }
 
   /** `state` (after the step) gives the activating player's team for ability banners. */
@@ -217,7 +237,7 @@ export class Hud {
   }
 
   tick(dtSeconds: number): void {
-    if (this.final) return;
+    if (this.finalShown) return;
     this.bannerLeft -= dtSeconds;
     if (this.bannerLeft <= 0) {
       const next = this.queue.shift();
@@ -227,6 +247,8 @@ export class Hud {
         this.banner.classList.toggle('team-1', next.team === 1);
         this.banner.hidden = false;
         this.bannerLeft = BANNER_SECONDS;
+      } else if (this.final) {
+        this.showFinal();
       } else if (!this.banner.hidden) {
         this.banner.hidden = true;
       }

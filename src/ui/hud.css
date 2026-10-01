@@ -183,3 +183,18 @@
 .hud-gust-arrow {
   display: inline-block;
 }
+
+.hud-pause {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 0.45);
+  color: #fff;
+  font-size: 24px;
+  pointer-events: auto;
+  cursor: pointer;
+}
