@@ -87,6 +87,15 @@ describe('AI goldens with abilities, one per court (spec D.7)', () => {
     `);
   });
 
+  it('brains never draw from state.rng: replaying the recorded intents without them ends on the same RNG, per court', () => {
+    for (const id of COURT_IDS) {
+      const c = getCourt(id);
+      let state = startState(7, c);
+      for (const frame of runs()[id].intents) state = tick(state, frame, c, ABILITIES).state;
+      expect(state.rng, id).toEqual(runs()[id].state.rng);
+    }
+  });
+
   it('replays the rooftop match from seed + recorded intents, court RNG included (spec §4.10)', () => {
     const rooftop = getCourt('rooftop');
     const run = runs().rooftop;

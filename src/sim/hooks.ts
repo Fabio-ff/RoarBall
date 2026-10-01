@@ -30,14 +30,22 @@ export const HOOK_MATH = Object.freeze({
 });
 export type HookMath = typeof HOOK_MATH;
 
+/** HOOK_MATH without the RNG functions: what a brain's `aiWantsToUse` query sees (spec C.2). */
+const { nextFloat: _nextFloat, nextInt: _nextInt, ...QUERY_MATH_FIELDS } = HOOK_MATH;
+void _nextFloat;
+void _nextInt;
+export const QUERY_MATH: Omit<HookMath, 'nextFloat' | 'nextInt'> = Object.freeze(QUERY_MATH_FIELDS);
+
 /** What `aiWantsToUse` may look at: no RNG, so brains never touch `state.rng` (spec C.2). */
 export interface AbilityQueryContext {
-  math: HookMath;
+  math: Omit<HookMath, 'nextFloat' | 'nextInt'>;
   court: CourtDef;
 }
 
 /** Spec D.2: everything a hook may use besides the state and its own arguments. */
 export interface HookContext extends AbilityQueryContext {
+  /** The full math, RNG functions included: effect hooks draw only through `rng` (spec A.7, D.2). */
+  math: HookMath;
   /** `state.rng`; hooks draw only through it (spec A.7, D.2). */
   rng: RngState;
   /** Adds an event to this tick's events. */

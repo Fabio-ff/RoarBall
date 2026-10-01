@@ -3,7 +3,7 @@ import { arcPoint } from '../arc';
 import { TICK_DT } from '../constants';
 import { nearestOpponent } from '../defence';
 import { hoopGeometry } from '../hoop';
-import { HOOK_MATH, NO_ABILITIES, type AbilityTable } from '../hooks';
+import { NO_ABILITIES, QUERY_MATH, type AbilityTable } from '../hooks';
 import { v3DistanceXZ, type Vec3 } from '../math';
 import { findPlayer } from '../match';
 import { isActionLocked } from '../player-movement';
@@ -124,7 +124,7 @@ export function wantsAbility(
   abilities: AbilityTable,
 ): boolean {
   if (me.abilityId === null || !canActivateAbility(state, me, abilities)) return false;
-  return abilities[me.abilityId]?.aiWantsToUse?.(state, me, { math: HOOK_MATH, court }) ?? false;
+  return abilities[me.abilityId]?.aiWantsToUse?.(state, me, { math: QUERY_MATH, court }) ?? false;
 }
 
 /** Spec D.5: a loose ball is chased where the court's drift (aiHint) carries it in this long. */

@@ -8,7 +8,7 @@ import { createAiMemory, type AiMemory } from '../../src/sim/ai/memory';
 import { SURE_SHOT_AI_RANGE, planWithBall } from '../../src/sim/ai/offense';
 import { AI_PROFILES } from '../../src/sim/ai/profile';
 import { giveBall } from '../../src/sim/ball';
-import { HOOK_MATH, NO_ABILITIES } from '../../src/sim/hooks';
+import { NO_ABILITIES, QUERY_MATH } from '../../src/sim/hooks';
 import { createMatch, findPlayer } from '../../src/sim/match';
 import { tick } from '../../src/sim/tick';
 import type { MatchState, PlayerState } from '../../src/sim/types';
@@ -56,7 +56,7 @@ function place(s: MatchState, id: string, x: number, z: number): PlayerState {
   return p;
 }
 
-const ctx = { math: HOOK_MATH, court };
+const ctx = { math: QUERY_MATH, court };
 function wants(s: MatchState, id: string): boolean {
   const p = player(s, id);
   return ABILITIES[p.abilityId ?? '']?.aiWantsToUse?.(s, p, ctx) ?? false;
@@ -130,6 +130,17 @@ describe('decide: one-tick SPECIAL press on decision ticks (spec D.5)', () => {
     expect(decide(s, m, AI_PROFILES.fair, court, ABILITIES).special).toBe(false);
   });
 
+  it('a second decision tick right after a press still releases the button', () => {
+    const { s, m } = ready();
+    expect(decide(s, m, AI_PROFILES.fair, court, ABILITIES).special).toBe(true);
+    s.tick += 1;
+    m.nextDecisionTick = s.tick; // decision tick again, ability still wanted (the sim never ran)
+    expect(decide(s, m, AI_PROFILES.fair, court, ABILITIES).special).toBe(false);
+    s.tick += 1;
+    m.nextDecisionTick = s.tick;
+    expect(decide(s, m, AI_PROFILES.fair, court, ABILITIES).special).toBe(true);
+  });
+
   it('never presses without a full bar, while active, or with NO_ABILITIES', () => {
     const a = ready();
     player(a.s, 'home2').charge = CHARGE_MAX - 1;
@@ -167,9 +178,15 @@ describe('Hot Hand sure shots only count within range for the AI (deviation from
     return { s, m };
   }
 
-  it('shoots a sure shot inside 9 m', () => {
+  it('shoots a sure shot inside 9 m, where the same contested shot without Hot Hand is not taken', () => {
     const { s, m } = holder(SURE_SHOT_AI_RANGE - 1);
+    place(s, 'away1', 12.425 - (SURE_SHOT_AI_RANGE - 1) + 1, 0.3); // a defender in the shooter's face
     expect(planWithBall(s, player(s, 'home2'), m, AI_PROFILES.fair, court).kind).toBe('shoot');
+    player(s, 'home2').ability = null;
+    const control = createAiMemory('home2', 1, 1, true);
+    expect(planWithBall(s, player(s, 'home2'), control, AI_PROFILES.fair, court).kind).not.toBe(
+      'shoot',
+    );
   });
 
   it('beyond 9 m the sure shot is ignored: it drives or passes instead of shooting', () => {

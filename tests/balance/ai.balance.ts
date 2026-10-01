@@ -27,6 +27,10 @@ const GYM_MIRROR_SEEDS = 20;
 const GYM_STRENGTH_SEEDS = 10;
 const COURT_MIRROR_SEEDS = 8;
 const MAX_TICKS = 20_000;
+/** Spec D.7 score ceilings: the gym keeps C.7's 60; the modifier courts get 66 (ruling). */
+const SCORE_CEILING = { gym: 60, modifier: 66 } as const;
+const ceilingOf = (id: string): number =>
+  id === 'gym' ? SCORE_CEILING.gym : SCORE_CEILING.modifier;
 const ABILITY_USE_TARGET = [1.5, 3] as const;
 const ids = characters.map((c) => c.id);
 
@@ -139,15 +143,15 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
       `Fair profile, abilities on, 3-minute matches. Mirrored duos: ${GYM_MIRROR_SEEDS} seeds on the gym, ${COURT_MIRROR_SEEDS} on each other court; strength table on the gym, ${GYM_STRENGTH_SEEDS} seeds.`,
       '',
       `**Side bias (all mirrored games, ${all.games}):** home wins ${(100 * all.homeRate).toFixed(1)} % — band 45–55 %.`,
-      `**Mean total score (all mirrored):** ${all.meanTotal.toFixed(1)} — band 20–60.`,
+      `**Mean total score (all mirrored):** ${all.meanTotal.toFixed(1)} — band 20–${SCORE_CEILING.gym} (gym), 20–${SCORE_CEILING.modifier} (modifier courts).`,
       '',
       '## Per court (mirrored duos)',
       '',
-      '| court | games | home wins | mean total |',
-      '|---|---|---|---|',
+      '| court | games | home wins | mean total | band |',
+      '|---|---|---|---|---|',
       ...perCourt.map(
         (c) =>
-          `| ${c.id} | ${c.games} | ${(100 * c.homeRate).toFixed(1)} % | ${c.meanTotal.toFixed(1)} |`,
+          `| ${c.id} | ${c.games} | ${(100 * c.homeRate).toFixed(1)} % | ${c.meanTotal.toFixed(1)} | 20–${ceilingOf(c.id)} |`,
       ),
       '',
       `## Ability uses per player per match (target ${ABILITY_USE_TARGET[0]}–${ABILITY_USE_TARGET[1]})`,
@@ -172,7 +176,8 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
     process.stdout.write(`\n${report}\n`);
 
     // Spec C.7 on the gym; spec D.7's 45–55 % on the aggregate (per court the samples are small).
-    const gymRow = perCourt[0];
+    const gymRow = perCourt.find((c) => c.id === 'gym');
+    if (!gymRow) throw new Error('no gym');
     expect(gymRow.homeRate).toBeGreaterThanOrEqual(0.4);
     expect(gymRow.homeRate).toBeLessThanOrEqual(0.6);
     expect(all.homeRate).toBeGreaterThanOrEqual(0.45);
@@ -181,7 +186,7 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
       expect(c.homeRate, c.id).toBeGreaterThanOrEqual(0.35);
       expect(c.homeRate, c.id).toBeLessThanOrEqual(0.65);
       expect(c.meanTotal, c.id).toBeGreaterThanOrEqual(20);
-      expect(c.meanTotal, c.id).toBeLessThanOrEqual(60);
+      expect(c.meanTotal, c.id).toBeLessThanOrEqual(ceilingOf(c.id));
     }
     for (const c of perCharacter) expect(c.perMatch, c.id).toBeGreaterThan(0);
   });
