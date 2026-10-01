@@ -1,5 +1,6 @@
 import { GameLoop } from './app/game-loop';
 import { MatchRunner } from './app/match-runner';
+import { characters, DEFAULT_CHARACTER_ID, getCharacter } from './content/characters';
 import { getCourt } from './content/courts';
 import { InputManager } from './input/input-manager';
 import { KeyboardBackend } from './input/keyboard';
@@ -28,6 +29,12 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   const canvas = document.createElement('canvas');
   root.appendChild(canvas);
 
+  const requestedCharacter =
+    new URLSearchParams(window.location.search).get('character') ?? DEFAULT_CHARACTER_ID;
+  const character = characters.some((c) => c.id === requestedCharacter)
+    ? getCharacter(requestedCharacter)
+    : getCharacter(DEFAULT_CHARACTER_ID);
+
   const court = getCourt('gym');
   const scene = new GameScene(canvas);
   scene.setBackground(court.lighting.skyColor);
@@ -45,7 +52,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
         mode: 'shootaround',
       },
       court,
-      [{ id: HUMAN_ID, team: 0, characterId: 'placeholder' }],
+      [{ id: HUMAN_ID, team: 0, characterId: character.id, character }],
     ),
   );
 
@@ -141,6 +148,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
           phase: next.phase,
           ballMode: next.ball.mode,
           shotClockMs: next.shotClockMs,
+          character: character.name,
         });
       }
     },

@@ -51,6 +51,27 @@ export const NO_INTENT: Readonly<PlayerIntent> = Object.freeze({
   turbo: false,
 });
 
+/** Spec §5.1: seven stats, each 1..10. */
+export interface CharacterStats {
+  speed: number;
+  jump: number;
+  shooting: number;
+  dunking: number;
+  defense: number;
+  power: number;
+  stamina: number;
+}
+
+export interface CharacterDef {
+  id: string;
+  name: string;
+  description: string;
+  stats: CharacterStats;
+  /** Signature ability, implemented in phase 5. */
+  abilityId: string;
+  appearance: { primaryColor: number; secondaryColor: number };
+}
+
 /** Character stats × court modifier × ability, resolved to simulation units (metres, seconds). */
 export interface ResolvedStats {
   runSpeed: number;
@@ -63,6 +84,19 @@ export interface ResolvedStats {
   shooting: number;
   /** Vertical speed of a plain jump, m/s. */
   jumpSpeed: number;
+  /** Raw 1..10 stats that defensive formulas read directly. */
+  defense: number;
+  power: number;
+  /** Extra dunk range in metres (dunking stat). */
+  dunkRangeBonus: number;
+  /** Reach of a steal attempt and of a block, metres. */
+  stealReach: number;
+  blockReach: number;
+  /** Base chance of a steal before the holder's power is subtracted. */
+  stealChance: number;
+  /** Stun ticks a shove deals, and ticks of stun this player shrugs off. */
+  stunTicksDealt: number;
+  stunResistTicks: number;
 }
 
 export interface ShotInProgress {
