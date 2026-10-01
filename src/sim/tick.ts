@@ -99,6 +99,7 @@ export function tick(
     if (player.cooldowns.block > 0) player.cooldowns.block -= 1;
     if (player.cooldowns.steal > 0) player.cooldowns.steal -= 1;
     if (player.cooldowns.shove > 0) player.cooldowns.shove -= 1;
+    if (player.shoveImmunityTicks > 0) player.shoveImmunityTicks -= 1;
     if (player.callingForPassTicks > 0) player.callingForPassTicks -= 1;
     player.prevButtons = buttonsOf(intentFor(player));
   }

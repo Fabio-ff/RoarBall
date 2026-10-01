@@ -87,6 +87,7 @@ function createPlayer(entry: RosterEntry, indexInTeam: number, court: CourtDef):
     shotCooldownTicks: 0,
     cooldowns: { block: 0, steal: 0, shove: 0 },
     stunTicks: 0,
+    shoveImmunityTicks: 0,
     callingForPassTicks: 0,
     targetId: null,
     stats: entry.character ? resolveStats(entry.character) : { ...DEFAULT_STATS },

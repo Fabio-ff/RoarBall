@@ -158,6 +158,8 @@ export interface PlayerState {
   cooldowns: { block: number; steal: number; shove: number };
   /** Length of the current stun, set by a shove. */
   stunTicks: number;
+  /** Ticks left after getting up during which this player cannot be shoved again (spec B.4). */
+  shoveImmunityTicks: number;
   /** Set by PASS without the ball; controllers read it (spec B.3). */
   callingForPassTicks: number;
   /** The player a pass, steal or shove is aimed at. */
