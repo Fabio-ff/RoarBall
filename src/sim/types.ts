@@ -325,6 +325,17 @@ export interface HoopDef {
   rimHeight: number;
 }
 
+export type Weather = 'none' | 'rain' | 'embers';
+
+/** Spec D.6: placeholder look of a court until real environments arrive (phase 7). */
+export interface CourtDressing {
+  floorColor: number;
+  lineColor: number;
+  /** MeshStandardMaterial roughness of the play surface: 1 matte … 0 mirror-wet. */
+  floorRoughness: number;
+  weather: Weather;
+}
+
 export interface CourtDef {
   id: string;
   name: string;
@@ -338,6 +349,7 @@ export interface CourtDef {
     sunColor: number;
     ambient: number;
   };
+  dressing: CourtDressing;
   /** Spec §7.1 / D.4: the court's light gameplay modifier (none on the gym). */
   modifier?: CourtModifier;
 }

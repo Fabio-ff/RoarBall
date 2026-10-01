@@ -1,6 +1,7 @@
 import { ACTION_TIMING, beginAction, endAction } from './actions';
 import { arcPoint, solveArcVelocity } from './arc';
 import { giveBall, holdPosition } from './ball';
+import { ballDriftOf } from './court-drift';
 import { PLAYER_BODY_BOTTOM, PLAYER_BODY_TOP } from './bodies';
 import { sphereVsCapsule } from './collision';
 import { TICK_DT, TICK_RATE } from './constants';
@@ -93,6 +94,16 @@ function planPass(
     };
   }
   const totalTicks = Math.max(1, Math.round(flightTime * TICK_RATE));
+  const drift = lob ? null : ballDriftOf(state, court);
+  if (drift) {
+    // Spec D.4: a gust carries an ordinary pass drift · T² / 2 off its line; receivers run to the landing.
+    const t = totalTicks * TICK_DT;
+    target = {
+      ...target,
+      x: target.x + drift.x * 0.5 * t * t,
+      z: target.z + drift.z * 0.5 * t * t,
+    };
+  }
   const velocity = solveArcVelocity(from, target, totalTicks * TICK_DT, court.physics.gravity);
   return { from, velocity, totalTicks, lob };
 }

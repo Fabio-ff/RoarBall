@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { courts, getCourt } from '../../src/content/courts';
 
 describe('court registry', () => {
-  it('contains the gym', () => {
-    expect(courts.map((c) => c.id)).toContain('gym');
+  it('contains the four courts', () => {
+    expect(courts.map((c) => c.id)).toEqual(['gym', 'rooftop', 'volcano', 'frozen']);
   });
 
   it('throws for an unknown court', () => {

@@ -9,6 +9,7 @@ import {
   type HoopGeometry,
 } from './hoop';
 import { holdPosition } from './ball';
+import { ballDriftOf } from './court-drift';
 import { clamp, lerp, v3DistanceXZ, type Vec3 } from './math';
 import { allPlayers } from './match';
 import { startJump } from './player-movement';
@@ -147,6 +148,23 @@ export function shotQuality(
     clamp(shooting * distanceFactor(distance) * motion, 0.02, 0.97) *
     defenderFactor(shooter, defenders)
   );
+}
+
+/**
+ * Spec D.4: the sideways bow of a shot released in a gust. A constant acceleration `drift` on a
+ * path whose ends are fixed bends it by drift · t(T − t) / 2, i.e. drift · T² / 8 at the middle;
+ * the bow keeps that amplitude with a sine shape (bowFactor).
+ */
+export function shotBow(drift: Vec3, ticks: number): Vec3 {
+  const t = ticks * TICK_DT;
+  const k = (t * t) / 8;
+  return { x: drift.x * k, y: 0, z: drift.z * k };
+}
+
+/** sin(π · elapsed / total), exactly zero at both ends, so the shot leaves the hand and lands unbent. */
+export function bowFactor(elapsed: number, total: number): number {
+  if (elapsed <= 0 || elapsed >= total) return 0;
+  return Math.sin((Math.PI * elapsed) / total);
 }
 
 export function pointsFor(distance: number): 2 | 3 {
@@ -389,6 +407,7 @@ export function launchShot(
   const totalTicks = Math.max(1, Math.round(flightTime * TICK_RATE));
   const velocity = solveArcVelocity(from, target, totalTicks * TICK_DT, court.physics.gravity);
 
+  const drift = ballDriftOf(state, court);
   ball.mode = 'flight';
   ball.holder = null;
   ball.pos = { ...from };
@@ -408,7 +427,7 @@ export function launchShot(
     receiver: null,
     lob: false,
     team: player.team,
-    bow: null,
+    bow: drift ? shotBow(drift, flightTicks) : null,
   };
   ball.lastShot = {
     shooter: player.id,
@@ -529,7 +548,7 @@ export function stepShotAction(
   }
 }
 
-/** Moves a ball in flight along its scripted arc; hands it to free physics at the end. */
+/** Moves a ball in flight along its scripted arc (plus any gust bow); hands it to free physics at the end. */
 export function stepFlight(ball: BallState, court: CourtDef): void {
   const flight = ball.flight;
   if (!flight) {
@@ -540,6 +559,12 @@ export function stepFlight(ball: BallState, court: CourtDef): void {
   const t = flight.elapsedTicks * TICK_DT;
   const g = court.physics.gravity;
   ball.pos = arcPoint(flight.from, flight.velocity, g, t);
+  if (flight.bow) {
+    // Spec D.4: the bow moves the position only; the velocity (and so the handover) is the arc's.
+    const k = bowFactor(flight.elapsedTicks, flight.totalTicks);
+    ball.pos.x += flight.bow.x * k;
+    ball.pos.z += flight.bow.z * k;
+  }
   ball.vel = { x: flight.velocity.x, y: flight.velocity.y - g * t, z: flight.velocity.z };
   if (flight.elapsedTicks >= flight.totalTicks) {
     ball.mode = 'free';

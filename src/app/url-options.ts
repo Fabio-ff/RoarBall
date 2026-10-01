@@ -1,3 +1,4 @@
+import { courts, DEFAULT_COURT_ID } from '../content/courts';
 import { characters, DEFAULT_CHARACTER_ID } from '../content/characters';
 import { DEFAULT_AI_PROFILE_ID, isAiProfileId, type AiProfileId } from '../sim/ai/profile';
 import type { MatchMode } from '../sim/types';
@@ -8,6 +9,7 @@ export interface GameOptions {
   characterId: string;
   teammateId: string;
   opponentIds: [string, string];
+  courtId: string;
   aiProfile: AiProfileId;
   seed: number;
   debug: boolean;
@@ -20,6 +22,10 @@ export const SHOOTAROUND_SEED = 1;
 
 function characterOr(value: string | null | undefined, fallback: string): string {
   return value && characters.some((c) => c.id === value) ? value : fallback;
+}
+
+function courtOr(value: string | null): string {
+  return value && courts.some((c) => c.id === value) ? value : DEFAULT_COURT_ID;
 }
 
 /** `now` (ms) seeds a match when `?seed=` is absent, so every game is different. */
@@ -43,6 +49,7 @@ export function readGameOptions(search: string, now: number): GameOptions {
       characterOr(requested[0], DEFAULT_OPPONENT_IDS[0]),
       characterOr(requested[1], DEFAULT_OPPONENT_IDS[1]),
     ],
+    courtId: courtOr(params.get('court')),
     aiProfile: ai !== null && isAiProfileId(ai) ? ai : DEFAULT_AI_PROFILE_ID,
     seed,
     debug: params.has('debug'),

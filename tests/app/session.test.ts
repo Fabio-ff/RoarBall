@@ -16,6 +16,7 @@ describe('buildSession (spec C.1)', () => {
     aiProfile: 'easy',
     seed: 9,
     debug: false,
+    courtId: 'gym',
   };
 
   it('seeds every prevButtons with the buttons held at the restart (spec D.6)', () => {
