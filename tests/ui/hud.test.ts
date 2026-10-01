@@ -38,6 +38,11 @@ describe('bannerFor', () => {
     ).toBe('2 POINTS!');
     expect(bannerFor({ type: 'shotClockViolation', team: 1 })).toBe('SHOT CLOCK!');
     expect(bannerFor({ type: 'phaseChange', from: 'live', to: 'finished' })).toBe('FINAL');
+    expect(bannerFor({ type: 'block', by: 'x', shooter: 'a' })).toBe('BLOCKED!');
+    expect(bannerFor({ type: 'steal', by: 'x', from: 'a' })).toBe('STEAL!');
+    expect(bannerFor({ type: 'intercept', playerId: 'x' })).toBe('INTERCEPTED!');
+    expect(bannerFor({ type: 'alleyOop', playerId: 'b' })).toBe('ALLEY-OOP!');
+    expect(bannerFor({ type: 'shove', by: 'x', target: 'a' })).toBeNull();
     expect(bannerFor({ type: 'rimHit' })).toBeNull();
   });
 });

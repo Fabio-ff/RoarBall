@@ -18,6 +18,14 @@ export function bannerFor(event: SimEvent): string | null {
       return event.points === 3 ? '3 POINTS!' : '2 POINTS!';
     case 'shotClockViolation':
       return 'SHOT CLOCK!';
+    case 'block':
+      return 'BLOCKED!';
+    case 'steal':
+      return 'STEAL!';
+    case 'intercept':
+      return 'INTERCEPTED!';
+    case 'alleyOop':
+      return 'ALLEY-OOP!';
     case 'phaseChange':
       return event.to === 'finished' ? 'FINAL' : null;
     default:
