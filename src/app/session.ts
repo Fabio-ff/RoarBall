@@ -73,6 +73,19 @@ export function primeHeldButtons(
   }
 }
 
+/**
+ * Samples the human controller once (which clears the keyboard's press latches) and treats that
+ * sample as held: the key that resumed or restarted the match is not a press in play (spec D.6).
+ */
+export function primeHumanInput(
+  state: MatchState,
+  human: Controller,
+  held: Map<PlayerId, PlayerIntent>,
+): void {
+  held.set(HUMAN_ID, human(state));
+  primeHeldButtons(state, held);
+}
+
 /** A match and its controllers for `seed`; built again with `seed + 1` on restart (spec C.6). */
 export function buildSession(
   options: GameOptions,

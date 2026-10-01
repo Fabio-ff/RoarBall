@@ -1,7 +1,7 @@
 import type { Controller } from './controller';
 import { disposeObject3D } from './dispose';
 import { GameLoop } from './game-loop';
-import { buildSession, HUMAN_ID } from './session';
+import { buildSession, HUMAN_ID, primeHumanInput } from './session';
 import type { Settings } from './storage';
 import type { GameOptions } from './url-options';
 import { ABILITIES } from '../content/abilities';
@@ -142,11 +142,14 @@ export class MatchScreen {
     /** Pause → Restart: seed + 1, and the buttons held now are not presses in the new match (spec D.6). */
     this.restartMatch = (): void => {
       seed += 1;
+      intents.set(HUMAN_ID, human(session.runner.current)); // fresh sample: the pressed key is held
       session = buildSession(options, court, seed, human, intents);
       weather.reset();
       lastTickNumber = session.runner.current.tick;
       this.finishedAt = null;
     };
+
+    this.primeHuman = (): void => primeHumanInput(session.runner.current, human, intents);
 
     this.loop = new GameLoop(
       () => {
@@ -238,6 +241,7 @@ export class MatchScreen {
   }
 
   private restartMatch: () => void;
+  private primeHuman: () => void;
 
   get paused(): boolean {
     return this.pauseOverlay !== null;
@@ -265,6 +269,7 @@ export class MatchScreen {
     if (this.disposed || this.done || !this.pauseOverlay) return;
     this.pauseOverlay.dispose();
     this.pauseOverlay = null;
+    this.primeHuman();
     this.loop.start();
   }
 

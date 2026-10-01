@@ -58,4 +58,12 @@ describe('MenuInput keyboard (spec E.1)', () => {
     press('ArrowUp');
     expect(got).toEqual([]);
   });
+
+  it('prevents the default of mapped keys only (Tab stays native)', () => {
+    input = new MenuInput(window);
+    for (const code of ['Enter', 'Space', 'ArrowDown', 'Escape']) {
+      expect(press(code).defaultPrevented).toBe(true);
+    }
+    expect(press('Tab').defaultPrevented).toBe(false);
+  });
 });

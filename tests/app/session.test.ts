@@ -70,3 +70,23 @@ describe('buildSession (spec C.1)', () => {
     expect(buildSettings(options, getCourt('gym'), 1).durationMs).toBe(30_000);
   });
 });
+
+describe('primeHumanInput (resume/restart must not leak a press)', () => {
+  it('a latched Space used to confirm a menu is not an ACTION press afterwards', async () => {
+    const { InputManager } = await import('../../src/input/input-manager');
+    const { KeyboardBackend } = await import('../../src/input/keyboard');
+    const { primeHumanInput } = await import('../../src/app/session');
+    const target = new EventTarget() as unknown as Window;
+    const input = new InputManager([new KeyboardBackend(target)]);
+    const state = buildSession({ ...readGameOptions('', 1) }, court, 1, () => NO_INTENT).runner
+      .current;
+    (target as unknown as EventTarget).dispatchEvent(
+      Object.assign(new Event('keydown', { cancelable: true }), { code: 'Space', repeat: false }),
+    );
+    primeHumanInput(state, () => input.sample(), new Map());
+    expect(findPlayer(state, 'home1')?.prevButtons.action).toBe(true);
+    // Still held next tick: prevButtons already true, so the sim sees no new press.
+    expect(input.sample().action).toBe(true);
+    input.dispose();
+  });
+});

@@ -41,6 +41,9 @@ export class MenuInput {
   private readonly onKeyDown = (e: KeyboardEvent): void => {
     if (e.repeat) return;
     const command = KEYS[e.code];
-    if (command) this.emit(command);
+    if (!command) return;
+    // Handled here: stops the browser's native activation of the focused button (a second click).
+    e.preventDefault();
+    this.emit(command);
   };
 }
