@@ -76,7 +76,7 @@ export function teammateDummy(id: PlayerId, humanId: PlayerId, court: CourtDef):
   };
 }
 
-/** Spec B.1 defender: stands in the key, raises for a block when the handler comes close. */
+/** Spec B.1 defender: stands in the key (and walks back there with the ball), raises for a block when the handler comes close. */
 export function defenderDummy(id: PlayerId, humanId: PlayerId, court: CourtDef): Controller {
   let lastBlockTick = -Infinity;
   return (state) => {
@@ -99,7 +99,8 @@ export function defenderDummy(id: PlayerId, humanId: PlayerId, court: CourtDef):
       (handlerShooting ||
         (handlerOnTop && state.tick - lastBlockTick >= DEFENDER_BLOCK_EVERY_TICKS));
     if (block) lastBlockTick = state.tick;
-    const holding = state.ball.holder === id;
-    return { ...NO_INTENT, move: holding ? { x: 0, y: 0 } : stepTowards(me, goal), action: block };
+    // Holding a rebound, it walks back to its spot (outside the near-hoop block zone, so the human
+    // can steal from it, B.1) and stands there.
+    return { ...NO_INTENT, move: stepTowards(me, goal), action: block };
   };
 }

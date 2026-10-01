@@ -71,7 +71,10 @@ describe('chooseDefensiveAction', () => {
     a.shot = null;
     a.pos.x = hoop.rimCenter.x - 2;
     x.pos.x = hoop.rimCenter.x - 3;
-    expect(chooseDefensiveAction(s, x, court)).toBe('block'); // handler near the hoop
+    expect(chooseDefensiveAction(s, x, court)).toBe('steal'); // near the hoop, but in steal reach
+    x.pos.x = hoop.rimCenter.x - 3.5;
+    expect(chooseDefensiveAction(s, x, court)).toBe('block'); // handler near the hoop, 1.5 m away
+    x.pos.x = hoop.rimCenter.x - 3;
     s.ball.holder = null;
     s.ball.mode = 'free';
     x.facing = Math.PI / 2; // face +X, towards the opponent
@@ -180,7 +183,8 @@ describe('block', () => {
     if (!a || !x) throw new Error('no players');
     a.pos.x = hoop.rimCenter.x - 1.5;
     a.vel = { x: 4, y: 0, z: 0 };
-    x.pos.x = hoop.rimCenter.x - 0.9;
+    // 1.1 m from the driver: in block reach but outside steal reach, which now comes first (B.4).
+    x.pos.x = hoop.rimCenter.x - 0.4;
     // Block pressed at tick 0, dunk pressed at tick 1: the block started first.
     let state = s;
     const all: SimEvent[] = [];
