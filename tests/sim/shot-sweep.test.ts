@@ -81,7 +81,8 @@ function rate(records: readonly ShotRecord[]): { basket: number; quality: number
   };
 }
 
-const bucketOf = (r: ShotRecord): number => Math.floor(r.distance + 1e-9);
+// The 2 m bucket would hold only the 2.6 m shots (step 0.4), so it folds into the 3 m bucket.
+const bucketOf = (r: ShotRecord): number => Math.max(3, Math.floor(r.distance + 1e-9));
 
 describe('shot sweep: basket rate tracks shotQuality through tick', () => {
   const records: ShotRecord[] = [];
@@ -106,7 +107,7 @@ describe('shot sweep: basket rate tracks shotQuality through tick', () => {
   it('per 1 m bucket and angle, basket rate is within 0.15 of the mean quality', () => {
     const offenders: string[] = [];
     for (const angle of ANGLES_DEG) {
-      for (let bucket = Math.floor(MIN_DISTANCE); bucket <= MAX_DISTANCE; bucket++) {
+      for (let bucket = 3; bucket <= MAX_DISTANCE; bucket++) {
         const cell = records.filter((r) => r.angle === angle && bucketOf(r) === bucket);
         if (cell.length === 0) continue;
         const { basket, quality } = rate(cell);
@@ -122,7 +123,7 @@ describe('shot sweep: basket rate tracks shotQuality through tick', () => {
     const offenders: string[] = [];
     const missTypes: MissType[] = ['frontRim', 'backRim', 'sideRim', 'board'];
     for (const angle of ANGLES_DEG) {
-      for (let bucket = Math.floor(MIN_DISTANCE); bucket <= MAX_DISTANCE; bucket++) {
+      for (let bucket = 3; bucket <= MAX_DISTANCE; bucket++) {
         for (const missType of missTypes) {
           const misses = records.filter(
             (r) => r.angle === angle && bucketOf(r) === bucket && r.missType === missType,
