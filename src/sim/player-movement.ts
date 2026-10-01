@@ -35,7 +35,8 @@ export function stepPlayer(
   const dir = moving ? v2Normalize(intent.move) : { x: 0, y: 0 };
 
   player.turboRequested = intent.turbo && moving;
-  player.turboActive = player.turboRequested && player.turbo > 0 && player.onGround;
+  player.turboActive =
+    player.turboRequested && (player.turbo > 0 || stats.unlimitedTurbo) && player.onGround;
   const maxSpeed = player.turboActive ? stats.turboSpeed : stats.runSpeed;
 
   if (player.onGround) {
@@ -91,7 +92,8 @@ export function stepPlayer(
 export function stepTurbo(player: PlayerState): void {
   const { stats } = player;
   if (player.turboActive) {
-    player.turbo = Math.max(0, player.turbo - stats.turboDrainPerTick);
+    // Spec D.3 Blur: unlimited turbo never drains.
+    if (!stats.unlimitedTurbo) player.turbo = Math.max(0, player.turbo - stats.turboDrainPerTick);
   } else if (!player.turboRequested) {
     player.turbo = Math.min(1, player.turbo + stats.turboRegenPerTick);
   }
