@@ -19,11 +19,12 @@ function make() {
 }
 
 describe('PauseOverlay (spec E.1)', () => {
-  it('lists Resume, Restart, Sound, Music, Vibration, Reduce motion, Quit in that order', () => {
+  it('lists Resume, Restart, How to play, Sound, Music, Vibration, Reduce motion, Quit in that order', () => {
     const { root } = make();
     expect([...root.querySelectorAll('button')].map((b) => b.dataset.action)).toEqual([
       'resume',
       'restart',
+      'howToPlay',
       'sound',
       'music',
       'vibration',
@@ -57,5 +58,21 @@ describe('PauseOverlay (spec E.1)', () => {
     button('quit')?.click();
     expect(handlers.onRestart).toHaveBeenCalledOnce();
     expect(handlers.onQuit).toHaveBeenCalledOnce();
+  });
+
+  it('HOW TO PLAY opens over the pause menu, takes the commands, and BACK returns to RESUME', () => {
+    const { root, overlay, button, handlers } = make();
+    button('howToPlay')?.click();
+    expect(root.querySelector('.screen-howto')).not.toBeNull();
+    overlay.handleCommand('pause'); // routed to the how-to screen: does not resume
+    expect(handlers.onResume).not.toHaveBeenCalled();
+    expect(root.querySelector('.screen-howto')).not.toBeNull();
+    overlay.handleCommand('back');
+    expect(root.querySelector('.screen-howto')).toBeNull();
+    expect(handlers.onResume).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(button('resume'));
+    button('howToPlay')?.click();
+    overlay.dispose();
+    expect(root.children.length).toBe(0);
   });
 });

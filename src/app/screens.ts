@@ -1,8 +1,9 @@
 /** Spec E.1: the shell's screens. Pause is an overlay inside the match (plan decision 1). */
-export type ScreenId = 'title' | 'setup' | 'match' | 'results';
+export type ScreenId = 'title' | 'setup' | 'howToPlay' | 'match' | 'results';
 
 export type ShellEvent =
   | { type: 'play' }
+  | { type: 'howToPlay' }
   | { type: 'start' }
   | { type: 'back' }
   | { type: 'finished' }
@@ -12,7 +13,8 @@ export type ShellEvent =
   | { type: 'toTitle' };
 
 const TABLE: Record<ScreenId, Partial<Record<ShellEvent['type'], ScreenId>>> = {
-  title: { play: 'setup' },
+  title: { play: 'setup', howToPlay: 'howToPlay' },
+  howToPlay: { howToPlay: 'howToPlay', back: 'title' },
   setup: { start: 'match', back: 'title' },
   match: { finished: 'results', quit: 'title' },
   results: { rematch: 'match', changeSetup: 'setup', toTitle: 'title', back: 'title' },
