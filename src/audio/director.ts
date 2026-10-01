@@ -11,6 +11,8 @@ export const ABILITY_STINGERS: Readonly<Record<string, SfxName>> = {
 const SQUEAK_SPEED = 3;
 const SQUEAK_COS = Math.cos((70 * Math.PI) / 180);
 const SQUEAK_GAP_S = 0.25;
+/** The sim turns a runner only ~13 degrees per tick, so a cut is measured over 0.2 s of ticks. */
+export const SQUEAK_WINDOW_TICKS = 12;
 
 /** Spec E.4: which sounds an event makes. Pure; the director adds ducking and squeaks. */
 export function sfxFor(event: SimEvent): { name: SfxName; gain: number }[] {
@@ -54,6 +56,8 @@ export function sfxFor(event: SimEvent): { name: SfxName; gain: number }[] {
 /** Maps sim events and state to sounds (spec E.4). Reads only; never writes state. */
 export class AudioDirector {
   private readonly lastSqueak = new Map<string, number>();
+  /** Recent horizontal velocities per player, oldest first, at most SQUEAK_WINDOW_TICKS + 1. */
+  private readonly history = new Map<string, { x: number; z: number }[]>();
 
   constructor(private readonly sink: () => AudioSink) {}
 
@@ -66,17 +70,20 @@ export class AudioDirector {
     }
   }
 
-  /** Shoe squeaks from consecutive states (plan decision 21). */
-  update(prev: MatchState, next: MatchState, nowSeconds: number): void {
-    for (let team = 0; team < 2; team++) {
-      const before = prev.teams[team as 0 | 1].players;
-      for (const p of next.teams[team as 0 | 1].players) {
-        const q = before.find((b) => b.id === p.id);
-        if (!q || !p.onGround) continue;
-        const a = Math.hypot(q.vel.x, q.vel.z);
+  /** Shoe squeaks: call once per tick; compares velocity with 12 ticks ago (plan decision 21). */
+  update(_prev: MatchState, next: MatchState, nowSeconds: number): void {
+    for (const team of next.teams) {
+      for (const p of team.players) {
+        let h = this.history.get(p.id);
+        if (!h) this.history.set(p.id, (h = []));
+        h.push({ x: p.vel.x, z: p.vel.z });
+        if (h.length > SQUEAK_WINDOW_TICKS + 1) h.shift();
+        const old = h[0];
+        if (!old || h.length <= SQUEAK_WINDOW_TICKS || !p.onGround) continue;
+        const a = Math.hypot(old.x, old.z);
         const b = Math.hypot(p.vel.x, p.vel.z);
         if (a < SQUEAK_SPEED || b < SQUEAK_SPEED) continue;
-        const cos = (q.vel.x * p.vel.x + q.vel.z * p.vel.z) / (a * b);
+        const cos = (old.x * p.vel.x + old.z * p.vel.z) / (a * b);
         if (cos > SQUEAK_COS) continue;
         if (nowSeconds - (this.lastSqueak.get(p.id) ?? -Infinity) < SQUEAK_GAP_S) continue;
         this.lastSqueak.set(p.id, nowSeconds);

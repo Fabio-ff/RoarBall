@@ -161,9 +161,9 @@ export class AppShell {
   private ensureAudio(): void {
     if (this.audioTried) return;
     this.audioTried = true;
-    window.removeEventListener('keydown', this.onGesture, true);
     this.engine = AudioEngine.create();
     if (!this.engine) {
+      window.removeEventListener('keydown', this.onGesture, true);
       window.removeEventListener('pointerdown', this.onGesture, true);
       return;
     }
@@ -172,7 +172,10 @@ export class AppShell {
   }
 
   private onMenuCommand(command: MenuCommand, source: MenuSource): void {
-    if (source === 'gamepad') this.ensureAudio();
+    if (source === 'gamepad') {
+      this.ensureAudio();
+      this.engine?.resume();
+    }
     // Live play ignores everything but pause/back, so only menus (and the pause overlay) click.
     const inMenu = this.current !== 'match' || this.handle?.paused === true;
     if (inMenu) {

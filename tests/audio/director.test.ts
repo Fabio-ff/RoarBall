@@ -4,7 +4,8 @@ import type { AudioSink, SfxName } from '../../src/audio/sink';
 import { getCharacter } from '../../src/content/characters';
 import { getCourt } from '../../src/content/courts';
 import { createMatch } from '../../src/sim/match';
-import type { MatchState } from '../../src/sim/types';
+import { tick } from '../../src/sim/tick';
+import { NO_INTENT, type MatchState } from '../../src/sim/types';
 
 class Recorder implements AudioSink {
   sfx: [SfxName, number][] = [];
@@ -68,36 +69,64 @@ describe('AudioDirector', () => {
     expect(rec.ducks).toEqual([0.8, 1]);
   });
 
-  it('squeaks on a sharp turn at speed, at most every 0.25 s per player (plan decision 21)', () => {
-    const rec = new Recorder();
-    const director = new AudioDirector(() => rec);
+  describe('shoe squeaks', () => {
     const court = getCourt('gym');
-    const base = createMatch(
-      {
-        durationMs: 180_000,
-        shotClockMs: 14_000,
-        seed: 1,
-        ruleIds: ['shotClock'],
-        courtId: 'gym',
-        mode: 'match',
-      },
-      court,
-      [{ id: 'home1', team: 0, characterId: 'rook', character: getCharacter('rook') }],
-    );
-    const withVel = (x: number, z: number, y = 0): MatchState => {
-      const s = structuredClone(base);
-      const p = s.teams[0].players[0];
-      if (p) {
-        p.vel = { x, y: 0, z };
-        p.onGround = y === 0;
-      }
-      return s;
+    const options = {
+      durationMs: 180_000,
+      shotClockMs: 14_000,
+      seed: 1,
+      ruleIds: [] as string[],
+      courtId: 'gym',
+      mode: 'match' as const,
     };
-    director.update(withVel(5, 0), withVel(0, 5), 1); // 90 degree turn at 5 m/s: squeak
-    director.update(withVel(0, 5), withVel(-5, 0), 1.1); // too soon
-    director.update(withVel(-5, 0), withVel(0, -5), 1.3); // ok again
-    director.update(withVel(1, 0), withVel(0, 1), 2); // too slow
-    director.update(withVel(5, 0, 1), withVel(0, 5, 1), 3); // airborne
-    expect(rec.sfx.filter(([n]) => n === 'squeak').length).toBe(2);
+
+    /** Runs the real sim: the human turbo-runs in +X for 40 ticks, then in `second` (a cut). */
+    const squeaks = (second: { x: number; y: number }): number => {
+      const rec = new Recorder();
+      const director = new AudioDirector(() => rec);
+      let state = createMatch(options, court, [
+        { id: 'home1', team: 0, characterId: 'rook', character: getCharacter('rook') },
+        { id: 'away1', team: 1, characterId: 'rook', character: getCharacter('rook') },
+      ]);
+      for (let i = 0; i < 400 && state.phase !== 'live'; i++) {
+        state = tick(state, new Map(), court).state;
+      }
+      expect(state.phase).toBe('live');
+      for (let i = 0; i < 80; i++) {
+        const move = i < 40 ? { x: 1, y: 0 } : second;
+        const intents = new Map([['home1', { ...NO_INTENT, move, turbo: true }]]);
+        const prev = state;
+        state = tick(state, intents, court).state;
+        director.update(prev, state, state.tick / 60);
+      }
+      return rec.sfx.filter(([n]) => n === 'squeak').length;
+    };
+
+    it('plays when a running player cuts 90 degrees, and not on a straight run', () => {
+      expect(squeaks({ x: 0, y: 1 })).toBeGreaterThanOrEqual(1);
+      expect(squeaks({ x: 1, y: 0 })).toBe(0);
+    });
+
+    it('is throttled to once per 0.25 s per player', () => {
+      const rec = new Recorder();
+      const director = new AudioDirector(() => rec);
+      const base = createMatch(options, court, [
+        { id: 'home1', team: 0, characterId: 'rook', character: getCharacter('rook') },
+      ]);
+      const at = (x: number): MatchState => {
+        const s = structuredClone(base);
+        const p = s.teams[0].players[0];
+        if (p) {
+          p.vel = { x, y: 0, z: 0 };
+          p.onGround = true;
+        }
+        return s;
+      };
+      // Alternating direction every tick: every full window is a reversal, but time barely moves.
+      for (let i = 0; i < 60; i++) director.update(at(0), at(i % 24 < 12 ? 5 : -5), i / 60);
+      const n = rec.sfx.filter(([name]) => name === 'squeak').length;
+      expect(n).toBeGreaterThanOrEqual(1);
+      expect(n).toBeLessThanOrEqual(4);
+    });
   });
 });

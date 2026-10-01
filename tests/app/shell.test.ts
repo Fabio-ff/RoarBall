@@ -167,6 +167,19 @@ describe('AppShell audio (spec E.4)', () => {
     shell.dispose();
   });
 
+  it('later keydowns and gamepad commands keep resuming the engine', () => {
+    const engine = fakeEngine();
+    vi.spyOn(AudioEngine, 'create').mockReturnValue(
+      engine as unknown as InstanceType<typeof AudioEngine>,
+    );
+    const shell = new AppShell(document.createElement('div'), { initial: null, store: null });
+    press('KeyZ');
+    const after = engine.resumed;
+    press('KeyZ');
+    expect(engine.resumed).toBe(after + 1);
+    shell.dispose();
+  });
+
   it('toggling sound tells the engine', () => {
     const engine = fakeEngine();
     vi.spyOn(AudioEngine, 'create').mockReturnValue(
