@@ -252,6 +252,7 @@ describe('decide (brain)', () => {
     place(s, 'away1', -8, -6);
     place(s, 'away2', -8, 0);
     const m = createAiMemory('home1', 1, 2, false);
+    m.lastPlannedPossession = s.possession; // a plan already exists: only the cadence plans now
     s.tick = 0;
     expect(decide(s, m, exact, court)).toEqual(NO_INTENT); // before the offset: idle goal
     s.tick = 2;
@@ -317,13 +318,43 @@ describe('decide (brain)', () => {
     s.possession = 0; // team 1 now defends
     decide(s, a, exact, court);
     decide(s, b, exact, court);
-    expect(a.nextDecisionTick).toBe(4 + DECISION_INTERVAL_TICKS);
-    expect(b.nextDecisionTick).toBe(4 + DECISION_INTERVAL_TICKS);
+    expect(a.nextDecisionTick).toBe(6); // a forced re-plan keeps the staggered cadence
+    expect(b.nextDecisionTick).toBe(9);
     expect(a.goal.kind).toBe('mark');
     expect(b.goal.kind).toBe('mark');
     const marks = assignMarks(s, 1);
     expect(a.markId).toBe(marks.get('away1'));
     expect(b.markId).toBe(marks.get('away2'));
+    expect(a.markId).not.toBe(b.markId);
+  });
+
+  it('after a real inbound both defenders plan on the same first live tick and mark different attackers', () => {
+    const s = createMatch({ ...matchSettings, seed: 2 }, court, roster);
+    s.phase = 'inbound';
+    s.pendingInbound = 0; // team 0 has the ball; team 1 defends
+    s.tick = 100;
+    const a = createAiMemory('away1', 2, 2, false);
+    const b = createAiMemory('away2', 2, 3, false);
+    const planTicks: number[][] = [[], []];
+    let state = s;
+    for (let i = 0; i < 8; i++) {
+      const before = [a.goal.kind, b.goal.kind];
+      const intents = new Map<string, PlayerIntent>([
+        ['away1', decide(state, a, exact, court)],
+        ['away2', decide(state, b, exact, court)],
+      ]);
+      if (state.phase === 'live') {
+        if (before[0] === 'idle' && a.goal.kind !== 'idle') planTicks[0].push(state.tick);
+        if (before[1] === 'idle' && b.goal.kind !== 'idle') planTicks[1].push(state.tick);
+      }
+      state = tick(state, intents, court).state;
+    }
+    expect(state.phase).toBe('live');
+    expect(planTicks[0][0]).toBeDefined();
+    expect(planTicks[0][0]).toBe(planTicks[1][0]);
+    expect(a.goal.kind).toBe('mark');
+    expect(b.goal.kind).toBe('mark');
+    expect(a.markId).not.toBeNull();
     expect(a.markId).not.toBe(b.markId);
   });
 

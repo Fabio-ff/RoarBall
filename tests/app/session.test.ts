@@ -37,4 +37,11 @@ describe('buildSession (spec C.1)', () => {
     expect(session.ais).toEqual([]);
     expect(session.runner.current.settings.mode).toBe('shootaround');
   });
+
+  it('stepping a finished match makes previous equal current, so the render stops blending', () => {
+    const session = buildSession(base, court, 9, () => NO_INTENT);
+    session.runner.current.phase = 'finished';
+    session.runner.step(new Map());
+    expect(session.runner.previous).toBe(session.runner.current);
+  });
 });

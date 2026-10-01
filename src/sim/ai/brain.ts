@@ -37,14 +37,14 @@ export function decide(
   if (state.phase !== 'live' || isActionLocked(me) || !me.onGround)
     return finish(memory, NO_INTENT);
 
-  // A possession change re-plans everyone on the same tick so teammates assign marks together;
-  // until a first plan exists the per-player offset still staggers the brains.
-  const possessionChanged =
-    memory.lastPlannedPossession !== null && state.possession !== memory.lastPlannedPossession;
-  const isDecisionTick = state.tick >= memory.nextDecisionTick || possessionChanged;
+  // A possession change (or the first plan after a reset) re-plans everyone on the same tick, so
+  // teammates assign marks from the same snapshot. Only the regular cadence reschedules, which
+  // keeps the per-player offsets staggered.
+  const cadenceTick = state.tick >= memory.nextDecisionTick;
+  const isDecisionTick = cadenceTick || state.possession !== memory.lastPlannedPossession;
   if (isDecisionTick) {
     memory.goal = plan(state, me, memory, profile, court);
-    memory.nextDecisionTick = state.tick + DECISION_INTERVAL_TICKS;
+    if (cadenceTick) memory.nextDecisionTick = state.tick + DECISION_INTERVAL_TICKS;
     memory.lastPlannedPossession = state.possession;
   }
   return finish(memory, act(state, me, memory, profile, court, isDecisionTick));

@@ -107,11 +107,13 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
         // Spec C.6: after the final, any ACTION/PASS/SPECIAL press starts the next match.
         const pressed = RESTART_BUTTONS.some((b) => justPressed(prevHumanButtons, humanIntent, b));
         prevHumanButtons = buttonsOf(humanIntent);
-        if (runner.current.phase === 'finished') {
-          if (pressed) restart();
+        if (runner.current.phase === 'finished' && pressed) {
+          restart();
           return;
         }
       }
+      // Always step: when finished the sim returns the same state, so previous catches up with
+      // current and the render stops blending (no jitter on the final screen).
       const events = runner.step(intents);
       hud.handleEvents(events);
       for (const event of events) {
