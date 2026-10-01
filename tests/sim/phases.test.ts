@@ -75,7 +75,8 @@ describe('phases', () => {
     expect(state.phase).toBe('live');
     expect(state.possession).toBe(1);
     expect(state.ball.holder).toBe('away1');
-    expect(findPlayer(state, 'away1')?.pos.x).toBeCloseTo(court.playArea.length / 2 - 1.5);
+    // Player separation (step 6) may nudge the receiver a few cm if the scorer stands next to them.
+    expect(findPlayer(state, 'away1')?.pos.x).toBeCloseTo(court.playArea.length / 2 - 1.5, 1);
     expect(state.shotClockMs).toBeGreaterThan(10_000); // reset at the inbound, then ran for a while
     expect(state.score[0]).toBe(2);
   });
@@ -206,5 +207,48 @@ describe('phases', () => {
     const { state, events } = run(s, 420);
     expect(events.some((e) => e.type === 'phaseChange' && e.to === 'inbound')).toBe(true);
     expect(state.ball.mode).toBe('held');
+  });
+
+  it('a buzzer-beater counts: the clock waits for a shot in flight', () => {
+    // Run the same scenario over several seeds so both outcomes are covered deterministically.
+    let sawMake = false;
+    let sawMiss = false;
+    for (let seed = 1; seed <= 12; seed++) {
+      let s = run(createMatch({ ...base, seed, durationMs: TICK_MS * 40 }, court, roster), 1).state;
+      const home = findPlayer(s, 'home1');
+      if (!home) throw new Error('no player');
+      home.pos = { x: hoopGeometry(court, 1).rimCenter.x - 4, y: 0, z: 0 };
+      home.facing = Math.PI / 2;
+      giveBall(s, home, []);
+      s.score = [0, 2];
+      // Press now: release at ~tick 28; the clock expires at tick 40 with the ball in the air.
+      let releasedTick = -1;
+      let finishedTick = -1;
+      let made = false;
+      for (let i = 0; i < 160; i++) {
+        const r = tick(s, new Map([['home1', press]]), court);
+        s = r.state;
+        for (const e of r.events) {
+          if (e.type === 'shotReleased') {
+            releasedTick = s.tick;
+            made = e.made;
+          }
+          if (e.type === 'phaseChange' && e.to === 'finished') finishedTick = s.tick;
+        }
+      }
+      expect(releasedTick).toBeGreaterThan(0);
+      if (made) {
+        sawMake = true;
+        expect(s.score[0]).toBe(2);
+        expect(s.overtime).toBe(true); // 2–2: the buzzer-beater forces overtime
+        expect(finishedTick).toBe(-1);
+      } else {
+        sawMiss = true;
+        expect(finishedTick).toBeGreaterThan(releasedTick + 40); // only once the flight resolved
+        expect(s.phase).toBe('finished');
+        expect(s.score).toEqual([0, 2]);
+      }
+    }
+    expect(sawMake && sawMiss).toBe(true);
   });
 });

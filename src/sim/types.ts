@@ -5,13 +5,37 @@ export type TeamIndex = 0 | 1;
 export type PlayerId = string;
 export type HoopIndex = 0 | 1;
 
-export type PlayerAction = 'idle' | 'run' | 'jump' | 'shoot' | 'layup' | 'dunk';
+export type PlayerAction =
+  | 'idle'
+  | 'run'
+  | 'jump'
+  | 'shoot'
+  | 'layup'
+  | 'dunk'
+  | 'pass'
+  | 'block'
+  | 'steal'
+  | 'shove'
+  | 'stunned'
+  | 'getup';
 export type ShotType = 'jumpshot' | 'layup' | 'dunk';
 /** Actions during which input is ignored (spec §4.4: the shooter is animation-locked). */
 export const SHOT_ACTIONS: ReadonlySet<PlayerAction> = new Set<PlayerAction>([
   'shoot',
   'layup',
   'dunk',
+]);
+/** Actions during which input is ignored (shots, passes, defensive moves, being knocked down). */
+export const LOCKED_ACTIONS: ReadonlySet<PlayerAction> = new Set<PlayerAction>([
+  'shoot',
+  'layup',
+  'dunk',
+  'pass',
+  'block',
+  'steal',
+  'shove',
+  'stunned',
+  'getup',
 ]);
 export const ACTION_FOR_SHOT: Readonly<Record<ShotType, PlayerAction>> = {
   jumpshot: 'shoot',
@@ -130,6 +154,14 @@ export interface PlayerState {
   shot: ShotInProgress | null;
   /** Ticks left during which this player cannot pick up their own shot. */
   shotCooldownTicks: number;
+  /** Ticks left before each defensive move can be used again. */
+  cooldowns: { block: number; steal: number; shove: number };
+  /** Length of the current stun, set by a shove. */
+  stunTicks: number;
+  /** Set by PASS without the ball; controllers read it (spec B.3). */
+  callingForPassTicks: number;
+  /** The player a pass, steal or shove is aimed at. */
+  targetId: PlayerId | null;
   stats: ResolvedStats;
 }
 
@@ -144,10 +176,15 @@ export type MissType = 'frontRim' | 'backRim' | 'sideRim' | 'board';
 
 /** A scripted ballistic path (spec A.4): the ball follows it exactly until totalTicks elapse. */
 export interface ShotFlight {
+  kind: 'shot' | 'pass';
   from: Vec3;
   velocity: Vec3;
   totalTicks: number;
   elapsedTicks: number;
+  /** Passes: who it is for, whether it is an alley-oop lob, and the passing team. */
+  receiver: PlayerId | null;
+  lob: boolean;
+  team: TeamIndex;
 }
 
 /** The shot the loose ball came from; cleared on any pickup and after a basket. */
@@ -200,6 +237,8 @@ export interface MatchState {
   pendingInbound: TeamIndex | null;
   /** Sudden death: the next basket ends the match. */
   overtime: boolean;
+  /** The clock hit zero with a shot in the air: the buzzer waits for it (spec B.5). */
+  buzzerPending: boolean;
   ball: BallState;
   teams: [TeamState, TeamState];
   rng: RngState;
@@ -224,7 +263,15 @@ export type SimEvent =
   | { type: 'bounce'; speed: number }
   | { type: 'pickup'; playerId: PlayerId }
   | { type: 'possessionChange'; team: TeamIndex }
-  | { type: 'shotClockViolation'; team: TeamIndex };
+  | { type: 'shotClockViolation'; team: TeamIndex }
+  | { type: 'pass'; from: PlayerId; to: PlayerId; lob: boolean }
+  | { type: 'catch'; playerId: PlayerId }
+  | { type: 'intercept'; playerId: PlayerId }
+  | { type: 'alleyOop'; playerId: PlayerId }
+  | { type: 'block'; by: PlayerId; shooter: PlayerId }
+  | { type: 'steal'; by: PlayerId; from: PlayerId }
+  | { type: 'stealFailed'; by: PlayerId }
+  | { type: 'shove'; by: PlayerId; target: PlayerId };
 
 export interface HoopDef {
   /** Rim centre on the floor plane (y ignored). */

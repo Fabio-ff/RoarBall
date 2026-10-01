@@ -374,7 +374,16 @@ export function launchShot(
   const flightTicks = outcome.made
     ? totalTicks
     : Math.max(1, totalTicks - MISS_HANDOVER_EARLY_TICKS);
-  ball.flight = { from, velocity, totalTicks: flightTicks, elapsedTicks: 0 };
+  ball.flight = {
+    kind: 'shot',
+    from,
+    velocity,
+    totalTicks: flightTicks,
+    elapsedTicks: 0,
+    receiver: null,
+    lob: false,
+    team: player.team,
+  };
   ball.lastShot = {
     shooter: player.id,
     team: player.team,
