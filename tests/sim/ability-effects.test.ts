@@ -119,8 +119,9 @@ describe('Rocket Dunk (Brick)', () => {
       abilityId: 'rocketDunk',
     });
     expect(player(end.state, 'a').ability).toBeNull();
-    // Stats are rebuilt at the start of the next tick, so the last ability tick still counts.
-    expect(player(run(end.state, 1).state, 'a').stats.dunkFromArc).toBe(false);
+    // Stats are rebuilt on the end tick itself, so nothing stale shows between ticks.
+    expect(player(end.state, 'a').stats.dunkFromArc).toBe(false);
+    expect(player(end.state, 'a').stats).toEqual(player(end.state, 'a').baseStats);
   });
 
   it('makes any shot press inside the arc a dunk, even standing still', () => {
