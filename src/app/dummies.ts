@@ -1,3 +1,4 @@
+import type { Controller } from './controller';
 import { hoopGeometry, nearestHoopIndex } from '../sim/hoop';
 import { findPlayer } from '../sim/match';
 import { ALLEY_OOP_RANGE } from '../sim/passing';
@@ -5,14 +6,10 @@ import { v3DistanceXZ, type Vec3 } from '../sim/math';
 import {
   NO_INTENT,
   type CourtDef,
-  type MatchState,
   type PlayerId,
   type PlayerIntent,
   type PlayerState,
 } from '../sim/types';
-
-/** One intent per tick from the match state. Humans wrap InputManager; AI arrives in phase 4. */
-export type Controller = (state: MatchState) => PlayerIntent;
 
 const ARRIVE_RADIUS = 0.5;
 const WING_BACK = 5;

@@ -13,6 +13,7 @@ export interface DebugData {
   shotClockMs: number;
   character: string;
   action: string;
+  ai: string[];
 }
 
 /** `?debug` overlay (spec §10.3). Updates its text at most 4× per second. */
@@ -44,6 +45,7 @@ export class DebugOverlay {
       `shot   ${(data.shotClockMs / 1000).toFixed(1)} s`,
       `char   ${data.character}`,
       `action ${data.action}`,
+      `ai     ${data.ai.join(' | ') || '-'}`,
     ].join('\n');
   }
 

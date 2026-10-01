@@ -28,19 +28,26 @@ Touch (tablets and phones): a floating joystick where your left thumb lands, and
 
 URL options:
 
-- `?character=brick|ace|dash|rook` picks your player (default `rook`).
-- `?debug` shows the debug overlay.
+- The page starts a **2v2 match** (3 minutes, 14 s shot clock, sudden-death overtime): you and an
+  AI teammate against two AI opponents. After the final, press ACTION/PASS/SPECIAL (or tap a
+  button) to play again.
+- `?mode=shootaround` — the practice build with the training dummies instead of the AI.
+- `?character=brick|ace|dash|rook` picks your player (default `rook`);
+  `?teammate=<id>` (default `ace`) and `?opponents=<id>,<id>` (default `brick,dash`) pick the rest.
+- `?ai=easy|fair|hard` — the AI profile for all three AI players (default `fair`).
+- `?seed=<n>` — reproduce a match (the default seed is the clock, so every game differs).
+- `?debug` shows the debug overlay (now with each AI's current goal).
 
-Both can be combined, e.g. `?character=dash&debug`.
+Parameters combine, e.g. `?character=dash&teammate=brick&ai=hard&debug`.
 
-Right now the game is a **shootaround** on the gym court: you, a teammate dummy
-and a defender dummy. Both hoops score; you attack whichever hoop is nearer. The
-teammate waits on the wing, passes back a second after catching (at once if you
-call for the ball) and lobs an alley-oop when you jump near the rim. The defender
-stands in the key, jumps to block when you come close or shoot near it, picks up
-rebounds and walks them back to its spot, where you can steal the ball or shove it
-off. After a shot-clock violation or a loose-ball timeout the ball comes back to
-your team.
+The match is the full game on the gym court; both hoops are live and you attack the one
+your team is aimed at. The practice build (`?mode=shootaround`) is a **shootaround** instead:
+you, a teammate dummy and a defender dummy. Both hoops score; you attack whichever hoop is
+nearer. The teammate waits on the wing, passes back a second after catching (at once if you
+call for the ball) and lobs an alley-oop when you jump near the rim. The defender stands in
+the key, jumps to block when you come close or shoot near it, picks up rebounds and walks
+them back to its spot, where you can steal the ball or shove it off. After a shot-clock
+violation or a loose-ball timeout the ball comes back to your team.
 
 ## Docs
 

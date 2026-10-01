@@ -21,7 +21,9 @@ const settings: MatchSettings = {
 };
 
 function fresh(): MatchState {
-  return createMatch(settings, court, [{ id: 'p', team: 0, characterId: 'placeholder' }]);
+  const state = createMatch(settings, court, [{ id: 'p', team: 0, characterId: 'placeholder' }]);
+  state.phase = 'live'; // skip the tip-off, whose formation would move the player (spec C.6)
+  return state;
 }
 
 const moveRight: PlayerIntent = { ...NO_INTENT, move: { x: 1, y: 0 } };
@@ -50,6 +52,7 @@ describe('tick', () => {
 
   it('finishes when the clock runs out and emits a phaseChange event once', () => {
     let state = fresh();
+    state.phase = 'tipoff';
     state.score = [2, 0];
     const seen: string[] = [];
     for (let i = 0; i < 70; i++) {

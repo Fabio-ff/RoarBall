@@ -31,6 +31,8 @@ export interface AiMemory {
   /** Defence: the opponent I am marking, and the possession the marks were assigned for. */
   markId: PlayerId | null;
   marksForPossession: TeamIndex | null;
+  /** The possession at the last plan: a change forces a re-plan so teammates assign marks together. */
+  lastPlannedPossession: TeamIndex | null;
   /** Offense: consecutive decisions with the driving lane closed (C.5 step 7). */
   laneClosedCount: number;
   /** Off ball: tick of the last alley-oop invite jump. */
@@ -68,6 +70,7 @@ export function createAiMemory(
     goal: { kind: 'idle' },
     markId: null,
     marksForPossession: null,
+    lastPlannedPossession: null,
     laneClosedCount: 0,
     lastInviteTick: NEVER_TICK,
     pressedLastTick: false,
@@ -83,6 +86,7 @@ export function resetAiMemory(memory: AiMemory, tick: number): void {
   memory.goal = { kind: 'idle' };
   memory.markId = null;
   memory.marksForPossession = null;
+  memory.lastPlannedPossession = null;
   memory.laneClosedCount = 0;
   memory.lastInviteTick = NEVER_TICK;
   memory.pressedLastTick = false;

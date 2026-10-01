@@ -1,7 +1,8 @@
-import { defenderDummy, teammateDummy, type Controller } from './app/dummies';
+import type { Controller } from './app/controller';
 import { GameLoop } from './app/game-loop';
-import { MatchRunner } from './app/match-runner';
-import { characters, DEFAULT_CHARACTER_ID, getCharacter } from './content/characters';
+import { buildSession, HUMAN_ID } from './app/session';
+import type { GameOptions } from './app/url-options';
+import { getCharacter } from './content/characters';
 import { getCourt } from './content/courts';
 import { InputManager } from './input/input-manager';
 import { KeyboardBackend } from './input/keyboard';
@@ -13,56 +14,50 @@ import { EffectsView } from './render/effects-view';
 import { lerpVec3 } from './render/interpolate';
 import { PlayerView } from './render/player-view';
 import { GameScene } from './render/scene';
-import { createMatch, findPlayer } from './sim/match';
-import type { PlayerId, PlayerIntent } from './sim/types';
+import { buttonsOf, justPressed } from './sim/buttons';
+import { findPlayer } from './sim/match';
+import {
+  NO_BUTTONS,
+  type Buttons,
+  type PlayerId,
+  type PlayerIntent,
+  type TeamIndex,
+} from './sim/types';
 import { DebugOverlay } from './ui/debug-overlay';
 import { Hud } from './ui/hud';
 
-export interface GameOptions {
-  debug: boolean;
-}
+export type { GameOptions } from './app/url-options';
+export { buildRoster, buildSession, buildSettings, type Session } from './app/session';
 
-const HUMAN_ID: PlayerId = 'home1';
+const HUMAN_TEAM: TeamIndex = 0;
 const TEAM_COLORS = [0x2f80ed, 0xeb5757] as const;
+const RESTART_BUTTONS = ['action', 'pass', 'special'] as const;
 
-/** Phase 2 entry point: shootaround with one human on the gym court (spec A.1). */
+/** Entry point: a 2v2 match by default, the Phase 3 shootaround with `?mode=shootaround` (spec C.1). */
 export function startGame(root: HTMLElement, options: GameOptions): { stop(): void } {
   const canvas = document.createElement('canvas');
   root.appendChild(canvas);
-
-  const requestedCharacter =
-    new URLSearchParams(window.location.search).get('character') ?? DEFAULT_CHARACTER_ID;
-  const character = characters.some((c) => c.id === requestedCharacter)
-    ? getCharacter(requestedCharacter)
-    : getCharacter(DEFAULT_CHARACTER_ID);
 
   const court = getCourt('gym');
   const scene = new GameScene(canvas);
   scene.setBackground(court.lighting.skyColor);
   scene.scene.add(buildCourtView(court));
 
-  const runner = new MatchRunner(
-    court,
-    createMatch(
-      {
-        durationMs: 180_000,
-        shotClockMs: 14_000,
-        seed: 1,
-        ruleIds: ['shotClock'],
-        courtId: court.id,
-        mode: 'shootaround',
-      },
-      court,
-      [
-        { id: HUMAN_ID, team: 0, characterId: character.id, character },
-        { id: 'home2', team: 0, characterId: 'rook', character: getCharacter('rook') },
-        { id: 'away1', team: 1, characterId: 'brick', character: getCharacter('brick') },
-      ],
-    ),
-  );
+  const touch = new TouchBackend(root);
+  const input = new InputManager([new KeyboardBackend(window), touch]);
+  input.onActiveKindChange = (kind) => (kind === 'touch' ? touch.show() : touch.hide());
+  const onFirstTouch = (e: PointerEvent): void => {
+    if (e.pointerType === 'touch') touch.show();
+  };
+  root.addEventListener('pointerdown', onFirstTouch);
 
+  const human: Controller = () => input.sample();
+  let seed = options.seed;
+  let session = buildSession(options, court, seed, human);
+
+  // Views are keyed by player id; the roster is the same on every restart, so they are built once.
   const playerViews = new Map<PlayerId, PlayerView>();
-  for (const team of runner.current.teams) {
+  for (const team of session.runner.current.teams) {
     for (const player of team.players) {
       const view = new PlayerView(TEAM_COLORS[player.team]);
       scene.scene.add(view.group);
@@ -74,18 +69,10 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   const effects = new EffectsView();
   scene.scene.add(effects.group);
 
-  const touch = new TouchBackend(root);
-  const input = new InputManager([new KeyboardBackend(window), touch]);
-  input.onActiveKindChange = (kind) => (kind === 'touch' ? touch.show() : touch.hide());
-  const onFirstTouch = (e: PointerEvent): void => {
-    if (e.pointerType === 'touch') touch.show();
-  };
-  root.addEventListener('pointerdown', onFirstTouch);
-
   const broadcastCamera = new BroadcastCamera(scene.camera);
   input.cameraYaw = broadcastCamera.yaw;
 
-  const hud = new Hud(root);
+  const hud = new Hud(root, HUMAN_TEAM);
 
   const resize = (): void => {
     scene.resize(root.clientWidth, root.clientHeight, window.devicePixelRatio);
@@ -95,23 +82,38 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   observer.observe(root);
 
   const overlay = options.debug ? new DebugOverlay(root) : null;
-  let lastTickNumber = runner.current.tick;
+  const characterName = getCharacter(options.characterId).name;
+  let lastTickNumber = session.runner.current.tick;
   let frameCount = 0;
   let statsWindowStart = performance.now();
   let fps = 0;
   let ticksPerSecond = 0;
 
-  // One controller per player; AI controllers replace the dummies in phase 4 (spec A.6).
-  const controllers = new Map<PlayerId, Controller>([
-    [HUMAN_ID, () => input.sample()],
-    ['home2', teammateDummy('home2', HUMAN_ID, court)],
-    ['away1', defenderDummy('away1', HUMAN_ID, court)],
-  ]);
   const intents = new Map<PlayerId, PlayerIntent>();
+  let prevHumanButtons: Buttons = { ...NO_BUTTONS };
+
+  const restart = (): void => {
+    seed += 1;
+    session = buildSession(options, court, seed, human);
+    lastTickNumber = session.runner.current.tick;
+  };
 
   const loop = new GameLoop(
     () => {
+      const { runner, controllers } = session;
       for (const [id, controller] of controllers) intents.set(id, controller(runner.current));
+      const humanIntent = intents.get(HUMAN_ID);
+      if (humanIntent) {
+        // Spec C.6: after the final, any ACTION/PASS/SPECIAL press starts the next match.
+        const pressed = RESTART_BUTTONS.some((b) => justPressed(prevHumanButtons, humanIntent, b));
+        prevHumanButtons = buttonsOf(humanIntent);
+        if (runner.current.phase === 'finished' && pressed) {
+          restart();
+          return;
+        }
+      }
+      // Always step: when finished the sim returns the same state, so previous catches up with
+      // current and the render stops blending (no jitter on the final screen).
       const events = runner.step(intents);
       hud.handleEvents(events);
       for (const event of events) {
@@ -120,8 +122,8 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
     },
     (alpha, frameMs) => {
       const dt = frameMs / 1000;
-      const prev = runner.previous;
-      const next = runner.current;
+      const prev = session.runner.previous;
+      const next = session.runner.current;
       for (const [id, view] of playerViews) {
         const a = findPlayer(prev, id);
         const b = findPlayer(next, id);
@@ -144,21 +146,22 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
         frameCount = 0;
         statsWindowStart = now;
       }
-      const human = findPlayer(next, HUMAN_ID);
-      if (overlay && human) {
+      const humanState = findPlayer(next, HUMAN_ID);
+      if (overlay && humanState) {
         overlay.update({
           fps,
           ticksPerSecond,
           tick: next.tick,
-          pos: human.pos,
-          speed: Math.hypot(human.vel.x, human.vel.z),
-          turbo: human.turbo,
+          pos: humanState.pos,
+          speed: Math.hypot(humanState.vel.x, humanState.vel.z),
+          turbo: humanState.turbo,
           inputKind: input.activeKind ?? '-',
           phase: next.phase,
           ballMode: next.ball.mode,
           shotClockMs: next.shotClockMs,
-          character: character.name,
-          action: human.action,
+          character: characterName,
+          action: humanState.action,
+          ai: session.ais.map((ai) => `${ai.id} ${ai.memory.goal.kind}`),
         });
       }
     },

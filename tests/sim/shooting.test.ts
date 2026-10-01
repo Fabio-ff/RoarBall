@@ -50,6 +50,7 @@ function ready(distance: number, seed = 1): MatchState {
   p.pos = { x: hoop.rimCenter.x - distance, y: 0, z: 0 };
   p.facing = Math.PI / 2;
   giveBall(state, p, []);
+  state.phase = 'live'; // skip the tip-off, whose formation would move the player (spec C.6)
   return tick(state, new Map(), court).state;
 }
 

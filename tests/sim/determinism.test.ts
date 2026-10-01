@@ -174,8 +174,8 @@ function teamIntents(state: MatchState, i: number): Map<string, PlayerIntent> {
         turbo: true,
       },
     ],
-    // Shadows home2 a metre towards the ball (denying the pass), pressing action every second.
-    ['away2', { ...NO_INTENT, move: towards(away2.pos, denySpot), action: i % 60 === 40 }],
+    // Shadows home2 a metre towards the ball (denying the pass), pressing action every 0.75 s.
+    ['away2', { ...NO_INTENT, move: towards(away2.pos, denySpot), action: i % 45 === 30 }],
   ]);
 }
 
@@ -199,7 +199,7 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(play()))).toMatchInlineSnapshot(`"89b659e3"`);
+    expect(fnv1a(JSON.stringify(play()))).toMatchInlineSnapshot(`"3cbe5a85"`);
   });
 
   it('the short-clock run reaches violations and the end of the match, deterministically', () => {
@@ -212,7 +212,7 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned short-clock hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(playShort().state))).toMatchInlineSnapshot(`"594f7f43"`);
+    expect(fnv1a(JSON.stringify(playShort().state))).toMatchInlineSnapshot(`"c2687487"`);
   });
 
   it('the 2v2 run passes and defends, deterministically', () => {
@@ -229,6 +229,6 @@ describe('determinism (golden)', () => {
   });
 
   it('matches the pinned 2v2 hash — update it only for an intentional simulation change', () => {
-    expect(fnv1a(JSON.stringify(playTeams().state))).toMatchInlineSnapshot(`"d0c8eeb8"`);
+    expect(fnv1a(JSON.stringify(playTeams().state))).toMatchInlineSnapshot(`"3d776fad"`);
   });
 });

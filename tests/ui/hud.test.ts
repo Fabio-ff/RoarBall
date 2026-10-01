@@ -37,7 +37,7 @@ describe('bannerFor', () => {
       bannerFor({ type: 'basket', playerId: 'p', team: 0, points: 2, shotType: 'layup' }),
     ).toBe('2 POINTS!');
     expect(bannerFor({ type: 'shotClockViolation', team: 1 })).toBe('SHOT CLOCK!');
-    expect(bannerFor({ type: 'phaseChange', from: 'live', to: 'finished' })).toBe('FINAL');
+    expect(bannerFor({ type: 'phaseChange', from: 'live', to: 'finished' })).toBeNull();
     expect(bannerFor({ type: 'block', by: 'x', shooter: 'a' })).toBe('BLOCKED!');
     expect(bannerFor({ type: 'steal', by: 'x', from: 'a' })).toBe('STEAL!');
     expect(bannerFor({ type: 'intercept', playerId: 'x' })).toBe('INTERCEPTED!');
@@ -89,5 +89,59 @@ describe('Hud', () => {
     expect(text('.hud-banner')).toBe('SHOT CLOCK!');
     hud.tick(1.3);
     expect(parent.querySelector<HTMLElement>('.hud-banner')?.hidden).toBe(true);
+  });
+
+  it('shows a sticky final banner with the result for the human team', () => {
+    const state = createMatch(settings, court, []);
+    state.score = [21, 18];
+    state.phase = 'finished';
+    hud.update(state);
+    hud.tick(5);
+    const banner = parent.querySelector<HTMLElement>('.hud-banner')!;
+    expect(banner.hidden).toBe(false);
+    expect(banner.textContent).toBe('FINAL 21–18 · YOU WIN!');
+    expect(banner.classList.contains('is-final')).toBe(true);
+    state.score = [18, 21];
+    hud.update(state);
+    expect(banner.textContent).toBe('FINAL 18–21 · YOU LOSE');
+    // A restart (new match in tipoff) clears it.
+    hud.update(createMatch(settings, court, []));
+    expect(banner.hidden).toBe(true);
+    expect(banner.classList.contains('is-final')).toBe(false);
+  });
+
+  it('announces overtime once when sudden death starts', () => {
+    const state = createMatch(settings, court, []);
+    state.overtime = true;
+    hud.update(state);
+    hud.update(state);
+    hud.tick(0);
+    expect(text('.hud-banner')).toBe('OVERTIME!');
+    hud.tick(1.3);
+    expect(parent.querySelector<HTMLElement>('.hud-banner')?.hidden).toBe(true);
+  });
+
+  it('writes the DOM only when a value changes', () => {
+    const state = createMatch(settings, court, []);
+    hud.update(state);
+    const home = parent.querySelector<HTMLElement>('.hud-home')!;
+    let writes = 0;
+    const original = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent')!;
+    Object.defineProperty(home, 'textContent', {
+      set(v: string) {
+        writes++;
+        original.set!.call(this, v);
+      },
+      get() {
+        return original.get!.call(this) as string;
+      },
+      configurable: true,
+    });
+    hud.update(state);
+    hud.update(state);
+    expect(writes).toBe(0);
+    state.score = [1, 0];
+    hud.update(state);
+    expect(writes).toBe(1);
   });
 });
