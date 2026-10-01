@@ -42,10 +42,10 @@ export function buildRoster(options: GameOptions): RosterEntry[] {
   ];
 }
 
-/** Spec A.5 defaults; only the seed and the mode vary. */
+/** Spec A.5 defaults; the seed, mode and duration vary. */
 export function buildSettings(options: GameOptions, court: CourtDef, seed: number): MatchSettings {
   return {
-    durationMs: 180_000,
+    durationMs: options.durationMs,
     shotClockMs: 14_000,
     seed,
     ruleIds: ['shotClock'],

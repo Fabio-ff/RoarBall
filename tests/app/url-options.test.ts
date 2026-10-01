@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readGameOptions } from '../../src/app/url-options';
+import { DEFAULT_DURATION_MS, hasMatchParams, readGameOptions } from '../../src/app/url-options';
 
 describe('readGameOptions (spec C.1)', () => {
   it('defaults to a fair 2v2 match seeded from the clock', () => {
@@ -13,6 +13,7 @@ describe('readGameOptions (spec C.1)', () => {
       seed: 123_456,
       debug: false,
       courtId: 'gym',
+      durationMs: 180_000,
     });
   });
 
@@ -51,5 +52,36 @@ describe('readGameOptions (spec C.1)', () => {
     expect(readGameOptions('?court=frozen&seed=3', 0).courtId).toBe('frozen');
     expect(readGameOptions('?court=moon', 0).courtId).toBe('gym');
     expect(readGameOptions('', 0).courtId).toBe('gym');
+  });
+});
+
+describe('hasMatchParams (spec E.1 URL shortcuts)', () => {
+  it('is false for a bare URL or debug alone', () => {
+    expect(hasMatchParams('')).toBe(false);
+    expect(hasMatchParams('?debug')).toBe(false);
+  });
+  it.each([
+    'mode=shootaround',
+    'character=ace',
+    'teammate=dash',
+    'opponents=a,b',
+    'court=volcano',
+    'ai=hard',
+    'seed=3',
+    'duration=20',
+  ])('is true with %s', (param) => {
+    expect(hasMatchParams(`?${param}`)).toBe(true);
+    expect(hasMatchParams(`?debug&${param}`)).toBe(true);
+  });
+});
+
+describe('duration', () => {
+  it('defaults to 180 s and reads ?duration= seconds within 5..600', () => {
+    expect(readGameOptions('', 0).durationMs).toBe(DEFAULT_DURATION_MS);
+    expect(DEFAULT_DURATION_MS).toBe(180_000);
+    expect(readGameOptions('?duration=20', 0).durationMs).toBe(20_000);
+    expect(readGameOptions('?duration=2', 0).durationMs).toBe(DEFAULT_DURATION_MS);
+    expect(readGameOptions('?duration=601', 0).durationMs).toBe(DEFAULT_DURATION_MS);
+    expect(readGameOptions('?duration=abc', 0).durationMs).toBe(DEFAULT_DURATION_MS);
   });
 });

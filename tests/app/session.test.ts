@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ABILITIES } from '../../src/content/abilities';
 import { getCourt } from '../../src/content/courts';
 import { buildRoster, buildSession, buildSettings } from '../../src/app/session';
-import type { GameOptions } from '../../src/app/url-options';
+import { readGameOptions, type GameOptions } from '../../src/app/url-options';
 import { findPlayer } from '../../src/sim/match';
 import { NO_INTENT } from '../../src/sim/types';
 
@@ -18,6 +18,7 @@ describe('buildSession (spec C.1)', () => {
     seed: 9,
     debug: false,
     courtId: 'gym',
+    durationMs: 180_000,
   };
 
   it('seeds every prevButtons with the buttons held at the restart (spec D.6)', () => {
@@ -62,5 +63,10 @@ describe('buildSession (spec C.1)', () => {
     session.runner.current.phase = 'finished';
     session.runner.step(new Map());
     expect(session.runner.previous).toBe(session.runner.current);
+  });
+
+  it('buildSettings takes the duration from the options (spec E.1 ?duration)', () => {
+    const options = { ...readGameOptions('?duration=30', 0) };
+    expect(buildSettings(options, getCourt('gym'), 1).durationMs).toBe(30_000);
   });
 });
