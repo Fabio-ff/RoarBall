@@ -134,7 +134,8 @@ function resolveAction(
     if (live) startShot(state, player, court);
     return;
   }
-  switch (chooseDefensiveAction(state, player, court)) {
+  // Defensive moves only during play; a jump is always allowed.
+  switch (live ? chooseDefensiveAction(state, player, court) : 'jump') {
     case 'block':
       if (player.cooldowns.block === 0) startBlock(player);
       else startJump(player, player.stats.jumpSpeed);
