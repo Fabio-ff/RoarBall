@@ -91,3 +91,19 @@ describe('WeatherView (spec D.6)', () => {
     expect(view.tilt).toBe(0);
   });
 });
+
+describe('WeatherView per-frame work', () => {
+  it('reuses the instance matrix buffer and keeps the particles in place across 100 updates', () => {
+    for (const id of ['rooftop', 'volcano'] as const) {
+      const view = new WeatherView(getCourt(id), half);
+      const mesh = view.instances;
+      if (!mesh) throw new Error('no instances');
+      const buffer = mesh.instanceMatrix.array;
+      const attribute = mesh.instanceMatrix;
+      for (let i = 0; i < 100; i++) view.update(0.016);
+      expect(mesh.instanceMatrix).toBe(attribute);
+      expect(mesh.instanceMatrix.array).toBe(buffer);
+      expect(view.instances).toBe(mesh);
+    }
+  });
+});

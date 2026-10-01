@@ -68,7 +68,7 @@ export class GameLoop {
     const { steps, alpha } = advanceClock(this.clock, frameMs);
     for (let i = 0; i < steps; i++) this.onTick();
     this.onRender(alpha, frameMs);
-    this.rafId = requestAnimationFrame(this.frame);
+    if (this.isRunning) this.rafId = requestAnimationFrame(this.frame);
   };
 
   private readonly onVisibilityChange = (): void => {

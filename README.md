@@ -8,9 +8,20 @@ tablets and phones.
     npm install
     npm run dev        # http://localhost:5173  (add ?debug for the overlay)
     npm run check      # lint + format + typecheck + build + tests
+    npm run build && npm run smoke   # headless-Chromium smoke test of the built app (menus → match → results)
     npm run balance    # AI-vs-AI balance report → docs/balance/<date>.md (minutes)
 
 Live build (main): https://fabio-ff.github.io/RoarBall/
+
+## How to play
+
+The bare URL opens the **title screen**: **PLAY** goes to the setup screen (pick your character,
+teammate, two opponents, court and difficulty, or leave the opponents on RANDOM), **START** begins
+the match, **HOW TO PLAY** shows the controls and **SOUND** and **MUSIC** switch the effects and the music on or off. Move through
+the menus with the arrow keys / WASD, a gamepad D-pad or stick, or by tapping; Enter / Space /
+A confirms and Escape / Backspace / B goes back. Pause a match with Escape, P, the on-screen ⏸
+button or the gamepad Start button; RESUME is focused. When the match ends the results screen
+offers **REMATCH**, **CHANGE SETUP** and **TITLE**. Your choices are remembered between visits.
 
 ## Controls
 
@@ -25,6 +36,11 @@ Keyboard:
 | Q                 | special ability (full bar)       | special ability (full bar)              |
 
 Your player has a pulsing ring under its feet in your team colour.
+
+Gamepad (standard mapping; plug in and press any button): left stick or D-pad moves,
+**A** shoots, **X** passes, **Y** uses the special ability, **RT** or **B** is turbo and
+**Start** pauses. A pad that supports it rumbles when your team dunks, your shot is blocked, you are knocked down
+or you use Earthquake.
 
 Touch (tablets and phones): a floating joystick where your left thumb lands, and **GO** (Space),
 **PASS** (E), **TURBO** (Shift) and **SP** (Q) buttons on the right.
@@ -45,9 +61,11 @@ abilities too.
 
 URL options:
 
-- The page starts a **2v2 match** (3 minutes, 14 s shot clock, sudden-death overtime): you and an
-  AI teammate against two AI opponents. After the final, press ACTION/PASS/SPECIAL (or tap a
-  button) to play again.
+- The bare URL opens the menus (see How to play). Any match parameter below (`mode`, `character`,
+  `teammate`, `opponents`, `court`, `ai`, `seed`, `duration`) skips them and starts the match
+  straight away: a **2v2 match** (3 minutes, 14 s shot clock, sudden-death overtime), you and an
+  AI teammate against two AI opponents. After the final, the results screen offers a rematch.
+  `?debug` on its own does not skip the menus.
 - `?mode=shootaround` — the practice build with the training dummies instead of the AI.
 - `?character=brick|ace|dash|rook` picks your player (default `rook`);
   `?teammate=<id>` (default `ace`) and `?opponents=<id>,<id>` (default `brick,dash`) pick the rest.
@@ -56,6 +74,7 @@ URL options:
   15–25 s a gust (GUST chip, slanting rain) bends shots and passes and pushes loose balls.
   **Volcano Rim**: turbo drains faster, shoves hit harder, knock-downs last longer.
   **Frozen Lake**: slow to start and slower to stop; loose balls roll further.
+- `?duration=<seconds>` — match length, 5 to 600 (default 180).
 - `?seed=<n>` — reproduce a match (the default seed is the clock, so every game differs).
 - `?debug` shows the debug overlay (now with each AI's current goal).
 
@@ -78,7 +97,8 @@ violation or a loose-ball timeout the ball comes back to your team.
 ## Layout
 
 - `src/sim/` — deterministic simulation (no DOM, no Three.js)
-- `src/input/` — keyboard / touch (gamepad later) → `PlayerIntent`
+- `src/input/` — keyboard / gamepad / touch → `PlayerIntent`, plus menu navigation
+- `src/audio/` — synthesized sound effects and music (Web Audio, no asset files)
 - `src/render/` — Three.js presentation
 - `src/ui/` — DOM screens and HUD
 - `src/content/` — characters, courts, abilities (data)

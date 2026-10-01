@@ -17,6 +17,9 @@ describe('HowToPlayScreen', () => {
       expect.arrayContaining(['KEYBOARD', 'GAMEPAD', 'TOUCH']),
     );
     const text = root.textContent ?? '';
+    expect(text).toContain(
+      'Shove — an opponent close in front of you: knocks them down; otherwise you jump',
+    );
     for (const label of [
       'HOW TO PLAY',
       'Move',

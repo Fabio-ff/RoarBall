@@ -20,7 +20,7 @@ const DEFENCE = [
   'Without the ball, Shoot is your defence button:',
   '• Block — when your opponent is shooting or near the hoop (you jump)',
   '• Steal — when the ball handler is within reach and you face them',
-  '• Shove — otherwise: knocks the nearest opponent down and loose',
+  '• Shove — an opponent close in front of you: knocks them down; otherwise you jump',
 ];
 
 /** The controls and defence cheat sheet, reachable from the Title and the Pause menu. */

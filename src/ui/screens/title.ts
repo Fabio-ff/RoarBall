@@ -4,20 +4,24 @@ import './screens.css';
 
 export interface TitleOptions {
   sound: boolean;
+  music: boolean;
   onPlay(): void;
   onHowToPlay(): void;
   onSoundChange(sound: boolean): void;
+  onMusicChange(music: boolean): void;
 }
 
 const soundLabel = (on: boolean): string => `SOUND: ${on ? 'ON' : 'OFF'}`;
+const musicLabel = (on: boolean): string => `MUSIC: ${on ? 'ON' : 'OFF'}`;
 
-/** Spec E.1 Title: logo, PLAY, sound on/off. */
+/** Spec E.1 Title: logo, PLAY, HOW TO PLAY, sound and music on/off. */
 export class TitleScreen {
   private readonly el: HTMLDivElement;
   private readonly nav: MenuNav;
 
   constructor(parent: HTMLElement, options: TitleOptions) {
     let sound = options.sound;
+    let music = options.music;
     this.el = document.createElement('div');
     this.el.className = 'screen screen-title-page';
     this.el.innerHTML =
@@ -26,6 +30,7 @@ export class TitleScreen {
       '<button class="menu-button is-primary" data-action="play" data-nav-row="0">PLAY</button>' +
       '<button class="menu-button is-secondary" data-action="howToPlay" data-nav-row="1">HOW TO PLAY</button>' +
       `<button class="menu-button is-secondary" data-action="sound" data-nav-row="2">${soundLabel(sound)}</button>` +
+      `<button class="menu-button is-secondary" data-action="music" data-nav-row="3">${musicLabel(music)}</button>` +
       '</div><p class="rotate-hint">Turn your device sideways to play</p>';
     parent.appendChild(this.el);
     const play = this.el.querySelector<HTMLButtonElement>('[data-action="play"]');
@@ -38,6 +43,12 @@ export class TitleScreen {
       sound = !sound;
       toggle.textContent = soundLabel(sound);
       options.onSoundChange(sound);
+    });
+    const musicToggle = this.el.querySelector<HTMLButtonElement>('[data-action="music"]');
+    musicToggle?.addEventListener('click', () => {
+      music = !music;
+      musicToggle.textContent = musicLabel(music);
+      options.onMusicChange(music);
     });
     this.nav = new MenuNav(this.el);
     this.nav.focusFirst();

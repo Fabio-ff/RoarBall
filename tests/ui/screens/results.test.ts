@@ -1,8 +1,12 @@
 // @vitest-environment jsdom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { MatchResult } from '../../../src/app/box-score';
 import { readGameOptions } from '../../../src/app/url-options';
-import { ResultsScreen, resultHeadline } from '../../../src/ui/screens/results';
+import {
+  RESULTS_INPUT_GUARD_MS,
+  ResultsScreen,
+  resultHeadline,
+} from '../../../src/ui/screens/results';
 
 const line = (id: string, team: 0 | 1, name: string, points: number) => ({
   id,
@@ -39,6 +43,8 @@ describe('resultHeadline', () => {
 });
 
 describe('ResultsScreen (spec E.1)', () => {
+  afterEach(() => vi.useRealTimers());
+
   it('shows score, headline and a box score row per player with the human marked', () => {
     const root = document.createElement('div');
     document.body.appendChild(root);
@@ -77,13 +83,39 @@ describe('ResultsScreen (spec E.1)', () => {
       onChangeSetup: vi.fn(),
       onTitle: vi.fn(),
     };
+    vi.useFakeTimers();
     const screen = new ResultsScreen(root, opts);
+    vi.advanceTimersByTime(RESULTS_INPUT_GUARD_MS);
     screen.handleCommand('confirm');
     expect(opts.onRematch).toHaveBeenCalledOnce();
     root.querySelector<HTMLButtonElement>('[data-action="setup"]')?.click();
     expect(opts.onChangeSetup).toHaveBeenCalledOnce();
     screen.handleCommand('back');
     expect(opts.onTitle).toHaveBeenCalledOnce();
+    screen.dispose();
+  });
+
+  it('ignores confirm, back and clicks for 600 ms so a mashed button cannot skip the box score', () => {
+    vi.useFakeTimers();
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const opts = {
+      result: result([21, 18]),
+      humanId: 'home1',
+      onRematch: vi.fn(),
+      onChangeSetup: vi.fn(),
+      onTitle: vi.fn(),
+    };
+    const screen = new ResultsScreen(root, opts);
+    vi.advanceTimersByTime(RESULTS_INPUT_GUARD_MS - 1);
+    screen.handleCommand('confirm');
+    screen.handleCommand('back');
+    root.querySelector<HTMLButtonElement>('[data-action="rematch"]')?.click();
+    expect(opts.onRematch).not.toHaveBeenCalled();
+    expect(opts.onTitle).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    screen.handleCommand('confirm');
+    expect(opts.onRematch).toHaveBeenCalledOnce();
     screen.dispose();
   });
 });

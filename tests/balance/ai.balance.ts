@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { ABILITIES } from '../../src/content/abilities';
 import { characters, getCharacter } from '../../src/content/characters';
@@ -245,7 +245,9 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
       '',
     ].join('\n');
     mkdirSync('docs/balance', { recursive: true });
-    writeFileSync(`docs/balance/${date}-phase-5.md`, report);
+    let file = `docs/balance/${date}.md`;
+    for (let n = 2; existsSync(file); n++) file = `docs/balance/${date}-${n}.md`;
+    writeFileSync(file, report);
     process.stdout.write(`\n${report}\n`);
 
     // Spec C.7 on the gym; spec D.7's 45–55 % on the aggregate (per court the samples are small).
