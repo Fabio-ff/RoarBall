@@ -8,7 +8,9 @@ import {
   RIM_TUBE,
   type HoopGeometry,
 } from './hoop';
+import { holdPosition } from './ball';
 import { clamp, lerp, v3DistanceXZ, type Vec3 } from './math';
+import { allPlayers } from './match';
 import { startJump } from './player-movement';
 import { nextFloat, type RngState } from './rng';
 import { ACTION_FOR_SHOT } from './types';
@@ -50,6 +52,9 @@ export const SHOOTER_PICKUP_COOLDOWN_TICKS = 30;
 /** Release point relative to the shooter's feet: arms raised. */
 const RELEASE_HEIGHT = 2.1;
 const RELEASE_FORWARD = 0.3;
+/** Spec B.4: a blocker's hand reaches this far above their feet; a swatted ball is knocked away at this speed. */
+const BLOCK_HAND_HEIGHT = 2.3;
+const BLOCK_SWAT_SPEED = 3;
 /**
  * A made shot targets a point just below the rim plane so the crossing happens inside the
  * collision-free flight, whatever the horizontal speed (long heaves included).
@@ -118,18 +123,28 @@ export function distanceFactor(distance: number): number {
 }
 
 /**
- * Probability that a shot goes in (spec §4.4, A.4). Shared with the AI in phase 4. Defender
- * terms are added in phase 3.
+ * Probability that a shot goes in (spec §4.4, A.4). Shared with the AI in phase 4. Layups and
+ * jump shots are reduced by the defender term; dunks are not.
  */
-export function shotQuality(shooter: PlayerState, shotType: ShotType, hoop: HoopGeometry): number {
+export function shotQuality(
+  shooter: PlayerState,
+  shotType: ShotType,
+  hoop: HoopGeometry,
+  defenders: readonly PlayerState[] = [],
+): number {
   if (shotType === 'dunk') return 1;
   const { shooting } = shooter.stats;
-  if (shotType === 'layup') return clamp(0.7 + 0.25 * shooting, 0, 0.95);
+  if (shotType === 'layup') {
+    return clamp(0.7 + 0.25 * shooting, 0, 0.95) * defenderFactor(shooter, defenders);
+  }
   const distance = v3DistanceXZ(shooter.pos, hoop.rimCenter);
   // The run-up, not the damped wind-up: a locked shooter carries the speed at the press.
   const speed = shooter.shot?.approachSpeed ?? Math.hypot(shooter.vel.x, shooter.vel.z);
   const motion = 1 - 0.4 * Math.min(speed / 8, 1);
-  return clamp(shooting * distanceFactor(distance) * motion, 0.02, 0.97);
+  return (
+    clamp(shooting * distanceFactor(distance) * motion, 0.02, 0.97) *
+    defenderFactor(shooter, defenders)
+  );
 }
 
 export function pointsFor(distance: number): 2 | 3 {
@@ -320,7 +335,8 @@ export function resolveShotOutcome(
   const shot = player.shot;
   if (!shot) return { quality: 0, made: false, missType: 'frontRim', jitter: { ...NO_JITTER } };
   const hoop = hoopGeometry(court, shot.hoop);
-  const quality = shotQuality(player, shot.type, hoop);
+  const defenders = allPlayers(state).filter((p) => p.team !== player.team);
+  const quality = shotQuality(player, shot.type, hoop, defenders);
   const made = nextFloat(state.rng) < quality;
   if (made) return { quality, made, missType: null, jitter: null };
   const missType = pickMissType(state.rng);
@@ -419,7 +435,60 @@ export function releaseShot(
   court: CourtDef,
   events: SimEvent[],
 ): void {
+  if (tryBlockShot(state, player, court, events)) return;
   launchShot(state, player, court, events, resolveShotOutcome(state, player, court));
+}
+
+/**
+ * Spec B.4: a shot released within reach of a rising blocker whose hand is at or above the
+ * release height is swatted loose. Dunks are blocked only by a block that started first.
+ * Returns true when the shot was blocked (nothing is launched).
+ */
+export function tryBlockShot(
+  state: MatchState,
+  shooter: PlayerState,
+  court: CourtDef,
+  events: SimEvent[],
+): boolean {
+  void court;
+  const shot = shooter.shot;
+  if (!shot) return false;
+  const releaseHeight = shooter.pos.y + RELEASE_HEIGHT;
+  for (const blocker of allPlayers(state)) {
+    if (blocker.team === shooter.team || blocker.action !== 'block' || blocker.vel.y <= 0) continue;
+    if (v3DistanceXZ(blocker.pos, shooter.pos) > blocker.stats.blockReach) continue;
+    if (blocker.pos.y + BLOCK_HAND_HEIGHT < releaseHeight) continue;
+    if (shot.type === 'dunk' && blocker.actionTicks <= shooter.actionTicks) continue;
+    const { ball } = state;
+    const hand = holdPosition(shooter);
+    const dx = shooter.pos.x - blocker.pos.x;
+    const dz = shooter.pos.z - blocker.pos.z;
+    const len = Math.hypot(dx, dz) || 1;
+    ball.mode = 'free';
+    ball.holder = null;
+    ball.flight = null;
+    ball.lastShot = null;
+    ball.freeTicks = 0;
+    ball.pos = { x: hand.x, y: releaseHeight, z: hand.z };
+    ball.vel = { x: (dx / len) * BLOCK_SWAT_SPEED, y: -1.5, z: (dz / len) * BLOCK_SWAT_SPEED };
+    shooter.shotCooldownTicks = SHOOTER_PICKUP_COOLDOWN_TICKS;
+    events.push({ type: 'block', by: blocker.id, shooter: shooter.id });
+    return true;
+  }
+  return false;
+}
+
+/** Spec B.4 defender term of shotQuality: the nearest opponent's distance and whether they are up. */
+export function defenderFactor(shooter: PlayerState, defenders: readonly PlayerState[]): number {
+  let factor = 1;
+  for (const d of defenders) {
+    if (d.team === shooter.team) continue;
+    const distance = v3DistanceXZ(shooter.pos, d.pos);
+    let f = clamp(0.45 + 0.25 * distance, 0.45, 1);
+    if (!d.onGround && distance <= 1.5) f *= 0.6;
+    factor = Math.min(factor, f);
+  }
+  return factor;
 }
 
 /** Per-tick bookkeeping of a locked shot: release at the release tick, unlock after landing. */
