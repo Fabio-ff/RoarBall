@@ -1,203 +1,111 @@
-import type { Controller } from './app/controller';
-import { GameLoop } from './app/game-loop';
-import { buildSession, HUMAN_ID } from './app/session';
-import type { GameOptions } from './app/url-options';
-import { ABILITIES } from './content/abilities';
-import { getCharacter } from './content/characters';
-import { getCourt } from './content/courts';
-import { InputManager } from './input/input-manager';
-import { KeyboardBackend } from './input/keyboard';
-import { TouchBackend } from './input/touch';
-import { BallView } from './render/ball-view';
-import { BroadcastCamera } from './render/camera';
-import { buildCourtView } from './render/court-view';
-import { EffectsView } from './render/effects-view';
-import { lerpVec3 } from './render/interpolate';
-import { PlayerView } from './render/player-view';
-import { GameScene } from './render/scene';
-import { WeatherView } from './render/weather-view';
-import { CHARGE_MAX } from './sim/abilities';
-import { buttonsOf, justPressed } from './sim/buttons';
-import { findPlayer } from './sim/match';
+import { MatchScreen } from './app/match-screen';
+import { transition, type ScreenId, type ShellEvent } from './app/screens';
 import {
-  NO_BUTTONS,
-  type Buttons,
-  type PlayerId,
-  type PlayerIntent,
-  type TeamIndex,
-} from './sim/types';
-import { abilityLines, DebugOverlay } from './ui/debug-overlay';
-import { Hud } from './ui/hud';
+  browserStorage,
+  loadSettings,
+  saveSettings,
+  type Settings,
+  type StorageLike,
+} from './app/storage';
+import { readGameOptions, type GameOptions } from './app/url-options';
+import { MenuInput, type MenuCommand } from './input/menu-input';
+import { TitleScreen } from './ui/screens/title';
 
 export type { GameOptions } from './app/url-options';
 export { buildRoster, buildSession, buildSettings, type Session } from './app/session';
 
-const HUMAN_TEAM: TeamIndex = 0;
-const TEAM_COLORS = [0x2f80ed, 0xeb5757] as const;
-const RESTART_BUTTONS = ['action', 'pass', 'special'] as const;
+interface ScreenHandle {
+  handleCommand(command: MenuCommand): void;
+  dispose(): void;
+}
 
-/** Entry point: a 2v2 match by default, the Phase 3 shootaround with `?mode=shootaround` (spec C.1). */
-export function startGame(root: HTMLElement, options: GameOptions): { stop(): void } {
-  const canvas = document.createElement('canvas');
-  root.appendChild(canvas);
+/** Options for a menu-started match: `?debug` still reaches it, everything else is the default. */
+function defaultOptions(): GameOptions {
+  return readGameOptions(window.location.search, Date.now());
+}
 
-  const court = getCourt(options.courtId);
-  const scene = new GameScene(canvas);
-  scene.setBackground(court.lighting.skyColor);
-  scene.scene.add(buildCourtView(court));
+/** Spec E.1 / §9: the screen flow as a state machine over DOM screens. */
+export class AppShell {
+  private current: ScreenId = 'title';
+  private handle: ScreenHandle | null = null;
+  private settings: Settings;
+  private readonly menuInput: MenuInput;
+  private rafId = 0;
+  private options: GameOptions | null;
+  private readonly store: StorageLike | null;
 
-  const touch = new TouchBackend(root);
-  const input = new InputManager([new KeyboardBackend(window), touch]);
-  input.onActiveKindChange = (kind) => (kind === 'touch' ? touch.show() : touch.hide());
-  const onFirstTouch = (e: PointerEvent): void => {
-    if (e.pointerType === 'touch') touch.show();
-  };
-  root.addEventListener('pointerdown', onFirstTouch);
+  constructor(
+    private readonly root: HTMLElement,
+    opts: { initial: GameOptions | null; store?: StorageLike | null },
+  ) {
+    this.store = opts.store === undefined ? browserStorage() : opts.store;
+    this.settings = loadSettings(this.store);
+    this.options = opts.initial;
+    this.menuInput = new MenuInput(window);
+    this.menuInput.onCommand = (c) => this.handle?.handleCommand(c);
+    const poll = (): void => {
+      this.menuInput.poll();
+      this.rafId = requestAnimationFrame(poll);
+    };
+    this.rafId = requestAnimationFrame(poll);
+    this.show(opts.initial ? 'match' : 'title');
+  }
 
-  const human: Controller = () => input.sample();
-  let seed = options.seed;
-  let session = buildSession(options, court, seed, human);
+  get screen(): ScreenId {
+    return this.current;
+  }
 
-  // Views are keyed by player id; the roster is the same on every restart, so they are built once.
-  const playerViews = new Map<PlayerId, PlayerView>();
-  for (const team of session.runner.current.teams) {
-    for (const player of team.players) {
-      const view = new PlayerView(TEAM_COLORS[player.team], {
-        highlighted: player.id === HUMAN_ID,
-      });
-      scene.scene.add(view.group);
-      playerViews.set(player.id, view);
+  dispatch(event: ShellEvent): void {
+    this.show(transition(this.current, event));
+  }
+
+  show(screen: ScreenId): void {
+    this.handle?.dispose();
+    this.handle = null;
+    this.current = screen;
+    switch (screen) {
+      case 'title':
+        this.handle = new TitleScreen(this.root, {
+          sound: this.settings.sound,
+          onPlay: () => this.dispatch({ type: 'play' }),
+          onSoundChange: (sound) => this.updateSettings({ ...this.settings, sound }),
+        });
+        break;
+      case 'match':
+        if (!this.options) return this.show('title');
+        this.handle = new MatchScreen({
+          root: this.root,
+          options: this.options,
+          settings: this.settings,
+          onFinished: () => this.onFinished(),
+          onQuit: () => this.dispatch({ type: 'quit' }),
+          onSettingsChange: (s) => this.updateSettings(s),
+        });
+        break;
+      case 'setup':
+      case 'results':
+        // Task 2 adds Setup and Task 3 adds Results; until then go straight to a default match / back to the title.
+        if (screen === 'setup') {
+          this.options ??= defaultOptions();
+          return this.dispatch({ type: 'start' });
+        }
+        return this.show('title');
     }
   }
-  const ballView = new BallView();
-  scene.scene.add(ballView.group);
-  const effects = new EffectsView();
-  scene.scene.add(effects.group);
-  const weather = new WeatherView(court);
-  scene.scene.add(weather.group);
 
-  const broadcastCamera = new BroadcastCamera(scene.camera);
-  input.cameraYaw = broadcastCamera.yaw;
+  /** Task 3 receives the `MatchFinish` here and shows Results. */
+  private onFinished(): void {
+    this.dispatch({ type: 'finished' });
+  }
 
-  const hud = new Hud(root, HUMAN_TEAM, { humanId: HUMAN_ID, abilities: ABILITIES });
+  private updateSettings(settings: Settings): void {
+    this.settings = settings;
+    saveSettings(settings, this.store);
+  }
 
-  const resize = (): void => {
-    scene.resize(root.clientWidth, root.clientHeight, window.devicePixelRatio);
-  };
-  resize();
-  const observer = new ResizeObserver(resize);
-  observer.observe(root);
-
-  const overlay = options.debug ? new DebugOverlay(root) : null;
-  const characterName = getCharacter(options.characterId).name;
-  let lastTickNumber = session.runner.current.tick;
-  let frameCount = 0;
-  let statsWindowStart = performance.now();
-  let fps = 0;
-  let ticksPerSecond = 0;
-
-  const intents = new Map<PlayerId, PlayerIntent>();
-  let prevHumanButtons: Buttons = { ...NO_BUTTONS };
-
-  const restart = (): void => {
-    seed += 1;
-    // Spec D.6: the buttons held right now (the restarting press) are not presses in the new match.
-    session = buildSession(options, court, seed, human, intents);
-    weather.reset();
-    lastTickNumber = session.runner.current.tick;
-  };
-
-  const loop = new GameLoop(
-    () => {
-      const { runner, controllers } = session;
-      for (const [id, controller] of controllers) intents.set(id, controller(runner.current));
-      const humanIntent = intents.get(HUMAN_ID);
-      if (humanIntent) {
-        // Spec C.6: after the final, any ACTION/PASS/SPECIAL press starts the next match.
-        const pressed = RESTART_BUTTONS.some((b) => justPressed(prevHumanButtons, humanIntent, b));
-        prevHumanButtons = buttonsOf(humanIntent);
-        if (runner.current.phase === 'finished' && pressed) {
-          restart();
-          return;
-        }
-      }
-      // Always step: when finished the sim returns the same state, so previous catches up with
-      // current and the render stops blending (no jitter on the final screen).
-      const events = runner.step(intents);
-      hud.handleEvents(events, runner.current);
-      weather.handleEvents(events);
-      for (const event of events) {
-        if (event.type === 'basket') effects.spawnFlash(runner.current.ball.pos);
-        if (event.type === 'abilityActivated') {
-          const p = findPlayer(runner.current, event.playerId);
-          if (p)
-            effects.spawnFlash({ x: p.pos.x, y: p.pos.y + 1, z: p.pos.z }, TEAM_COLORS[p.team]);
-        }
-      }
-    },
-    (alpha, frameMs) => {
-      const dt = frameMs / 1000;
-      const prev = session.runner.previous;
-      const next = session.runner.current;
-      for (const [id, view] of playerViews) {
-        const a = findPlayer(prev, id);
-        const b = findPlayer(next, id);
-        if (a && b) view.update(a, b, alpha, next.tick);
-      }
-      const holder = next.ball.holder === null ? undefined : findPlayer(next, next.ball.holder);
-      ballView.update(prev.ball, next.ball, alpha, dt, holder?.action === 'run', next.tick);
-      broadcastCamera.update(lerpVec3(prev.ball.pos, next.ball.pos, alpha), dt);
-      effects.update(dt);
-      weather.update(dt);
-      hud.update(next);
-      hud.tick(dt);
-      scene.render();
-
-      frameCount += 1;
-      const now = performance.now();
-      if (now - statsWindowStart >= 1000) {
-        fps = (frameCount * 1000) / (now - statsWindowStart);
-        ticksPerSecond = ((next.tick - lastTickNumber) * 1000) / (now - statsWindowStart);
-        lastTickNumber = next.tick;
-        frameCount = 0;
-        statsWindowStart = now;
-      }
-      const humanState = findPlayer(next, HUMAN_ID);
-      touch.setSpecialReady(
-        humanState !== undefined && humanState.ability === null && humanState.charge >= CHARGE_MAX,
-      );
-      if (overlay && humanState) {
-        overlay.update({
-          fps,
-          ticksPerSecond,
-          tick: next.tick,
-          pos: humanState.pos,
-          speed: Math.hypot(humanState.vel.x, humanState.vel.z),
-          turbo: humanState.turbo,
-          inputKind: input.activeKind ?? '-',
-          phase: next.phase,
-          ballMode: next.ball.mode,
-          shotClockMs: next.shotClockMs,
-          character: characterName,
-          action: humanState.action,
-          ai: session.ais.map((ai) => `${ai.id} ${ai.memory.goal.kind}`),
-          abilities: abilityLines(next),
-        });
-      }
-    },
-  );
-  loop.start();
-
-  return {
-    stop(): void {
-      loop.stop();
-      observer.disconnect();
-      root.removeEventListener('pointerdown', onFirstTouch);
-      input.dispose();
-      hud.dispose();
-      overlay?.dispose();
-      scene.dispose();
-      canvas.remove();
-    },
-  };
+  dispose(): void {
+    cancelAnimationFrame(this.rafId);
+    this.handle?.dispose();
+    this.menuInput.dispose();
+  }
 }

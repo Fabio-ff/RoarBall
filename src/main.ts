@@ -1,7 +1,10 @@
-import { startGame } from './app';
-import { readGameOptions } from './app/url-options';
+import { AppShell } from './app';
+import { hasMatchParams, readGameOptions } from './app/url-options';
 
 const root = document.getElementById('app');
 if (!root) throw new Error('#app not found');
 
-startGame(root, readGameOptions(window.location.search, Date.now()));
+const search = window.location.search;
+new AppShell(root, {
+  initial: hasMatchParams(search) ? readGameOptions(search, Date.now()) : null,
+});

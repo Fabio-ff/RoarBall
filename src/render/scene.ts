@@ -34,5 +34,6 @@ export class GameScene {
 
   dispose(): void {
     this.renderer.dispose();
+    this.renderer.forceContextLoss();
   }
 }
