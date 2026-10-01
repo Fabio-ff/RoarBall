@@ -24,6 +24,8 @@ Keyboard:
 | Shift (hold)      | turbo                            | turbo                                   |
 | Q                 | special (arrives with abilities) | special (arrives with abilities)        |
 
+Your player has a pulsing ring under its feet in your team colour.
+
 Touch (tablets and phones): a floating joystick where your left thumb lands, and **GO** (Space),
 **PASS** (E), **TURBO** (Shift) and **SP** (Q) buttons on the right.
 
