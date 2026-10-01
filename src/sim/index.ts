@@ -18,3 +18,4 @@ export * from './actions';
 export * from './bodies';
 export * from './passing';
 export * from './defence';
+export * from './ai';

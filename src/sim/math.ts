@@ -91,3 +91,15 @@ export function v3Length(a: Vec3): number {
 export function v3DistanceXZ(a: Vec3, b: Vec3): number {
   return Math.hypot(a.x - b.x, a.z - b.z);
 }
+
+/** Distance in the XZ plane from `p` to the segment `a`→`b` (y is ignored). */
+export function distanceToSegmentXZ(p: Vec3, a: Vec3, b: Vec3): number {
+  const abx = b.x - a.x;
+  const abz = b.z - a.z;
+  const len2 = abx * abx + abz * abz;
+  let t = 0;
+  if (len2 > 1e-12) t = clamp(((p.x - a.x) * abx + (p.z - a.z) * abz) / len2, 0, 1);
+  const cx = a.x + abx * t;
+  const cz = a.z + abz * t;
+  return Math.hypot(p.x - cx, p.z - cz);
+}

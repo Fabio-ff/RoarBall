@@ -553,3 +553,34 @@ export function detectBasket(
   const { team, points, shooter, shotType } = ball.lastShot;
   return { team, points, shooter, shotType };
 }
+
+export interface ShotEvaluation {
+  type: ShotType;
+  hoop: HoopIndex;
+  /** XZ distance from the player to the rim centre, metres. */
+  distance: number;
+  /** The shotQuality a shot released now would have against the current opponents. */
+  quality: number;
+}
+
+/**
+ * Spec C.4: the type `startShot` would pick and the quality `resolveShotOutcome` would roll
+ * against, for a shot by `player` right now — without touching the player, the ball or the RNG.
+ * Works for a hypothetical shooter (a teammate without the ball) too.
+ */
+export function evaluateShot(
+  state: MatchState,
+  player: PlayerState,
+  court: CourtDef,
+): ShotEvaluation {
+  const hoopIndex = targetHoopIndex(state, player, court);
+  const hoop = hoopGeometry(court, hoopIndex);
+  const type = chooseShotType(player, hoop);
+  const defenders = allPlayers(state).filter((p) => p.team !== player.team);
+  return {
+    type,
+    hoop: hoopIndex,
+    distance: v3DistanceXZ(player.pos, hoop.rimCenter),
+    quality: shotQuality(player, type, hoop, defenders),
+  };
+}
