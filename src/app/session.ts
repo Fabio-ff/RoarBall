@@ -71,11 +71,11 @@ export function buildSession(
     const profile = AI_PROFILES[options.aiProfile];
     const brains: [PlayerId, number, boolean][] = [
       ['home2', 1, true],
-      ['away1', 2, false],
-      ['away2', 3, false],
+      ['away1', 0, false],
+      ['away2', 1, false],
     ];
-    for (const [id, offset, favourTeammate] of brains) {
-      const ai = createAiController(id, court, { profile, seed, offset, favourTeammate });
+    for (const [id, slot, favourTeammate] of brains) {
+      const ai = createAiController(id, court, { profile, seed, slot, favourTeammate });
       ais.push(ai);
       controllers.set(id, ai.controller);
     }

@@ -8,8 +8,8 @@ export interface AiControllerOptions {
   profile: AiProfile;
   /** The match seed; the brain derives its own stream from it and the player id (spec C.2). */
   seed: number;
-  /** Decision cadence offset, 0..5. */
-  offset: number;
+  /** Slot in team: 0 or 1; cadence phase = slot * 3 on the match clock. */
+  slot: number;
   favourTeammate: boolean;
 }
 
@@ -26,6 +26,6 @@ export function createAiController(
   court: CourtDef,
   options: AiControllerOptions,
 ): AiController {
-  const memory = createAiMemory(id, options.seed, options.offset, options.favourTeammate);
+  const memory = createAiMemory(id, options.seed, options.slot, options.favourTeammate);
   return { id, memory, controller: (state) => decide(state, memory, options.profile, court) };
 }

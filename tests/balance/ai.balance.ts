@@ -33,7 +33,7 @@ function roster(home: [string, string], away: [string, string]): RosterEntry[] {
 
 function play(seed: number, entries: RosterEntry[]): MatchState {
   let state = createMatch({ ...settings, seed }, court, entries);
-  const memories = entries.map((e, i) => createAiMemory(e.id, seed, i, false));
+  const memories = entries.map((e, i) => createAiMemory(e.id, seed, i % 2, false));
   while (state.phase !== 'finished' && state.tick < MAX_TICKS) {
     state = tick(
       state,

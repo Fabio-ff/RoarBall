@@ -35,7 +35,7 @@ describe('createAiController', () => {
     const ai = createAiController('away1', court, {
       profile: AI_PROFILES.fair,
       seed: 3,
-      offset: 2,
+      slot: 0,
       favourTeammate: false,
     });
     let s = match(3);
@@ -52,7 +52,7 @@ describe('createAiController', () => {
       createAiController('home2', court, {
         profile: AI_PROFILES.fair,
         seed,
-        offset: 1,
+        slot: 1,
         favourTeammate: true,
       });
     const a = make(5);
