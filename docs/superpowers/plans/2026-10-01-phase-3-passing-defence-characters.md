@@ -750,6 +750,10 @@ export function finishOrOvertime(state: MatchState, events: SimEvent[]): void {
   else setPhase(state, 'finished', events);
 }
 
+/**
+ * Spec B.5: the buzzer waits for a *scripted* shot flight only. A miss hands over to free physics
+ * just before the rim, so a lucky bounce-in after the buzzer does not count.
+ */
 function shotInFlight(state: MatchState): boolean {
   return state.ball.mode === 'flight' && state.ball.flight?.kind === 'shot' && state.ball.lastShot !== null;
 }
@@ -779,35 +783,50 @@ Append to `tests/sim/phases.test.ts`:
 
 ```ts
   it('a buzzer-beater counts: the clock waits for a shot in flight', () => {
-    let s = run(createMatch({ ...base, durationMs: TICK_MS * 40 }, court, roster), 1).state;
-    const home = findPlayer(s, 'home1');
-    if (!home) throw new Error('no player');
-    home.pos = { x: hoopGeometry(court, 1).rimCenter.x - 4, y: 0, z: 0 };
-    home.facing = Math.PI / 2;
-    giveBall(s, home, []);
-    s.score = [0, 2];
-    // Press now: the release lands around tick 27, the clock expires at tick 40 with the ball in the air.
-    const { state, events } = run(s, 160, new Map([['home1', press]]));
-    const released = events.find((e) => e.type === 'shotReleased');
-    expect(released).toBeDefined();
-    // The clock hits zero at tick 40 with the ball in the air (released at ~27, lands at ~100):
-    // nothing may finish before the flight resolves.
-    const releasedAt = events.findIndex((e) => e.type === 'shotReleased');
-    const finishedAt = events.findIndex((e) => e.type === 'phaseChange' && e.to === 'finished');
-    if (released?.type === 'shotReleased' && released.made) {
-      expect(state.score[0]).toBe(2);
-      expect(state.overtime).toBe(true); // 2–2: the buzzer-beater forces overtime
-      expect(finishedAt).toBe(-1);
-      expect(state.phase).not.toBe('finished');
-    } else {
-      expect(finishedAt).toBeGreaterThan(releasedAt + 40);
-      expect(state.phase).toBe('finished');
-      expect(state.score).toEqual([0, 2]);
+    // Run the same scenario over several seeds so both outcomes are covered deterministically.
+    let sawMake = false;
+    let sawMiss = false;
+    for (let seed = 1; seed <= 12; seed++) {
+      let s = run(createMatch({ ...base, seed, durationMs: TICK_MS * 40 }, court, roster), 1).state;
+      const home = findPlayer(s, 'home1');
+      if (!home) throw new Error('no player');
+      home.pos = { x: hoopGeometry(court, 1).rimCenter.x - 4, y: 0, z: 0 };
+      home.facing = Math.PI / 2;
+      giveBall(s, home, []);
+      s.score = [0, 2];
+      // Press now: release at ~tick 28; the clock expires at tick 40 with the ball in the air.
+      let releasedTick = -1;
+      let finishedTick = -1;
+      let made = false;
+      for (let i = 0; i < 160; i++) {
+        const r = tick(s, new Map([['home1', press]]), court);
+        s = r.state;
+        for (const e of r.events) {
+          if (e.type === 'shotReleased') {
+            releasedTick = s.tick;
+            made = e.made;
+          }
+          if (e.type === 'phaseChange' && e.to === 'finished') finishedTick = s.tick;
+        }
+      }
+      expect(releasedTick).toBeGreaterThan(0);
+      if (made) {
+        sawMake = true;
+        expect(s.score[0]).toBe(2);
+        expect(s.overtime).toBe(true); // 2–2: the buzzer-beater forces overtime
+        expect(finishedTick).toBe(-1);
+      } else {
+        sawMiss = true;
+        expect(finishedTick).toBeGreaterThan(releasedTick + 40); // only once the flight resolved
+        expect(s.phase).toBe('finished');
+        expect(s.score).toEqual([0, 2]);
+      }
     }
+    expect(sawMake && sawMiss).toBe(true);
   });
 ```
 
-(The test asserts both branches so it is seed-independent; `run` must not stop early.)
+
 
 - [ ] **Step 7: Tick pipeline**
 
