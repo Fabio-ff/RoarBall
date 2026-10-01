@@ -58,6 +58,7 @@ export class TouchBackend implements InputBackend {
       el.dataset.button = name;
       el.setAttribute('role', 'button');
       el.textContent = label;
+      if (name === 'special') el.classList.add('is-dimmed');
       buttonBar.appendChild(el);
       this.buttons.set(name, { el, pointers: new Set() });
     }
@@ -87,6 +88,13 @@ export class TouchBackend implements InputBackend {
       b.pointers.clear();
       b.el.classList.remove('is-pressed');
     }
+  }
+
+  /** Spec D.6: SP is dimmed until the ability bar is full. Visual only: presses still count. */
+  setSpecialReady(ready: boolean): void {
+    const el = this.buttons.get('special')?.el;
+    if (!el || el.classList.contains('is-dimmed') === !ready) return;
+    el.classList.toggle('is-dimmed', !ready);
   }
 
   sample(): PlayerIntent {

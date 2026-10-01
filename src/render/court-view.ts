@@ -14,6 +14,10 @@ import { BOARD_HALF, hoopGeometry, RIM_RADIUS, type HoopGeometry } from '../sim/
 import type { CourtDef } from '../sim/types';
 
 const LINE_WIDTH = 0.05;
+/** Volcano (spec D.6): the crater glow beyond each baseline. */
+const GLOW_COLOR = 0xff4500;
+const GLOW_BEYOND_BASELINE = 2;
+const GLOW_DEPTH = 1.2;
 
 /**
  * Placeholder court (spec §7.3 "Presentation"): the play surface, lines, hoops and lights are
@@ -23,6 +27,7 @@ const LINE_WIDTH = 0.05;
 export function buildCourtView(court: CourtDef): Group {
   const group = new Group();
   const { length, width } = court.playArea;
+  const { dressing } = court;
 
   const ground = new Mesh(
     new PlaneGeometry(length * 3, width * 4),
@@ -34,19 +39,37 @@ export function buildCourtView(court: CourtDef): Group {
 
   const floor = new Mesh(
     new PlaneGeometry(length, width),
-    new MeshStandardMaterial({ color: 0xc9a06a }),
+    new MeshStandardMaterial({ color: dressing.floorColor, roughness: dressing.floorRoughness }),
   );
+  floor.name = 'floor';
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
 
   group.add(ground, floor);
+  const lineMaterial = new MeshBasicMaterial({ color: dressing.lineColor });
   group.add(
-    line(length, LINE_WIDTH, 0, -width / 2),
-    line(length, LINE_WIDTH, 0, width / 2),
-    line(LINE_WIDTH, width, -length / 2, 0),
-    line(LINE_WIDTH, width, length / 2, 0),
-    line(LINE_WIDTH, width, 0, 0),
+    line(lineMaterial, length, LINE_WIDTH, 0, -width / 2),
+    line(lineMaterial, length, LINE_WIDTH, 0, width / 2),
+    line(lineMaterial, LINE_WIDTH, width, -length / 2, 0),
+    line(lineMaterial, LINE_WIDTH, width, length / 2, 0),
+    line(lineMaterial, LINE_WIDTH, width, 0, 0),
   );
+
+  if (dressing.weather === 'embers') {
+    for (const side of [-1, 1]) {
+      const glow = new Mesh(
+        new BoxGeometry(GLOW_DEPTH, 0.05, width + 4),
+        new MeshStandardMaterial({
+          color: GLOW_COLOR,
+          emissive: GLOW_COLOR,
+          emissiveIntensity: 1.5,
+        }),
+      );
+      glow.name = 'glow-strip';
+      glow.position.set(side * (length / 2 + GLOW_BEYOND_BASELINE), 0.02, 0);
+      group.add(glow);
+    }
+  }
 
   for (const index of [0, 1] as const) group.add(buildHoop(hoopGeometry(court, index)));
 
@@ -73,10 +96,15 @@ export function buildCourtView(court: CourtDef): Group {
   return group;
 }
 
-const lineMaterial = new MeshBasicMaterial({ color: 0xffffff });
-
-function line(sizeX: number, sizeZ: number, x: number, z: number): Mesh {
-  const mesh = new Mesh(new BoxGeometry(sizeX, 0.02, sizeZ), lineMaterial);
+function line(
+  material: MeshBasicMaterial,
+  sizeX: number,
+  sizeZ: number,
+  x: number,
+  z: number,
+): Mesh {
+  const mesh = new Mesh(new BoxGeometry(sizeX, 0.02, sizeZ), material);
+  mesh.name = 'court-line';
   mesh.position.set(x, 0.01, z);
   return mesh;
 }

@@ -1,4 +1,5 @@
 import type { Vec3 } from '../sim/math';
+import type { MatchState } from '../sim/types';
 
 export interface DebugData {
   fps: number;
@@ -14,6 +15,19 @@ export interface DebugData {
   character: string;
   action: string;
   ai: string[];
+  abilities: string[];
+}
+
+/** Spec D.6 `?debug`: each player's charge and active ability. */
+export function abilityLines(state: MatchState): string[] {
+  return [...state.teams[0].players, ...state.teams[1].players].map((p) => {
+    const a = p.ability;
+    const active =
+      a === null
+        ? ''
+        : ` ${p.abilityId ?? '?'} ${a.ticksLeft !== null ? `${a.ticksLeft}t` : `${a.uses} left`}`;
+    return `${p.id} ${Math.round(p.charge)}%${active}`;
+  });
 }
 
 /** `?debug` overlay (spec §10.3). Updates its text at most 4× per second. */
@@ -46,6 +60,7 @@ export class DebugOverlay {
       `char   ${data.character}`,
       `action ${data.action}`,
       `ai     ${data.ai.join(' | ') || '-'}`,
+      `abil   ${data.abilities.join(' | ') || '-'}`,
     ].join('\n');
   }
 

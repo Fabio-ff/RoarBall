@@ -91,3 +91,7 @@
     gap: 8px;
   }
 }
+
+.touch-button.is-dimmed {
+  opacity: 0.35;
+}

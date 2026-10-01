@@ -22,12 +22,26 @@ Keyboard:
 | Space             | shoot (jump shot, layup or dunk) | defend: block, steal or shove (or jump) |
 | E                 | pass to your teammate            | call for the ball                       |
 | Shift (hold)      | turbo                            | turbo                                   |
-| Q                 | special (arrives with abilities) | special (arrives with abilities)        |
+| Q                 | special ability (full bar)       | special ability (full bar)              |
 
 Your player has a pulsing ring under its feet in your team colour.
 
 Touch (tablets and phones): a floating joystick where your left thumb lands, and **GO** (Space),
 **PASS** (E), **TURBO** (Shift) and **SP** (Q) buttons on the right.
+
+## Abilities
+
+Every player has one signature ability. The bar under the score fills as you play (+12 for a
+basket, +18 for a three, +10 for an assist, +15 for a steal or a block); when it reads **READY**,
+press Q / **SP** on the ground during play (the SP button is dimmed until then). The AI uses its
+abilities too.
+
+| Character | Ability     | Effect                                                                  |
+| --------- | ----------- | ----------------------------------------------------------------------- |
+| Brick     | Rocket Dunk | 8 s: dunk from anywhere inside the 3-point line; dunks can't be blocked |
+| Ace       | Hot Hand    | your next three shots can't miss                                        |
+| Dash      | Blur        | 6 s: double speed, unlimited turbo, every steal succeeds                |
+| Rook      | Earthquake  | every opponent within 4 m is knocked down                               |
 
 URL options:
 
@@ -38,12 +52,16 @@ URL options:
 - `?character=brick|ace|dash|rook` picks your player (default `rook`);
   `?teammate=<id>` (default `ace`) and `?opponents=<id>,<id>` (default `brick,dash`) pick the rest.
 - `?ai=easy|fair|hard` — the AI profile for all three AI players (default `fair`).
+- `?court=gym|rooftop|volcano|frozen` — the court (default `gym`). **Rooftop Storm**: every
+  15–25 s a gust (GUST chip, slanting rain) bends shots and passes and pushes loose balls.
+  **Volcano Rim**: turbo drains faster, shoves hit harder, knock-downs last longer.
+  **Frozen Lake**: slow to start and slower to stop; loose balls roll further.
 - `?seed=<n>` — reproduce a match (the default seed is the clock, so every game differs).
 - `?debug` shows the debug overlay (now with each AI's current goal).
 
-Parameters combine, e.g. `?character=dash&teammate=brick&ai=hard&debug`.
+Parameters combine, e.g. `?character=dash&teammate=brick&court=rooftop&ai=hard&debug`.
 
-The match is the full game on the gym court; both hoops are live and you attack the one
+The match is the full game on the chosen court; both hoops are live and you attack the one
 your team is aimed at. The practice build (`?mode=shootaround`) is a **shootaround** instead:
 you, a teammate dummy and a defender dummy. Both hoops score; you attack whichever hoop is
 nearer. The teammate waits on the wing, passes back a second after catching (at once if you

@@ -1,4 +1,9 @@
-import type { MatchState, SimEvent, TeamIndex } from '../sim/types';
+import { CHARGE_MAX } from '../sim/abilities';
+import { TICK_RATE } from '../sim/constants';
+import { NO_ABILITIES, type AbilityDef, type AbilityTable } from '../sim/hooks';
+import { findPlayer } from '../sim/match';
+import type { Vec3 } from '../sim/math';
+import type { MatchState, PlayerId, PlayerState, SimEvent, TeamIndex } from '../sim/types';
 import './hud.css';
 
 const BANNER_SECONDS = 1.2;
@@ -38,7 +43,57 @@ export function finalBanner(state: MatchState, humanTeam: TeamIndex): string {
   return `FINAL ${home}–${away} · ${won ? 'YOU WIN!' : 'YOU LOSE'}`;
 }
 
-/** Score, clocks and event banners in the DOM (spec §9 "UI screens"). Never reads input. */
+/** Spec D.6: "ROCKET DUNK!" and friends, from the ability's name. */
+export function abilityBanner(abilityId: string, abilities: AbilityTable): string {
+  return `${(abilities[abilityId]?.name ?? abilityId).toUpperCase()}!`;
+}
+
+export interface AbilityBarView {
+  /** 0..100: charge, or the share of the timer left while active. */
+  fill: number;
+  status: string;
+  ready: boolean;
+  active: boolean;
+}
+
+/** Spec D.6: what the human's ability bar shows — charge, READY, seconds left, or Hot Hand pips. */
+export function abilityBarView(player: PlayerState, def: AbilityDef): AbilityBarView {
+  const active = player.ability;
+  if (active !== null) {
+    if (active.ticksLeft !== null) {
+      const total = typeof def.durationTicks === 'number' ? def.durationTicks : active.ticksLeft;
+      return {
+        fill: total > 0 ? (100 * active.ticksLeft) / total : 0,
+        status: `${Math.ceil(active.ticksLeft / TICK_RATE)} s`,
+        ready: false,
+        active: true,
+      };
+    }
+    return { fill: 100, status: '●'.repeat(Math.max(0, active.uses)), ready: false, active: true };
+  }
+  const ready = player.charge >= CHARGE_MAX;
+  return { fill: Math.min(100, player.charge), status: ready ? 'READY' : '', ready, active: false };
+}
+
+/** The camera sits on +Z, looking at −Z: court X is screen right and court Z is screen down. */
+export function gustArrowDegrees(dir: Vec3): number {
+  return (Math.atan2(dir.z, dir.x) * 180) / Math.PI;
+}
+
+export interface HudOptions {
+  /** The human's player: the ability bar follows them. */
+  humanId?: PlayerId;
+  /** Names for the ability bar and banners (the app passes the content table). */
+  abilities?: AbilityTable;
+}
+
+interface Banner {
+  text: string;
+  /** Team colour of the banner; null = the default white. */
+  team: TeamIndex | null;
+}
+
+/** Score, clocks, ability bar and event banners in the DOM (spec §9, D.6). Never reads input. */
 export class Hud {
   private readonly root: HTMLDivElement;
   private readonly home: HTMLSpanElement;
@@ -46,7 +101,15 @@ export class Hud {
   private readonly clock: HTMLSpanElement;
   private readonly shotClock: HTMLDivElement;
   private readonly banner: HTMLDivElement;
-  private readonly queue: string[] = [];
+  private readonly ability: HTMLDivElement;
+  private readonly abilityName: HTMLSpanElement;
+  private readonly abilityFill: HTMLSpanElement;
+  private readonly abilityStatus: HTMLSpanElement;
+  private readonly gust: HTMLDivElement;
+  private readonly gustArrow: HTMLSpanElement;
+  private readonly queue: Banner[] = [];
+  private readonly humanId: PlayerId | undefined;
+  private readonly abilities: AbilityTable;
   private bannerLeft = 0;
   private wasOvertime = false;
   private final = false;
@@ -56,19 +119,34 @@ export class Hud {
   constructor(
     parent: HTMLElement,
     private readonly humanTeam: TeamIndex = 0,
+    options: HudOptions = {},
   ) {
+    this.humanId = options.humanId;
+    this.abilities = options.abilities ?? NO_ABILITIES;
     this.root = document.createElement('div');
     this.root.className = 'hud';
     this.root.innerHTML =
       '<div class="hud-score"><span class="hud-team hud-home">0</span>' +
       '<span class="hud-clock">0:00</span><span class="hud-team hud-away">0</span></div>' +
-      '<div class="hud-shotclock">0</div><div class="hud-banner" hidden></div>';
+      '<div class="hud-shotclock">0</div>' +
+      '<div class="hud-ability" hidden><span class="hud-ability-name"></span>' +
+      '<span class="hud-ability-bar"><span class="hud-ability-fill"></span></span>' +
+      '<span class="hud-ability-status"></span></div>' +
+      '<div class="hud-gust" hidden><span class="hud-gust-arrow">➜</span>GUST</div>' +
+      '<div class="hud-banner" hidden></div>';
     parent.appendChild(this.root);
     this.home = this.query('.hud-home');
     this.away = this.query('.hud-away');
     this.clock = this.query('.hud-clock');
     this.shotClock = this.query('.hud-shotclock');
     this.banner = this.query('.hud-banner');
+    this.ability = this.query('.hud-ability');
+    this.abilityName = this.query('.hud-ability-name');
+    this.abilityFill = this.query('.hud-ability-fill');
+    this.abilityStatus = this.query('.hud-ability-status');
+    this.gust = this.query('.hud-gust');
+    this.gustArrow = this.query('.hud-gust-arrow');
+    this.ability.classList.add(`team-${humanTeam}`);
   }
 
   private query<T extends HTMLElement>(selector: string): T {
@@ -91,32 +169,46 @@ export class Hud {
     this.setText(this.clock, state.overtime ? 'OT' : formatClock(state.clockMs));
     this.setText(this.shotClock, String(Math.ceil(state.shotClockMs / 1000)));
     this.shotClock.classList.toggle('is-low', state.shotClockMs <= 5000);
+    this.updateAbility(state);
 
-    if (state.overtime && !this.wasOvertime) this.queue.push('OVERTIME!');
+    if (state.overtime && !this.wasOvertime) this.queue.push({ text: 'OVERTIME!', team: null });
     this.wasOvertime = state.overtime;
 
     const final = state.phase === 'finished';
     if (final) {
       this.setText(this.banner, finalBanner(state, this.humanTeam));
       if (!this.final) {
+        this.banner.classList.remove('team-0', 'team-1');
         this.banner.classList.add('is-final');
         this.banner.hidden = false;
       }
     } else if (this.final) {
-      // A new match started: drop the sticky banner and any stale queue.
+      // A new match started: drop the sticky banner, any stale queue and the gust chip.
       this.banner.classList.remove('is-final');
       this.banner.hidden = true;
       this.written.delete(this.banner);
       this.queue.length = 0;
       this.bannerLeft = 0;
+      this.gust.hidden = true;
     }
     this.final = final;
   }
 
-  handleEvents(events: SimEvent[]): void {
+  /** `state` (after the step) gives the activating player's team for ability banners. */
+  handleEvents(events: SimEvent[], state?: MatchState): void {
     for (const event of events) {
-      const text = bannerFor(event);
-      if (text) this.queue.push(text);
+      if (event.type === 'abilityActivated') {
+        const team = state ? (findPlayer(state, event.playerId)?.team ?? null) : null;
+        this.queue.push({ text: abilityBanner(event.abilityId, this.abilities), team });
+      } else if (event.type === 'gustStart') {
+        this.gustArrow.style.transform = `rotate(${gustArrowDegrees(event.dir).toFixed(0)}deg)`;
+        this.gust.hidden = false;
+      } else if (event.type === 'gustEnd') {
+        this.gust.hidden = true;
+      } else {
+        const text = bannerFor(event);
+        if (text) this.queue.push({ text, team: null });
+      }
     }
   }
 
@@ -126,13 +218,30 @@ export class Hud {
     if (this.bannerLeft <= 0) {
       const next = this.queue.shift();
       if (next) {
-        this.setText(this.banner, next);
+        this.setText(this.banner, next.text);
+        this.banner.classList.toggle('team-0', next.team === 0);
+        this.banner.classList.toggle('team-1', next.team === 1);
         this.banner.hidden = false;
         this.bannerLeft = BANNER_SECONDS;
       } else if (!this.banner.hidden) {
         this.banner.hidden = true;
       }
     }
+  }
+
+  private updateAbility(state: MatchState): void {
+    const me = this.humanId === undefined ? undefined : findPlayer(state, this.humanId);
+    const def = me?.abilityId ? this.abilities[me.abilityId] : undefined;
+    const hidden = !me || !def;
+    if (this.ability.hidden !== hidden) this.ability.hidden = hidden;
+    if (!me || !def) return;
+    const view = abilityBarView(me, def);
+    this.setText(this.abilityName, `${def.icon} ${def.name}`);
+    this.setText(this.abilityStatus, view.status);
+    const width = `${Math.round(view.fill)}%`;
+    if (this.abilityFill.style.width !== width) this.abilityFill.style.width = width;
+    this.ability.classList.toggle('is-ready', view.ready);
+    this.ability.classList.toggle('is-active', view.active);
   }
 
   dispose(): void {

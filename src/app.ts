@@ -2,6 +2,7 @@ import type { Controller } from './app/controller';
 import { GameLoop } from './app/game-loop';
 import { buildSession, HUMAN_ID } from './app/session';
 import type { GameOptions } from './app/url-options';
+import { ABILITIES } from './content/abilities';
 import { getCharacter } from './content/characters';
 import { getCourt } from './content/courts';
 import { InputManager } from './input/input-manager';
@@ -14,6 +15,8 @@ import { EffectsView } from './render/effects-view';
 import { lerpVec3 } from './render/interpolate';
 import { PlayerView } from './render/player-view';
 import { GameScene } from './render/scene';
+import { WeatherView } from './render/weather-view';
+import { CHARGE_MAX } from './sim/abilities';
 import { buttonsOf, justPressed } from './sim/buttons';
 import { findPlayer } from './sim/match';
 import {
@@ -23,7 +26,7 @@ import {
   type PlayerIntent,
   type TeamIndex,
 } from './sim/types';
-import { DebugOverlay } from './ui/debug-overlay';
+import { abilityLines, DebugOverlay } from './ui/debug-overlay';
 import { Hud } from './ui/hud';
 
 export type { GameOptions } from './app/url-options';
@@ -70,11 +73,13 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
   scene.scene.add(ballView.group);
   const effects = new EffectsView();
   scene.scene.add(effects.group);
+  const weather = new WeatherView(court);
+  scene.scene.add(weather.group);
 
   const broadcastCamera = new BroadcastCamera(scene.camera);
   input.cameraYaw = broadcastCamera.yaw;
 
-  const hud = new Hud(root, HUMAN_TEAM);
+  const hud = new Hud(root, HUMAN_TEAM, { humanId: HUMAN_ID, abilities: ABILITIES });
 
   const resize = (): void => {
     scene.resize(root.clientWidth, root.clientHeight, window.devicePixelRatio);
@@ -98,6 +103,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
     seed += 1;
     // Spec D.6: the buttons held right now (the restarting press) are not presses in the new match.
     session = buildSession(options, court, seed, human, intents);
+    weather.reset();
     lastTickNumber = session.runner.current.tick;
   };
 
@@ -118,9 +124,15 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
       // Always step: when finished the sim returns the same state, so previous catches up with
       // current and the render stops blending (no jitter on the final screen).
       const events = runner.step(intents);
-      hud.handleEvents(events);
+      hud.handleEvents(events, runner.current);
+      weather.handleEvents(events);
       for (const event of events) {
         if (event.type === 'basket') effects.spawnFlash(runner.current.ball.pos);
+        if (event.type === 'abilityActivated') {
+          const p = findPlayer(runner.current, event.playerId);
+          if (p)
+            effects.spawnFlash({ x: p.pos.x, y: p.pos.y + 1, z: p.pos.z }, TEAM_COLORS[p.team]);
+        }
       }
     },
     (alpha, frameMs) => {
@@ -136,6 +148,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
       ballView.update(prev.ball, next.ball, alpha, dt, holder?.action === 'run', next.tick);
       broadcastCamera.update(lerpVec3(prev.ball.pos, next.ball.pos, alpha), dt);
       effects.update(dt);
+      weather.update(dt);
       hud.update(next);
       hud.tick(dt);
       scene.render();
@@ -150,6 +163,9 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
         statsWindowStart = now;
       }
       const humanState = findPlayer(next, HUMAN_ID);
+      touch.setSpecialReady(
+        humanState !== undefined && humanState.ability === null && humanState.charge >= CHARGE_MAX,
+      );
       if (overlay && humanState) {
         overlay.update({
           fps,
@@ -165,6 +181,7 @@ export function startGame(root: HTMLElement, options: GameOptions): { stop(): vo
           character: characterName,
           action: humanState.action,
           ai: session.ais.map((ai) => `${ai.id} ${ai.memory.goal.kind}`),
+          abilities: abilityLines(next),
         });
       }
     },

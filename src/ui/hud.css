@@ -91,3 +91,95 @@
   font-size: clamp(22px, 5.5vmin, 48px);
   white-space: nowrap;
 }
+
+.hud-ability {
+  position: absolute;
+  top: calc(max(8px, env(safe-area-inset-top)) + 5.6em);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: clamp(12px, 2.2vmin, 16px);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.hud-ability[hidden],
+.hud-gust[hidden] {
+  display: none;
+}
+
+.hud-ability-bar {
+  display: block;
+  width: clamp(90px, 18vmin, 180px);
+  height: 10px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.15);
+  overflow: hidden;
+}
+
+.hud-ability-fill {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: #7fb2ff;
+  transition: width 0.15s linear;
+}
+
+.hud-ability.team-1 .hud-ability-fill {
+  background: #ff8c8c;
+}
+
+.hud-ability.is-active .hud-ability-fill {
+  background: #ffd166;
+}
+
+.hud-ability-status {
+  min-width: 3.5em;
+  font-variant-numeric: tabular-nums;
+}
+
+.hud-ability.is-ready .hud-ability-status {
+  color: #ffd166;
+  animation: hud-pulse 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes hud-pulse {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.hud-banner.team-0 {
+  color: #7fb2ff;
+}
+
+.hud-banner.team-1 {
+  color: #ff8c8c;
+}
+
+.hud-gust {
+  position: absolute;
+  top: calc(max(8px, env(safe-area-inset-top)) + 0.6em);
+  right: max(16px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.45);
+  font-size: clamp(12px, 2.2vmin, 16px);
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.hud-gust-arrow {
+  display: inline-block;
+}
