@@ -1124,3 +1124,51 @@ Not in Phase 6: local two-player, "on fire", crowd/arena lights (future enhancem
   console errors; the URL-shortcut path still boots straight into a match.
 - Sim invariant: `git diff main -- src/sim tests/sim` is empty for every Phase 6 PR, except
   test-only additions listed in E.6.
+
+### E.8 Refinements made during execution (2026-10-02)
+
+Recorded at the Phase 6 final review; they refine E.1–E.7 and are what the code does.
+
+- **HOW TO PLAY** (E.1, from playtest feedback: the player did not know how to pass, defend, steal or
+  block): the Title and the Pause menu open a cheat sheet — controls for keyboard / gamepad / touch
+  (move, shoot, pass, call for the ball, ability, turbo, pause), the defence button's context rules
+  (block / steal / shove, otherwise jump) and the alley-oop. Shell screens are
+  `title | setup | howToPlay | match | results`; inside a match How to Play nests in Pause.
+- **Menu input** (E.1): `MenuInput` maps arrows/WASD, Enter/Space, Escape/Backspace, P, the D-pad or
+  stick, A, B and Start; it calls `preventDefault` on mapped keys (no double activation) and reports a
+  source (`keyboard | gamepad`). In play, `pause` from any source pauses, `back` pauses only from the
+  keyboard (Escape); gamepad B stays turbo.
+- **Held-button priming** (D.6 / E.1): when a match starts (START, REMATCH) and after Resume or Restart,
+  the human's controller is sampled on the first loop tick and becomes `prevButtons`, so the confirming
+  press is never a press in play; the keyboard ignores key repeats.
+- **Setup** (E.1): six rows (You, Teammate, Opponent 1, Opponent 2, Court, Difficulty) then BACK and
+  START (focused); stat bars labelled SPD JMP SHT DNK DEF POW STA; the court swatch is a darkened
+  sky→floor gradient behind the card text. Each START seeds from the clock; RANDOM opponents roll
+  `Math.random`.
+- **Title / settings** (E.1, E.2): the Title has SOUND and MUSIC toggles; Pause has Sound, Music,
+  Vibration, Reduce motion. The rotate hint is shown on the Title only.
+- **End of match** (E.1): event banners drain first (1.2 s each), then the sticky FINAL; Results appears
+  2.5 s after `finished` and ignores confirm/back for 600 ms. Restart and Rematch both use seed + 1 of
+  the match just played.
+- **Gamepad** (E.3): polled once per tick (no latching beyond the poll); the active pad is the most
+  recent one with non-neutral input; `connected === false` pads are ignored. Rumble fires on the human
+  team's dunks, a block or knockdown suffered by the human and the human's own Earthquake.
+- **Audio** (E.4): the engine is created on the first keydown, pointerdown or gamepad menu command;
+  later gestures resume it (iOS). Music stops while paused, the court loop resumes after; a results
+  jingle plays once. The squeak compares a player's velocity with its velocity 12 ticks earlier (both
+  > 3 m/s, > 70°, on the ground, ≤ 1 per 0.25 s); 180° reversals do not squeak. The crowd is a swell
+  after each basket, not a continuous bed. The buzzer also sounds when regulation ends tied. The
+  sequencer skips steps missed while its timer was throttled; settings changes cancel pending duck ramps.
+- **Effects** (E.5): 0.15 m burst particles in the scorer's team colour brightened toward white (24
+  small / 60 big); every ability activation also flashes in the user's team colour; Blur ghosts are
+  sampled per sim tick; Hot Hand rings stay on the floor; Restart clears particles, shockwaves, trail
+  and shake. **Deferred to Phase 7:** the Rocket Dunk launch streak, Earthquake dust, and Hot Hand hands
+  following facing.
+- **Hardening** (E.6, E.7): balance reports go to `docs/balance/<date>.md` (`-2`, `-3`… if taken);
+  the smoke run spawns `vite preview` directly, has a 150 s watchdog and runs in CI after the build in a
+  15-minute job; Three.js is its own chunk (Rolldown `codeSplitting.groups`, warning limit 600 kB).
+- **Known gaps for the playtest PR**: on phone-landscape screens (≤ 520 px tall) the compact Pause has
+  44 px buttons and a one-column navigation over a two-column grid; Results column abbreviations (DNK,
+  ABL) may need a legend for a child.
+- **Outside Phase 6**: the AI-teammate variety work (#92 / #94) changes `src/sim/ai` and is recorded in
+  C.8 by its own PR.
