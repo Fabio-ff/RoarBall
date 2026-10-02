@@ -104,6 +104,10 @@ const TEAMMATE_SEEDS = 30;
 /** Issue #92 guards: the no-abilities mean floor (pre-#92 19.2 − 2) and the interception cap. */
 const TEAMMATE_MEAN_FLOOR = 17.2;
 const TEAMMATE_INTERCEPT_CAP = 0.2;
+/** Issue #92 (I-2): share of home2's shot attempts (released + blocked) that are blocked. */
+const TEAMMATE_BLOCKED_CAP = 0.25;
+/** With abilities: a tripwire at the pre-#92 level (47 %); measured 40 % after #92. */
+const TEAMMATE_BLOCKED_CAP_ABILITIES = 0.47;
 interface TeammateRow {
   label: string;
   meanHome: number;
@@ -115,6 +119,9 @@ interface TeammateRow {
   passes: number;
   intercepted: number;
   completed: number;
+  /** home2's shot attempts (released + blocked; a blocked shot is never released) and blocks. */
+  attempts: number;
+  blocked: number;
 }
 
 interface TeammateGame {
@@ -122,6 +129,8 @@ interface TeammateGame {
   passes: number;
   intercepted: number;
   completed: number;
+  attempts: number;
+  blocked: number;
 }
 
 function teammateSeries(label: string, abilities: AbilityTable): TeammateRow {
@@ -137,6 +146,8 @@ function teammateSeries(label: string, abilities: AbilityTable): TeammateRow {
     passes: 0,
     intercepted: 0,
     completed: 0,
+    attempts: 0,
+    blocked: 0,
   };
   for (let seed = 1; seed <= TEAMMATE_SEEDS; seed++) {
     const g = playWith(seed, entries, gym, abilities);
@@ -148,6 +159,8 @@ function teammateSeries(label: string, abilities: AbilityTable): TeammateRow {
     row.passes += g.passes;
     row.intercepted += g.intercepted;
     row.completed += g.completed;
+    row.attempts += g.attempts;
+    row.blocked += g.blocked;
   }
   return row;
 }
@@ -161,7 +174,14 @@ function playWith(
 ): TeammateGame {
   let state = createMatch({ ...settings, seed, courtId: court.id }, court, entries);
   const memories = entries.map((e, i) => createAiMemory(e.id, seed, i % 2, e.id === 'home2'));
-  const game: TeammateGame = { score: [0, 0], passes: 0, intercepted: 0, completed: 0 };
+  const game: TeammateGame = {
+    score: [0, 0],
+    passes: 0,
+    intercepted: 0,
+    completed: 0,
+    attempts: 0,
+    blocked: 0,
+  };
   let inFlight = false;
   while (state.phase !== 'finished' && state.tick < MAX_TICKS) {
     const frame = new Map(
@@ -170,6 +190,11 @@ function playWith(
     const r = tick(state, frame, court, abilities);
     state = r.state;
     for (const e of r.events) {
+      if (e.type === 'shotReleased' && e.playerId === 'home2') game.attempts++;
+      if (e.type === 'block' && e.shooter === 'home2') {
+        game.attempts++;
+        game.blocked++;
+      }
       if (e.type === 'pass') {
         inFlight = e.from === 'home2';
         if (inFlight) game.passes++;
@@ -260,13 +285,13 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
       '',
       `## Default matchup with the teammate brain (gym, ${TEAMMATE_SEEDS} seeds)`,
       '',
-      `Home2 favours home1 as the app's teammate does; the human slot is an AI stand-in. Issue #92 guards: team-0 mean ≥ ${TEAMMATE_MEAN_FLOOR} without abilities (pre-#92 19.2 − 2), no seed under 6, home2's passes intercepted ≤ ${100 * TEAMMATE_INTERCEPT_CAP} %.`,
+      `Home2 favours home1 as the app's teammate does; the human slot is an AI stand-in. Issue #92 guards: team-0 mean ≥ ${TEAMMATE_MEAN_FLOOR} without abilities (pre-#92 19.2 − 2), no seed under 6, home2's passes intercepted ≤ ${100 * TEAMMATE_INTERCEPT_CAP} %, home2's attempts blocked ≤ ${100 * TEAMMATE_BLOCKED_CAP} % without abilities (≤ ${100 * TEAMMATE_BLOCKED_CAP_ABILITIES} % with, the pre-#92 level).`,
       '',
-      '| matchup | team-0 mean | opponents mean | team-0 wins | team-0 min | home2 passes / match | intercepted | completed to home1 / match |',
-      '|---|---|---|---|---|---|---|---|',
+      '| matchup | team-0 mean | opponents mean | team-0 wins | team-0 min | home2 passes / match | intercepted | completed to home1 / match | home2 attempts blocked |',
+      '|---|---|---|---|---|---|---|---|---|',
       ...teammate.map(
         (r) =>
-          `| ${r.label} | ${r.meanHome.toFixed(1)} | ${r.meanAway.toFixed(1)} | ${r.homeWins}/${r.games} (${((100 * r.homeWins) / r.games).toFixed(0)} %) | ${r.minHome} | ${(r.passes / r.games).toFixed(1)} | ${((100 * r.intercepted) / Math.max(1, r.passes)).toFixed(0)} % | ${(r.completed / r.games).toFixed(1)} |`,
+          `| ${r.label} | ${r.meanHome.toFixed(1)} | ${r.meanAway.toFixed(1)} | ${r.homeWins}/${r.games} (${((100 * r.homeWins) / r.games).toFixed(0)} %) | ${r.minHome} | ${(r.passes / r.games).toFixed(1)} | ${((100 * r.intercepted) / Math.max(1, r.passes)).toFixed(0)} % | ${(r.completed / r.games).toFixed(1)} | ${r.blocked}/${r.attempts} (${((100 * r.blocked) / Math.max(1, r.attempts)).toFixed(0)} %) |`,
       ),
       '',
       '## Gym — mirrored duos',
@@ -305,6 +330,16 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
         TEAMMATE_INTERCEPT_CAP,
       );
     }
-    expect(teammate[0].meanHome, teammate[0].label).toBeGreaterThanOrEqual(TEAMMATE_MEAN_FLOOR);
+    // Blocked attempts: the cap holds without abilities. With abilities the row is reported
+    // and only guarded against falling back to the pre-#92 level (47 %, Hot Hand and Blur).
+    const [plain, withAbilities] = teammate;
+    expect(plain.blocked / Math.max(1, plain.attempts), plain.label).toBeLessThanOrEqual(
+      TEAMMATE_BLOCKED_CAP,
+    );
+    expect(
+      withAbilities.blocked / Math.max(1, withAbilities.attempts),
+      withAbilities.label,
+    ).toBeLessThanOrEqual(TEAMMATE_BLOCKED_CAP_ABILITIES);
+    expect(plain.meanHome, plain.label).toBeGreaterThanOrEqual(TEAMMATE_MEAN_FLOOR);
   });
 });

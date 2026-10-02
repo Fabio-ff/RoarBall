@@ -12,6 +12,8 @@ import {
   wantsAlleyOopInvite,
 } from '../../src/sim/ai/offball';
 import {
+  JUMPER_GUARD_MARGIN,
+  jumperContested,
   laneBlocker,
   leadLaneClear,
   perceive,
@@ -323,6 +325,45 @@ describe('planWithBall', () => {
     expect(planWithBall(s, me, createAiMemory('home2', 1, 1, false), noShoot, court).kind).toBe(
       'drive',
     );
+  });
+
+  it('the teammate brain holds a jumper its marker can block now or at release', () => {
+    // Issue #92 (I-2): catch-and-shoot jumpers were swatted by the closing marker.
+    const { s, me } = holderAt(6, 'home2');
+    s.shotClockMs = 10_000;
+    expect(evaluateShot(s, me, court).type).toBe('jumpshot');
+    const marker = place(s, 'away2', rim.x - 4, 0.5); // ~2.06 m away, standing
+    const reach = marker.stats.blockReach + JUMPER_GUARD_MARGIN;
+    const others = [marker, player(s, 'away1')];
+    expect(jumperContested(me, others)).toBe(false);
+    // Within reach + margin now.
+    place(s, 'away2', me.pos.x + reach - 0.05, 0);
+    expect(jumperContested(me, others)).toBe(true);
+    place(s, 'away2', me.pos.x + reach + 0.05, 0);
+    expect(jumperContested(me, others)).toBe(false);
+    // Out of reach now, but closing: in reach at release (27 ticks = 0.45 s).
+    place(s, 'away2', me.pos.x + 3, 0);
+    expect(jumperContested(me, others)).toBe(false);
+    marker.vel = { x: -5, y: 0, z: 0 };
+    expect(jumperContested(me, others)).toBe(true);
+    // A stunned marker cannot block.
+    place(s, 'away2', me.pos.x + 1, 0);
+    marker.action = 'stunned';
+    expect(jumperContested(me, others)).toBe(false);
+    marker.action = 'idle';
+    // planWithBall: the teammate holds the shot, the plain brain shoots.
+    const shoot = { ...exact, shootThreshold: 0, passBias: 9 };
+    place(s, 'away2', me.pos.x + 1.2, 0.3);
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), shoot, court)).not.toEqual({
+      kind: 'shoot',
+    });
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, false), shoot, court)).toEqual({
+      kind: 'shoot',
+    });
+    place(s, 'away2', rim.x - 14, 6);
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), shoot, court)).toEqual({
+      kind: 'shoot',
+    });
   });
 
   it('no blocker when the opponent is behind me or off the lane', () => {

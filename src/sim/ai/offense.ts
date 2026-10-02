@@ -3,10 +3,17 @@ import { clamp, distanceToSegmentXZ, v3DistanceXZ, type Vec3 } from '../math';
 import { allPlayers } from '../match';
 import { ALLEY_OOP_RANGE, PASS_RELEASE_SHIELD_RADIUS, passLaneOpen, teammateOf } from '../passing';
 import { nextFloat } from '../rng';
-import { evaluateShot, hasSureShot, shotQuality, type ShotEvaluation } from '../shooting';
+import { TICK_DT } from '../constants';
+import {
+  evaluateShot,
+  hasSureShot,
+  SHOT_TIMING,
+  shotQuality,
+  type ShotEvaluation,
+} from '../shooting';
 import type { CourtDef, MatchState, PlayerState } from '../types';
 import type { AiGoal, AiMemory } from './memory';
-import { MARK_GAP_FACTOR, MARK_GAP_MAX, MARK_GAP_MIN } from './defense';
+import { markPosition } from './defense';
 import type { AiProfile } from './profile';
 import { farthestSpot } from './spots';
 
@@ -152,8 +159,8 @@ function along(from: Vec3, to: Vec3, f: number): Vec3 {
 
 /**
  * Where `marker` will be `dt` seconds into the pass if it chases its C.5 marking spot for the
- * receiver: `clamp(0.4·d, 0.8, 2.5)` from the receiver towards the rim, the receiver projected by
- * velocity. It closes at most `max(speed, turboSpeed)·dt`.
+ * receiver (`markPosition`, the receiver projected by velocity). It closes at most
+ * `max(speed, turboSpeed)·dt`.
  */
 function pursuedSpot(marker: PlayerState, receiver: PlayerState, rim: Vec3, dt: number): Vec3 {
   const r = {
@@ -161,13 +168,16 @@ function pursuedSpot(marker: PlayerState, receiver: PlayerState, rim: Vec3, dt: 
     y: 0,
     z: receiver.pos.z + receiver.vel.z * dt,
   };
-  const d = v3DistanceXZ(r, rim);
-  const gap = clamp(MARK_GAP_FACTOR * d, MARK_GAP_MIN, MARK_GAP_MAX);
-  const spot = d > 1e-6 ? along(r, rim, gap / d) : r;
+  const spot = markPosition(r, rim, false);
   const dist = v3DistanceXZ(marker.pos, spot);
   if (dist <= 1e-6) return spot;
   const vmax = Math.max(Math.hypot(marker.vel.x, marker.vel.z), marker.stats.turboSpeed);
   return along(marker.pos, spot, Math.min(1, (vmax * dt) / dist));
+}
+
+/** Stunned or getting-up players cannot intercept or block. */
+function canContest(o: PlayerState): boolean {
+  return o.action !== 'stunned' && o.action !== 'getup';
 }
 
 /**
@@ -188,13 +198,14 @@ export function leadLaneClear(
 ): boolean {
   const t = PASS_LEAD_BASE_TIME + PASS_LEAD_TIME_PER_METRE * v3DistanceXZ(me.pos, mate.pos);
   const lead = { x: mate.pos.x + mate.vel.x * t, y: 0, z: mate.pos.z + mate.vel.z * t };
+  const live = opponents.filter(
+    (o) => canContest(o) && v3DistanceXZ(o.pos, me.pos) > PASS_RELEASE_SHIELD_RADIUS,
+  );
   let marker: PlayerState | null = null;
-  for (const o of opponents)
+  for (const o of live)
     if (!marker || v3DistanceXZ(o.pos, mate.pos) < v3DistanceXZ(marker.pos, mate.pos)) marker = o;
-  return !opponents.some((o) => {
-    if (o.action === 'stunned' || o.action === 'getup') return false;
-    if (v3DistanceXZ(o.pos, me.pos) <= PASS_RELEASE_SHIELD_RADIUS) return false;
-    return LEAD_LANE_SAMPLES.some((f) => {
+  return !live.some((o) =>
+    LEAD_LANE_SAMPLES.some((f) => {
       const ball = along(me.pos, lead, f);
       const dt = f * t;
       const moved = { x: o.pos.x + o.vel.x * dt, y: 0, z: o.pos.z + o.vel.z * dt };
@@ -202,7 +213,27 @@ export function leadLaneClear(
       return (
         o === marker && v3DistanceXZ(pursuedSpot(o, mate, rim, dt), ball) < LEAD_LANE_CLEARANCE
       );
-    });
+    }),
+  );
+}
+
+/** Margin over an opponent's `blockReach` for the teammate's jumper guard (issue #92). */
+export const JUMPER_GUARD_MARGIN = 0.3;
+
+/**
+ * Issue #92 (I-2): the teammate brain's jumper guard. A jump shot is blocked when an opponent is
+ * within its `blockReach` at release, `SHOT_TIMING.jumpshot.releaseTick` ticks after the press.
+ * The guard says no when any opponent that can block is within `blockReach +
+ * JUMPER_GUARD_MARGIN` now, or will be at release if it keeps its velocity. No RNG.
+ */
+export function jumperContested(me: PlayerState, opponents: readonly PlayerState[]): boolean {
+  const windUp = SHOT_TIMING.jumpshot.releaseTick * TICK_DT;
+  return opponents.some((o) => {
+    if (!canContest(o)) return false;
+    const reach = o.stats.blockReach + JUMPER_GUARD_MARGIN;
+    if (v3DistanceXZ(o.pos, me.pos) <= reach) return true;
+    const later = { x: o.pos.x + o.vel.x * windUp, y: 0, z: o.pos.z + o.vel.z * windUp };
+    return v3DistanceXZ(later, me.pos) <= reach;
   });
 }
 
@@ -266,7 +297,13 @@ export function planWithBall(
     );
     if (!contested) return SHOOT;
   }
-  if (perceived >= profile.shootThreshold) return SHOOT;
+  if (perceived >= profile.shootThreshold) {
+    // Issue #92: the teammate does not shoot a jumper into a closing marker; it passes or drives.
+    // A Hot Hand sure shot is guarded too: it is made, but a block still beats it (D.2).
+    const guarded =
+      memory.favourTeammate && mine.type === 'jumpshot' && jumperContested(me, opponents);
+    if (!guarded) return SHOOT;
+  }
   // 5. Pass to a better shot.
   if (mate && laneOpen && leadLaneClear(me, mate, opponents, hoop.rimCenter)) {
     const bias = profile.passBias + (memory.favourTeammate ? TEAMMATE_PASS_BIAS : 0);

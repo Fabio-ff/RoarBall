@@ -865,6 +865,15 @@ Recorded at the Phase 4 reassessment; they refine C.2 and C.5 and are what the c
     passes.
   - *Kick-out* (fix round 2, C.3): the teammate brain (`favourTeammate`) passes to the human
     when its drive is cut off (a lane blocker) and the led-pass check above is clear.
+  - *Jumper guard* (fix round 3, teammate brain only): no jump shot when an opponent that can
+    block is within its `blockReach` + 0.3 m now, or will be at the jumper's release
+    (`SHOT_TIMING.jumpshot.releaseTick`, 0.45 s) if it keeps its velocity; the ball falls
+    through to step 5–7. It covers Hot Hand sure shots too: a block still beats them (D.2),
+    and exempting them left 46 % of the teammate's attempts blocked with abilities on. The
+    plain brain keeps D.5 (a sure shot inside 9 m is taken even when contested). The closing
+    marker had swatted 46 % of the teammate's attempts without abilities.
+    In the pass check the receiver's marker is now picked among the opponents that can
+    intercept, and its chase reuses the defence's `markPosition`.
   - *Jumpers*: fair `shootThreshold` 0.55 → 0.48, for the occasional open catch-and-shoot.
 
 ## Appendix D — Phase 5 decisions (2026-10-01)
