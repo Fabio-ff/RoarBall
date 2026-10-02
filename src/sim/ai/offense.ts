@@ -6,6 +6,7 @@ import { nextFloat } from '../rng';
 import { evaluateShot, hasSureShot, shotQuality, type ShotEvaluation } from '../shooting';
 import type { CourtDef, MatchState, PlayerState } from '../types';
 import type { AiGoal, AiMemory } from './memory';
+import { MARK_GAP_FACTOR, MARK_GAP_MAX, MARK_GAP_MIN } from './defense';
 import type { AiProfile } from './profile';
 import { farthestSpot } from './spots';
 
@@ -140,28 +141,69 @@ export function deadAheadSide(
 /** Mirrors B.3's pass timing (`planPass` in passing.ts) to estimate where a led pass arrives. */
 const PASS_LEAD_BASE_TIME = 0.35;
 const PASS_LEAD_TIME_PER_METRE = 0.05;
-/** A voluntary pass needs every opponent at least this far from the passer→lead-point segment. */
+/** A voluntary pass needs every opponent's predicted position this far from the ball in flight. */
 export const LEAD_LANE_CLEARANCE = 1;
+/** Fractions of the flight at which the ball and the opponents are compared. */
+const LEAD_LANE_SAMPLES = [0.25, 0.5, 0.75, 1] as const;
+
+function along(from: Vec3, to: Vec3, f: number): Vec3 {
+  return { x: from.x + (to.x - from.x) * f, y: 0, z: from.z + (to.z - from.z) * f };
+}
+
+/**
+ * Where `marker` will be `dt` seconds into the pass if it chases its C.5 marking spot for the
+ * receiver: `clamp(0.4·d, 0.8, 2.5)` from the receiver towards the rim, the receiver projected by
+ * velocity. It closes at most `max(speed, turboSpeed)·dt`.
+ */
+function pursuedSpot(marker: PlayerState, receiver: PlayerState, rim: Vec3, dt: number): Vec3 {
+  const r = {
+    x: receiver.pos.x + receiver.vel.x * dt,
+    y: 0,
+    z: receiver.pos.z + receiver.vel.z * dt,
+  };
+  const d = v3DistanceXZ(r, rim);
+  const gap = clamp(MARK_GAP_FACTOR * d, MARK_GAP_MIN, MARK_GAP_MAX);
+  const spot = d > 1e-6 ? along(r, rim, gap / d) : r;
+  const dist = v3DistanceXZ(marker.pos, spot);
+  if (dist <= 1e-6) return spot;
+  const vmax = Math.max(Math.hypot(marker.vel.x, marker.vel.z), marker.stats.turboSpeed);
+  return along(marker.pos, spot, Math.min(1, (vmax * dt) / dist));
+}
 
 /**
  * Spec C.5 step 5 extra check (issue #92). `passLaneOpen` tests the led arc against opponents
- * where they stand now, with the bare intercept reach. The receiver's marker keeps moving during
- * the flight and took most passes to a cutting teammate, so a voluntary pass also wants the
- * passer→lead-point segment clear by LEAD_LANE_CLEARANCE. Opponents within the B.3 release
- * shield of the passer cannot intercept and are ignored.
+ * where they stand now. Defenders move during the flight, so a voluntary pass also samples the
+ * flight (passer → lead point, at LEAD_LANE_SAMPLES) and needs LEAD_LANE_CLEARANCE from:
+ * - every opponent projected by its velocity;
+ * - the receiver's marker (the opponent nearest the receiver) chasing its marking spot, which
+ *   is what picked off kick-outs to a cutting teammate.
+ * Opponents within the B.3 release shield, stunned or getting up cannot intercept and are
+ * ignored. Deterministic; no RNG.
  */
 export function leadLaneClear(
   me: PlayerState,
   mate: PlayerState,
   opponents: readonly PlayerState[],
+  rim: Vec3,
 ): boolean {
   const t = PASS_LEAD_BASE_TIME + PASS_LEAD_TIME_PER_METRE * v3DistanceXZ(me.pos, mate.pos);
   const lead = { x: mate.pos.x + mate.vel.x * t, y: 0, z: mate.pos.z + mate.vel.z * t };
-  return !opponents.some(
-    (o) =>
-      v3DistanceXZ(o.pos, me.pos) > PASS_RELEASE_SHIELD_RADIUS &&
-      distanceToSegmentXZ(o.pos, me.pos, lead) < LEAD_LANE_CLEARANCE,
-  );
+  let marker: PlayerState | null = null;
+  for (const o of opponents)
+    if (!marker || v3DistanceXZ(o.pos, mate.pos) < v3DistanceXZ(marker.pos, mate.pos)) marker = o;
+  return !opponents.some((o) => {
+    if (o.action === 'stunned' || o.action === 'getup') return false;
+    if (v3DistanceXZ(o.pos, me.pos) <= PASS_RELEASE_SHIELD_RADIUS) return false;
+    return LEAD_LANE_SAMPLES.some((f) => {
+      const ball = along(me.pos, lead, f);
+      const dt = f * t;
+      const moved = { x: o.pos.x + o.vel.x * dt, y: 0, z: o.pos.z + o.vel.z * dt };
+      if (v3DistanceXZ(moved, ball) < LEAD_LANE_CLEARANCE) return true;
+      return (
+        o === marker && v3DistanceXZ(pursuedSpot(o, mate, rim, dt), ball) < LEAD_LANE_CLEARANCE
+      );
+    });
+  });
 }
 
 const SHOOT: AiGoal = { kind: 'shoot' };
@@ -226,13 +268,25 @@ export function planWithBall(
   }
   if (perceived >= profile.shootThreshold) return SHOOT;
   // 5. Pass to a better shot.
-  if (mate && laneOpen && leadLaneClear(me, mate, opponents)) {
+  if (mate && laneOpen && leadLaneClear(me, mate, opponents, hoop.rimCenter)) {
     const bias = profile.passBias + (memory.favourTeammate ? TEAMMATE_PASS_BIAS : 0);
     if (evaluateShotForAi(state, mate, court).quality >= mine.quality + bias) return PASS;
   }
   // 6–7. Drive, side-step around a blocker, or reset to an open spot.
   const blocker = laneBlocker(me, hoop.rimCenter, opponents);
   memory.laneClosedCount = blocker ? previousClosed + 1 : 0;
+  // Issue #92: the teammate brain kicks the ball out to the human when its drive is cut off
+  // (C.3 "favours the human"), if the led lane is clear.
+  if (
+    blocker &&
+    memory.favourTeammate &&
+    mate &&
+    laneOpen &&
+    leadLaneClear(me, mate, opponents, hoop.rimCenter)
+  ) {
+    memory.laneClosedCount = 0;
+    return PASS;
+  }
   if (
     blocker &&
     memory.laneClosedCount >= RESET_AFTER_CLOSED_DECISIONS &&

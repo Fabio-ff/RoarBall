@@ -101,6 +101,9 @@ function series(
  * hurts only the teammate is invisible there. Gym, both with and without abilities.
  */
 const TEAMMATE_SEEDS = 30;
+/** Issue #92 guards: the no-abilities mean floor (pre-#92 19.2 − 2) and the interception cap. */
+const TEAMMATE_MEAN_FLOOR = 17.2;
+const TEAMMATE_INTERCEPT_CAP = 0.2;
 interface TeammateRow {
   label: string;
   meanHome: number;
@@ -108,48 +111,79 @@ interface TeammateRow {
   homeWins: number;
   minHome: number;
   games: number;
+  /** home2's passes, how many were intercepted, how many home1 caught. */
+  passes: number;
+  intercepted: number;
+  completed: number;
+}
+
+interface TeammateGame {
+  score: [number, number];
+  passes: number;
+  intercepted: number;
+  completed: number;
 }
 
 function teammateSeries(label: string, abilities: AbilityTable): TeammateRow {
   const gym = getCourt('gym');
   const entries = roster(['rook', 'ace'], ['brick', 'dash']);
-  let sumHome = 0;
-  let sumAway = 0;
-  let homeWins = 0;
-  let minHome = Infinity;
-  for (let seed = 1; seed <= TEAMMATE_SEEDS; seed++) {
-    const [h, a] = playWith(seed, entries, gym, abilities);
-    sumHome += h;
-    sumAway += a;
-    minHome = Math.min(minHome, h);
-    if (h > a) homeWins++;
-  }
-  return {
+  const row: TeammateRow = {
     label,
-    meanHome: sumHome / TEAMMATE_SEEDS,
-    meanAway: sumAway / TEAMMATE_SEEDS,
-    homeWins,
-    minHome,
+    meanHome: 0,
+    meanAway: 0,
+    homeWins: 0,
+    minHome: Infinity,
     games: TEAMMATE_SEEDS,
+    passes: 0,
+    intercepted: 0,
+    completed: 0,
   };
+  for (let seed = 1; seed <= TEAMMATE_SEEDS; seed++) {
+    const g = playWith(seed, entries, gym, abilities);
+    const [h, a] = g.score;
+    row.meanHome += h / TEAMMATE_SEEDS;
+    row.meanAway += a / TEAMMATE_SEEDS;
+    row.minHome = Math.min(row.minHome, h);
+    if (h > a) row.homeWins++;
+    row.passes += g.passes;
+    row.intercepted += g.intercepted;
+    row.completed += g.completed;
+  }
+  return row;
 }
 
-/** `play` with home2 as the teammate brain and a chosen ability table (no ability counting). */
+/** `play` with home2 as the teammate brain and a chosen ability table; counts home2's passes. */
 function playWith(
   seed: number,
   entries: RosterEntry[],
   court: CourtDef,
   abilities: AbilityTable,
-): [number, number] {
+): TeammateGame {
   let state = createMatch({ ...settings, seed, courtId: court.id }, court, entries);
   const memories = entries.map((e, i) => createAiMemory(e.id, seed, i % 2, e.id === 'home2'));
+  const game: TeammateGame = { score: [0, 0], passes: 0, intercepted: 0, completed: 0 };
+  let inFlight = false;
   while (state.phase !== 'finished' && state.tick < MAX_TICKS) {
     const frame = new Map(
       memories.map((m) => [m.playerId, decide(state, m, AI_PROFILES.fair, court, abilities)]),
     );
-    state = tick(state, frame, court, abilities).state;
+    const r = tick(state, frame, court, abilities);
+    state = r.state;
+    for (const e of r.events) {
+      if (e.type === 'pass') {
+        inFlight = e.from === 'home2';
+        if (inFlight) game.passes++;
+      } else if (inFlight && e.type === 'intercept') {
+        game.intercepted++;
+        inFlight = false;
+      } else if (inFlight && e.type === 'catch') {
+        if (e.playerId === 'home1') game.completed++;
+        inFlight = false;
+      }
+    }
   }
-  return [state.score[0], state.score[1]];
+  game.score = [state.score[0], state.score[1]];
+  return game;
 }
 
 function summary(rows: Row[]): { games: number; homeRate: number; meanTotal: number } {
@@ -226,13 +260,13 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
       '',
       `## Default matchup with the teammate brain (gym, ${TEAMMATE_SEEDS} seeds)`,
       '',
-      "Home2 favours home1 as the app's teammate does; the human slot is an AI stand-in. Issue #92 floor: team-0 mean within 2 of the pre-#92 baseline (19.2 without abilities), no seed under 6.",
+      `Home2 favours home1 as the app's teammate does; the human slot is an AI stand-in. Issue #92 guards: team-0 mean ≥ ${TEAMMATE_MEAN_FLOOR} without abilities (pre-#92 19.2 − 2), no seed under 6, home2's passes intercepted ≤ ${100 * TEAMMATE_INTERCEPT_CAP} %.`,
       '',
-      '| matchup | team-0 mean | opponents mean | team-0 wins | team-0 min |',
-      '|---|---|---|---|---|',
+      '| matchup | team-0 mean | opponents mean | team-0 wins | team-0 min | home2 passes / match | intercepted | completed to home1 / match |',
+      '|---|---|---|---|---|---|---|---|',
       ...teammate.map(
         (r) =>
-          `| ${r.label} | ${r.meanHome.toFixed(1)} | ${r.meanAway.toFixed(1)} | ${r.homeWins}/${r.games} (${((100 * r.homeWins) / r.games).toFixed(0)} %) | ${r.minHome} |`,
+          `| ${r.label} | ${r.meanHome.toFixed(1)} | ${r.meanAway.toFixed(1)} | ${r.homeWins}/${r.games} (${((100 * r.homeWins) / r.games).toFixed(0)} %) | ${r.minHome} | ${(r.passes / r.games).toFixed(1)} | ${((100 * r.intercepted) / Math.max(1, r.passes)).toFixed(0)} % | ${(r.completed / r.games).toFixed(1)} |`,
       ),
       '',
       '## Gym — mirrored duos',
@@ -265,6 +299,12 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
     }
     for (const c of perCharacter) expect(c.perMatch, c.id).toBeGreaterThan(0);
     // Issue #92: the teammate brain must not collapse again (sweep floor ≥ 6 per seed).
-    for (const r of teammate) expect(r.minHome, r.label).toBeGreaterThanOrEqual(6);
+    for (const r of teammate) {
+      expect(r.minHome, r.label).toBeGreaterThanOrEqual(6);
+      expect(r.intercepted / Math.max(1, r.passes), r.label).toBeLessThanOrEqual(
+        TEAMMATE_INTERCEPT_CAP,
+      );
+    }
+    expect(teammate[0].meanHome, teammate[0].label).toBeGreaterThanOrEqual(TEAMMATE_MEAN_FLOOR);
   });
 });

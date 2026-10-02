@@ -21,10 +21,10 @@ export interface NamedSpot {
 
 /** Offsets from the rim: `back` towards centre court (−side·X), `side` across the width (Z). */
 const SPOT_OFFSETS: Readonly<Record<SpotName, { back: number; side: number }>> = {
-  // Issue #92: 6.3 → 5.5. From 6.3 the run to the near corner hugs the sideline, and a catch
-  // there is trapped (marker in front, sideline beside, baseline behind).
-  leftCorner: { back: 1.0, side: -5.5 },
-  rightCorner: { back: 1.0, side: 5.5 },
+  // Issue #92: 6.3 → 6.1. Tuned with the pursuit-aware pass check: 5.5 freed the near-corner
+  // catch but left the human almost no kick-outs; 6.1 keeps both (fix round 2 report).
+  leftCorner: { back: 1.0, side: -6.1 },
+  rightCorner: { back: 1.0, side: 6.1 },
   leftWing: { back: 5.0, side: -4.5 },
   rightWing: { back: 5.0, side: 4.5 },
   top: { back: 6.5, side: 0 },

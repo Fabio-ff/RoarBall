@@ -267,34 +267,62 @@ describe('planWithBall', () => {
     expect(sideStepPoint(wing, hoop, marker, 1).z).toBeCloseTo(7, 1); // no bound: unchanged
   });
 
-  it('a voluntary pass needs a 1 m clearance along the led lane, not only an open lane', () => {
-    // Issue #92: passLaneOpen tests the led arc against opponents where they stand; the
-    // receiver's marker keeps moving during the flight and took most such passes.
+  it('a voluntary pass models defender motion along the led lane (velocity and the marker chase)', () => {
+    // Issue #92: passLaneOpen tests the led arc against opponents where they stand; defenders
+    // move during the flight, and the receiver's marker chases its marking spot.
     const s = live();
     const me = place(s, 'home2', rim.x - 3, 1);
     giveBall(s, me, []);
-    const mate = place(s, 'home1', rim.x - 7, 1);
-    place(s, 'away2', rim.x - 2.2, 1.6); // my marker, inside the release shield: ignored
-    const marker = place(s, 'away1', rim.x - 5, 1.8); // 0.8 m off the lane
-    const opponents = [marker, player(s, 'away2')];
+    const mate = place(s, 'home1', rim.x - 3, -5); // a lateral pass along x = rim.x − 3
+    const myMarker = place(s, 'away2', rim.x - 2.4, 1.5); // inside the release shield: ignored
+    // The mate's marker already on its spot (2.33 m towards the rim): 1.2 m off the lane.
+    const marker = place(s, 'away1', rim.x - 1.8, -3);
+    const opponents = [marker, myMarker];
     expect(passLaneOpen(s, me, mate, court)).toBe(true);
-    expect(leadLaneClear(me, mate, opponents)).toBe(false);
-    place(s, 'away1', rim.x - 5, 2.2); // 1.2 m off
-    expect(leadLaneClear(me, mate, opponents)).toBe(true);
-    // The lane runs to where the pass is led: a mate cutting towards that marker closes it.
-    mate.vel = { x: 0, y: 0, z: 4 };
-    expect(leadLaneClear(me, mate, opponents)).toBe(false);
-    // planWithBall: the favouring brain would pass (see above), but not into the marker.
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(true);
+    // Standing 0.8 m off the lane: blocked.
+    place(s, 'away1', rim.x - 2.2, -3);
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(false);
+    // 2 m off the lane but running across it: blocked by the velocity projection.
+    place(s, 'away1', rim.x - 1, -2.5);
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(true);
+    marker.vel = { x: -6, y: 0, z: 0 };
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(false);
+    // Standing still 2.5 m off the lane, on the far side from its spot: the chase crosses the
+    // ball's path.
+    marker.vel = { x: 0, y: 0, z: 0 };
+    place(s, 'away1', rim.x - 5.5, -1.5);
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(false);
+    // A stunned marker cannot intercept.
+    marker.action = 'stunned';
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(true);
+    marker.action = 'idle';
+    // planWithBall: the favouring brain passes when the lane is clear, not into the chase.
     const noShoot = { ...exact, shootThreshold: 0.99, passBias: -9 };
-    mate.vel = { x: 0, y: 0, z: 0 };
-    place(s, 'away1', rim.x - 5, 1.8);
-    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), noShoot, court).kind).toBe(
-      'drive',
-    );
-    place(s, 'away1', rim.x - 5, 3);
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), noShoot, court)).not.toEqual({
+      kind: 'pass',
+    });
+    place(s, 'away1', rim.x - 1.8, -3);
     expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), noShoot, court)).toEqual({
       kind: 'pass',
     });
+  });
+
+  it('the teammate brain kicks out to the human when its drive is cut off', () => {
+    // Issue #92 (C.3 favours the human): a blocked drive passes if the led lane is clear.
+    const noShoot = { ...exact, shootThreshold: 0.99, passBias: 9 };
+    const { s, me } = holderAt(9, 'home2');
+    s.shotClockMs = 10_000;
+    place(s, 'away1', rim.x - 7, 0.1); // dead ahead
+    place(s, 'home1', rim.x - 9, -6); // the human, open on the wing
+    place(s, 'away2', rim.x - 14, 6); // far away
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), noShoot, court)).toEqual({
+      kind: 'pass',
+    });
+    // The plain brain keeps driving round the blocker.
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, false), noShoot, court).kind).toBe(
+      'drive',
+    );
   });
 
   it('no blocker when the opponent is behind me or off the lane', () => {

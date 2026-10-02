@@ -853,12 +853,18 @@ Recorded at the Phase 4 reassessment; they refine C.2 and C.5 and are what the c
     half the time.)
   - *Dead ends* (fix round 1): a side-step point less than 1 m in front of the rim or within
     1 m of the sideline is replaced by the other side's point when that has more room.
-  - *Corners* move from 6.3 m to 5.5 m across: from 6.3 the run to the near corner hugs the
-    sideline, and a catch there is trapped by the marker, the sideline and the baseline.
-  - *Led passes* (fix round 1): C.5 step 5 also needs the lane from the passer to where the
-    pass is led (receiver position + velocity × flight time, B.3 timing) clear by 1 m of every
-    opponent outside the release shield. A receiver cutting past their own marker ran the
-    lead point into that marker, which intercepted.
+  - *Corners* move from 6.3 m to 6.1 m across (fix round 2; round 1 used 5.5). From 6.3 the
+    run to the near corner hugs the sideline and the catch is trapped; 5.5 freed it but, with
+    the pass check below, left the human almost no passes from the teammate.
+  - *Led passes* (fix rounds 1–2): C.5 step 5 also samples the flight from the passer to where
+    the pass is led (receiver position + velocity × flight time, B.3 timing) at ¼, ½, ¾ and
+    the end. At each sample the ball must be 1 m from every opponent projected by its velocity,
+    and from the receiver's marker (the opponent nearest the receiver) chasing its C.5 marking
+    spot at up to its turbo speed. Opponents in the release shield, stunned or getting up are
+    ignored. No RNG. A static 1 m check let the trailing marker take 45 % of the teammate's
+    passes.
+  - *Kick-out* (fix round 2, C.3): the teammate brain (`favourTeammate`) passes to the human
+    when its drive is cut off (a lane blocker) and the led-pass check above is clear.
   - *Jumpers*: fair `shootThreshold` 0.55 → 0.48, for the occasional open catch-and-shoot.
 
 ## Appendix D — Phase 5 decisions (2026-10-01)
