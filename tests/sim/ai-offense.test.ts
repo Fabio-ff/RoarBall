@@ -11,13 +11,23 @@ import {
   shouldChase,
   wantsAlleyOopInvite,
 } from '../../src/sim/ai/offball';
-import { laneBlocker, perceive, planWithBall, sideStepPoint } from '../../src/sim/ai/offense';
+import {
+  JUMPER_GUARD_MARGIN,
+  jumperContested,
+  laneBlocker,
+  leadLaneClear,
+  perceive,
+  planWithBall,
+  sideStepPoint,
+} from '../../src/sim/ai/offense';
+import { passLaneOpen } from '../../src/sim/passing';
 import { AI_PROFILES, type AiProfile } from '../../src/sim/ai/profile';
 import { namedSpot } from '../../src/sim/ai/spots';
 import { v3DistanceXZ } from '../../src/sim/math';
 import { giveBall } from '../../src/sim/ball';
 import { hoopGeometry } from '../../src/sim/hoop';
 import { createMatch, findPlayer } from '../../src/sim/match';
+import { nextFloat } from '../../src/sim/rng';
 import { startJump } from '../../src/sim/player-movement';
 import { evaluateShot } from '../../src/sim/shooting';
 import { tick } from '../../src/sim/tick';
@@ -197,7 +207,7 @@ describe('planWithBall', () => {
     const { s, me } = holderAt(9);
     const blocker = place(s, 'away1', rim.x - 7, 0.6); // 2 m ahead, a little to +Z
     expect(laneBlocker(me, rim, [blocker])).toBe(blocker);
-    const step = sideStepPoint(me, rim, blocker);
+    const step = sideStepPoint(me, hoop, blocker);
     expect(step.z).toBeLessThan(me.pos.z); // away from the blocker (−Z)
     expect(Math.abs(step.z - me.pos.z)).toBeCloseTo(2, 1);
     const m = createAiMemory('home1', 1, 0, false);
@@ -214,6 +224,146 @@ describe('planWithBall', () => {
     s.shotClockMs = 5000;
     m.laneClosedCount = 5;
     expect(planWithBall(s, me, m, noShoot, court).kind).toBe('drive');
+  });
+
+  it('a dead-ahead blocker: the side-step goes away from the help defender, with no extra draw', () => {
+    // Issue #92: the marker stands on the me→rim line (lateral ≈ 0); the old sign test always
+    // stepped to the same side.
+    const noShoot = { ...exact, shootThreshold: 0.99, passBias: 9 };
+    const sideStepZ = (blockerZ: number, helpZ: number): number => {
+      const { s, me } = holderAt(9);
+      s.shotClockMs = 10_000;
+      place(s, 'away1', rim.x - 7, blockerZ); // 2 m ahead
+      place(s, 'away2', rim.x - 4, helpZ); // the help defender, off the lane
+      const m = createAiMemory('home1', 1, 0, false);
+      const twin = createAiMemory('home1', 1, 0, false);
+      const goal = planWithBall(s, me, m, noShoot, court);
+      if (goal.kind !== 'drive' || goal.sideStep === null) throw new Error('expected a side-step');
+      nextFloat(twin.rng); // the one perceive draw, nothing more for the side
+      expect(m.rng.seed).toBe(twin.rng.seed);
+      return goal.sideStep.z - me.pos.z;
+    };
+    // Driving towards +X: the left-hand perpendicular (+1) is +Z.
+    expect(sideStepZ(0.1, 4)).toBeLessThan(-1.5);
+    expect(sideStepZ(0.1, -4)).toBeGreaterThan(1.5);
+    expect(sideStepZ(-0.1, 4)).toBeLessThan(-1.5);
+    // The band edge: just inside 0.4 the help decides; just outside, the blocker does.
+    expect(sideStepZ(0.39, -4)).toBeGreaterThan(1.5);
+    expect(sideStepZ(0.41, -4)).toBeLessThan(-1.5);
+  });
+
+  it('a side-step into the baseline or the sideline takes the other side', () => {
+    // Issue #92: from a corner the drive runs along the baseline, so one side-step side is
+    // behind the rim; near the sideline one side is (almost) out of court.
+    const s = live();
+    const halfWidth = court.playArea.width / 2;
+    // Corner, driving along −Z to the rim; +1 would step behind the rim (+X).
+    const corner = place(s, 'home1', rim.x - 1, 5.5);
+    const ahead = place(s, 'away1', rim.x - 1, 3.5);
+    expect(sideStepPoint(corner, hoop, ahead, 1, halfWidth).x).toBeLessThan(rim.x - 1);
+    expect(sideStepPoint(corner, hoop, ahead, -1, halfWidth).x).toBeLessThan(rim.x - 1);
+    // Near the sideline, driving diagonally in; +1 would step to z 7.0, past the 1 m margin.
+    const wing = place(s, 'home1', rim.x - 8, 6);
+    const marker = place(s, 'away1', rim.x - 6.4, 4.8);
+    expect(sideStepPoint(wing, hoop, marker, 1, halfWidth).z).toBeLessThan(halfWidth - 1);
+    expect(sideStepPoint(wing, hoop, marker, 1).z).toBeCloseTo(7, 1); // no bound: unchanged
+  });
+
+  it('a voluntary pass models defender motion along the led lane (velocity and the marker chase)', () => {
+    // Issue #92: passLaneOpen tests the led arc against opponents where they stand; defenders
+    // move during the flight, and the receiver's marker chases its marking spot.
+    const s = live();
+    const me = place(s, 'home2', rim.x - 3, 1);
+    giveBall(s, me, []);
+    const mate = place(s, 'home1', rim.x - 3, -5); // a lateral pass along x = rim.x − 3
+    const myMarker = place(s, 'away2', rim.x - 2.4, 1.5); // inside the release shield: ignored
+    // The mate's marker already on its spot (2.33 m towards the rim): 1.2 m off the lane.
+    const marker = place(s, 'away1', rim.x - 1.8, -3);
+    const opponents = [marker, myMarker];
+    expect(passLaneOpen(s, me, mate, court)).toBe(true);
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(true);
+    // Standing 0.8 m off the lane: blocked.
+    place(s, 'away1', rim.x - 2.2, -3);
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(false);
+    // 2 m off the lane but running across it: blocked by the velocity projection.
+    place(s, 'away1', rim.x - 1, -2.5);
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(true);
+    marker.vel = { x: -6, y: 0, z: 0 };
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(false);
+    // Standing still 2.5 m off the lane, on the far side from its spot: the chase crosses the
+    // ball's path.
+    marker.vel = { x: 0, y: 0, z: 0 };
+    place(s, 'away1', rim.x - 5.5, -1.5);
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(false);
+    // A stunned marker cannot intercept.
+    marker.action = 'stunned';
+    expect(leadLaneClear(me, mate, opponents, rim)).toBe(true);
+    marker.action = 'idle';
+    // planWithBall: the favouring brain passes when the lane is clear, not into the chase.
+    const noShoot = { ...exact, shootThreshold: 0.99, passBias: -9 };
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), noShoot, court)).not.toEqual({
+      kind: 'pass',
+    });
+    place(s, 'away1', rim.x - 1.8, -3);
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), noShoot, court)).toEqual({
+      kind: 'pass',
+    });
+  });
+
+  it('the teammate brain kicks out to the human when its drive is cut off', () => {
+    // Issue #92 (C.3 favours the human): a blocked drive passes if the led lane is clear.
+    const noShoot = { ...exact, shootThreshold: 0.99, passBias: 9 };
+    const { s, me } = holderAt(9, 'home2');
+    s.shotClockMs = 10_000;
+    place(s, 'away1', rim.x - 7, 0.1); // dead ahead
+    place(s, 'home1', rim.x - 9, -6); // the human, open on the wing
+    place(s, 'away2', rim.x - 14, 6); // far away
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), noShoot, court)).toEqual({
+      kind: 'pass',
+    });
+    // The plain brain keeps driving round the blocker.
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, false), noShoot, court).kind).toBe(
+      'drive',
+    );
+  });
+
+  it('the teammate brain holds a jumper its marker can block now or at release', () => {
+    // Issue #92 (I-2): catch-and-shoot jumpers were swatted by the closing marker.
+    const { s, me } = holderAt(6, 'home2');
+    s.shotClockMs = 10_000;
+    expect(evaluateShot(s, me, court).type).toBe('jumpshot');
+    const marker = place(s, 'away2', rim.x - 4, 0.5); // ~2.06 m away, standing
+    const reach = marker.stats.blockReach + JUMPER_GUARD_MARGIN;
+    const others = [marker, player(s, 'away1')];
+    expect(jumperContested(me, others)).toBe(false);
+    // Within reach + margin now.
+    place(s, 'away2', me.pos.x + reach - 0.05, 0);
+    expect(jumperContested(me, others)).toBe(true);
+    place(s, 'away2', me.pos.x + reach + 0.05, 0);
+    expect(jumperContested(me, others)).toBe(false);
+    // Out of reach now, but closing: in reach at release (27 ticks = 0.45 s).
+    place(s, 'away2', me.pos.x + 3, 0);
+    expect(jumperContested(me, others)).toBe(false);
+    marker.vel = { x: -5, y: 0, z: 0 };
+    expect(jumperContested(me, others)).toBe(true);
+    // A stunned marker cannot block.
+    place(s, 'away2', me.pos.x + 1, 0);
+    marker.action = 'stunned';
+    expect(jumperContested(me, others)).toBe(false);
+    marker.action = 'idle';
+    // planWithBall: the teammate holds the shot, the plain brain shoots.
+    const shoot = { ...exact, shootThreshold: 0, passBias: 9 };
+    place(s, 'away2', me.pos.x + 1.2, 0.3);
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), shoot, court)).not.toEqual({
+      kind: 'shoot',
+    });
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, false), shoot, court)).toEqual({
+      kind: 'shoot',
+    });
+    place(s, 'away2', rim.x - 14, 6);
+    expect(planWithBall(s, me, createAiMemory('home2', 1, 1, true), shoot, court)).toEqual({
+      kind: 'shoot',
+    });
   });
 
   it('no blocker when the opponent is behind me or off the lane', () => {
@@ -242,6 +392,32 @@ describe('off ball', () => {
       m.goal = goal;
       expect(planOffBall(s, me, m, hoop, handler.pos)).toEqual(goal);
     }
+  });
+
+  it('draws one roll on a fresh pick only, and the roll picks among tied spots', () => {
+    // Issue #92: off-ball decision ticks drew nothing before, so this stays within one draw.
+    const s = live();
+    const handler = place(s, 'home1', rim.x - 7, 0);
+    giveBall(s, handler, []);
+    const me = place(s, 'home2', rim.x - 9, 6);
+    place(s, 'away1', rim.x - 2, 0);
+    place(s, 'away2', rim.x - 6.2, 0); // both corners equally open: a tie
+    const picks = new Set<string>();
+    for (let seed = 1; seed <= 12; seed++) {
+      const m = createAiMemory('home2', seed, 1, true);
+      const twin = createAiMemory('home2', seed, 1, true);
+      const roll = nextFloat(twin.rng);
+      const goal = planOffBall(s, me, m, hoop, handler.pos);
+      expect(m.rng.seed).toBe(twin.rng.seed); // exactly one draw
+      if (goal.kind !== 'moveTo' || goal.name === null) throw new Error('expected a spot');
+      expect(goal.name).toBe(roll < 0.5 ? 'leftCorner' : 'rightCorner');
+      picks.add(goal.name);
+      // Holding the spot: no draw.
+      m.goal = goal;
+      expect(planOffBall(s, me, m, hoop, handler.pos)).toEqual(goal);
+      expect(m.rng.seed).toBe(twin.rng.seed);
+    }
+    expect(picks).toEqual(new Set(['leftCorner', 'rightCorner']));
   });
 
   it('invites the alley-oop from under the basket, at most once per 90 ticks', () => {

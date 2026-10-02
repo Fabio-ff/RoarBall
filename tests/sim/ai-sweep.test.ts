@@ -10,7 +10,12 @@ import { tick } from '../../src/sim/tick';
 import type { CourtDef, PlayerIntent, SimEvent } from '../../src/sim/types';
 import { court, playAiMatch, startState, type AiRun } from './ai-match';
 
-const SEEDS = Array.from({ length: 20 }, (_, i) => i + 1);
+/**
+ * The default roster with the human's teammate brain (home2 favours the human, as in the app).
+ * 30 seeds, not 20: issue #92's first cut dropped this matchup to 4 points on seed 25, which the
+ * 20-seed sweep never played.
+ */
+const SEEDS = Array.from({ length: 30 }, (_, i) => i + 1);
 /** Spec D.7: + 5 seeds on every court with abilities on. */
 const COURT_RUNS: [string, number][] = ['gym', 'rooftop', 'volcano', 'frozen'].flatMap((id) =>
   [1, 2, 3, 4, 5].map((seed): [string, number] => [id, seed]),

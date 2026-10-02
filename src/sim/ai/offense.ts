@@ -1,11 +1,19 @@
-import { hoopGeometry } from '../hoop';
+import { hoopGeometry, type HoopGeometry } from '../hoop';
 import { clamp, distanceToSegmentXZ, v3DistanceXZ, type Vec3 } from '../math';
 import { allPlayers } from '../match';
-import { ALLEY_OOP_RANGE, passLaneOpen, teammateOf } from '../passing';
+import { ALLEY_OOP_RANGE, PASS_RELEASE_SHIELD_RADIUS, passLaneOpen, teammateOf } from '../passing';
 import { nextFloat } from '../rng';
-import { evaluateShot, hasSureShot, shotQuality, type ShotEvaluation } from '../shooting';
+import { TICK_DT } from '../constants';
+import {
+  evaluateShot,
+  hasSureShot,
+  SHOT_TIMING,
+  shotQuality,
+  type ShotEvaluation,
+} from '../shooting';
 import type { CourtDef, MatchState, PlayerState } from '../types';
 import type { AiGoal, AiMemory } from './memory';
+import { markPosition } from './defense';
 import type { AiProfile } from './profile';
 import { farthestSpot } from './spots';
 
@@ -55,21 +63,178 @@ export function laneBlocker(
   return blocker;
 }
 
-/** A point SIDE_STEP_DISTANCE perpendicular to me→rim on the side away from the blocker (C.5 step 6). */
-export function sideStepPoint(me: PlayerState, rim: Vec3, blocker: PlayerState): Vec3 {
+/** A blocker this close to the me→rim line (lateral, m) is dead ahead: no side is "away" (issue #92). */
+export const SIDE_STEP_TIE = 0.4;
+/**
+ * A side-step point must stay this far in front of the rim (towards centre court) and this far
+ * inside the sideline; past either it is a dead end against the baseline, the board or the
+ * sideline, where the marker traps the ball (issue #92).
+ */
+export const SIDE_STEP_MIN_DEPTH = 1;
+export const SIDE_STEP_SIDELINE_MARGIN = 1;
+
+/** +1: the left-hand side of me→rim (−uz, ux); −1: the right-hand side. */
+export type DriveSide = 1 | -1;
+
+/** The signed lateral offset of `p` from the me→rim line (positive: left-hand side). */
+function lateralOf(me: PlayerState, rim: Vec3, p: Vec3): number {
+  const dx = rim.x - me.pos.x;
+  const dz = rim.z - me.pos.z;
+  const len = Math.hypot(dx, dz) || 1;
+  return (-dz / len) * (p.x - me.pos.x) + (dx / len) * (p.z - me.pos.z);
+}
+
+/** Room left at `p`: negative when it is behind SIDE_STEP_MIN_DEPTH or past the sideline margin. */
+function sideStepRoom(hoop: HoopGeometry, p: Vec3, halfWidth: number): number {
+  const depth = -hoop.side * (p.x - hoop.rimCenter.x);
+  const fromSideline = halfWidth - Math.abs(p.z - hoop.rimCenter.z);
+  return Math.min(depth - SIDE_STEP_MIN_DEPTH, fromSideline - SIDE_STEP_SIDELINE_MARGIN);
+}
+
+/**
+ * A point SIDE_STEP_DISTANCE perpendicular to me→rim on the side away from the blocker (C.5
+ * step 6). A blocker dead ahead (|lateral| < SIDE_STEP_TIE) has no "away" side: `tieSide` picks.
+ * When that point is a dead end (sideStepRoom < 0: a drive along the baseline or the sideline,
+ * typically from a corner) and the other side has more room, the other side is taken.
+ */
+export function sideStepPoint(
+  me: PlayerState,
+  hoop: HoopGeometry,
+  blocker: PlayerState,
+  tieSide: DriveSide = 1,
+  halfWidth = Infinity,
+): Vec3 {
+  const rim = hoop.rimCenter;
   const dx = rim.x - me.pos.x;
   const dz = rim.z - me.pos.z;
   const len = Math.hypot(dx, dz) || 1;
   const ux = dx / len;
   const uz = dz / len;
-  // Left-hand perpendicular (−uz, ux); the blocker's lateral offset picks the opposite side.
-  const lateral = -uz * (blocker.pos.x - me.pos.x) + ux * (blocker.pos.z - me.pos.z);
-  const sign = lateral > 0 ? -1 : 1;
-  return {
-    x: me.pos.x - uz * sign * SIDE_STEP_DISTANCE + ux * SIDE_STEP_FORWARD,
+  const lateral = lateralOf(me, rim, blocker.pos);
+  const sign = Math.abs(lateral) < SIDE_STEP_TIE ? tieSide : lateral > 0 ? -1 : 1;
+  const at = (s: number): Vec3 => ({
+    x: me.pos.x - uz * s * SIDE_STEP_DISTANCE + ux * SIDE_STEP_FORWARD,
     y: 0,
-    z: me.pos.z + ux * sign * SIDE_STEP_DISTANCE + uz * SIDE_STEP_FORWARD,
+    z: me.pos.z + ux * s * SIDE_STEP_DISTANCE + uz * SIDE_STEP_FORWARD,
+  });
+  const step = at(sign);
+  const room = sideStepRoom(hoop, step, halfWidth);
+  if (room >= 0) return step;
+  const other = at(-sign);
+  return sideStepRoom(hoop, other, halfWidth) > room ? other : step;
+}
+
+/**
+ * The side for a dead-ahead blocker: away from the nearest other opponent, the help defender
+ * (C.5 step 6 steps around the blocker on the side where the other defender is not). No RNG.
+ * The side varies with where the help stands; a seeded coin flip here stepped into the help half
+ * the time (issue #92).
+ */
+export function deadAheadSide(
+  me: PlayerState,
+  rim: Vec3,
+  blocker: PlayerState,
+  opponents: readonly PlayerState[],
+): DriveSide {
+  let help: PlayerState | null = null;
+  for (const o of opponents) {
+    if (o === blocker) continue;
+    if (!help || v3DistanceXZ(o.pos, me.pos) < v3DistanceXZ(help.pos, me.pos)) help = o;
+  }
+  if (!help) return 1;
+  return lateralOf(me, rim, help.pos) > 0 ? -1 : 1;
+}
+
+/** Mirrors B.3's pass timing (`planPass` in passing.ts) to estimate where a led pass arrives. */
+const PASS_LEAD_BASE_TIME = 0.35;
+const PASS_LEAD_TIME_PER_METRE = 0.05;
+/** A voluntary pass needs every opponent's predicted position this far from the ball in flight. */
+export const LEAD_LANE_CLEARANCE = 1;
+/** Fractions of the flight at which the ball and the opponents are compared. */
+const LEAD_LANE_SAMPLES = [0.25, 0.5, 0.75, 1] as const;
+
+function along(from: Vec3, to: Vec3, f: number): Vec3 {
+  return { x: from.x + (to.x - from.x) * f, y: 0, z: from.z + (to.z - from.z) * f };
+}
+
+/**
+ * Where `marker` will be `dt` seconds into the pass if it chases its C.5 marking spot for the
+ * receiver (`markPosition`, the receiver projected by velocity). It closes at most
+ * `max(speed, turboSpeed)·dt`.
+ */
+function pursuedSpot(marker: PlayerState, receiver: PlayerState, rim: Vec3, dt: number): Vec3 {
+  const r = {
+    x: receiver.pos.x + receiver.vel.x * dt,
+    y: 0,
+    z: receiver.pos.z + receiver.vel.z * dt,
   };
+  const spot = markPosition(r, rim, false);
+  const dist = v3DistanceXZ(marker.pos, spot);
+  if (dist <= 1e-6) return spot;
+  const vmax = Math.max(Math.hypot(marker.vel.x, marker.vel.z), marker.stats.turboSpeed);
+  return along(marker.pos, spot, Math.min(1, (vmax * dt) / dist));
+}
+
+/** Stunned or getting-up players cannot intercept or block. */
+function canContest(o: PlayerState): boolean {
+  return o.action !== 'stunned' && o.action !== 'getup';
+}
+
+/**
+ * Spec C.5 step 5 extra check (issue #92). `passLaneOpen` tests the led arc against opponents
+ * where they stand now. Defenders move during the flight, so a voluntary pass also samples the
+ * flight (passer → lead point, at LEAD_LANE_SAMPLES) and needs LEAD_LANE_CLEARANCE from:
+ * - every opponent projected by its velocity;
+ * - the receiver's marker (the opponent nearest the receiver) chasing its marking spot, which
+ *   is what picked off kick-outs to a cutting teammate.
+ * Opponents within the B.3 release shield, stunned or getting up cannot intercept and are
+ * ignored. Deterministic; no RNG.
+ */
+export function leadLaneClear(
+  me: PlayerState,
+  mate: PlayerState,
+  opponents: readonly PlayerState[],
+  rim: Vec3,
+): boolean {
+  const t = PASS_LEAD_BASE_TIME + PASS_LEAD_TIME_PER_METRE * v3DistanceXZ(me.pos, mate.pos);
+  const lead = { x: mate.pos.x + mate.vel.x * t, y: 0, z: mate.pos.z + mate.vel.z * t };
+  const live = opponents.filter(
+    (o) => canContest(o) && v3DistanceXZ(o.pos, me.pos) > PASS_RELEASE_SHIELD_RADIUS,
+  );
+  let marker: PlayerState | null = null;
+  for (const o of live)
+    if (!marker || v3DistanceXZ(o.pos, mate.pos) < v3DistanceXZ(marker.pos, mate.pos)) marker = o;
+  return !live.some((o) =>
+    LEAD_LANE_SAMPLES.some((f) => {
+      const ball = along(me.pos, lead, f);
+      const dt = f * t;
+      const moved = { x: o.pos.x + o.vel.x * dt, y: 0, z: o.pos.z + o.vel.z * dt };
+      if (v3DistanceXZ(moved, ball) < LEAD_LANE_CLEARANCE) return true;
+      return (
+        o === marker && v3DistanceXZ(pursuedSpot(o, mate, rim, dt), ball) < LEAD_LANE_CLEARANCE
+      );
+    }),
+  );
+}
+
+/** Margin over an opponent's `blockReach` for the teammate's jumper guard (issue #92). */
+export const JUMPER_GUARD_MARGIN = 0.3;
+
+/**
+ * Issue #92 (I-2): the teammate brain's jumper guard. A jump shot is blocked when an opponent is
+ * within its `blockReach` at release, `SHOT_TIMING.jumpshot.releaseTick` ticks after the press.
+ * The guard says no when any opponent that can block is within `blockReach +
+ * JUMPER_GUARD_MARGIN` now, or will be at release if it keeps its velocity. No RNG.
+ */
+export function jumperContested(me: PlayerState, opponents: readonly PlayerState[]): boolean {
+  const windUp = SHOT_TIMING.jumpshot.releaseTick * TICK_DT;
+  return opponents.some((o) => {
+    if (!canContest(o)) return false;
+    const reach = o.stats.blockReach + JUMPER_GUARD_MARGIN;
+    if (v3DistanceXZ(o.pos, me.pos) <= reach) return true;
+    const later = { x: o.pos.x + o.vel.x * windUp, y: 0, z: o.pos.z + o.vel.z * windUp };
+    return v3DistanceXZ(later, me.pos) <= reach;
+  });
 }
 
 const SHOOT: AiGoal = { kind: 'shoot' };
@@ -132,15 +297,33 @@ export function planWithBall(
     );
     if (!contested) return SHOOT;
   }
-  if (perceived >= profile.shootThreshold) return SHOOT;
+  if (perceived >= profile.shootThreshold) {
+    // Issue #92: the teammate does not shoot a jumper into a closing marker; it passes or drives.
+    // A Hot Hand sure shot is guarded too: it is made, but a block still beats it (D.2).
+    const guarded =
+      memory.favourTeammate && mine.type === 'jumpshot' && jumperContested(me, opponents);
+    if (!guarded) return SHOOT;
+  }
   // 5. Pass to a better shot.
-  if (mate && laneOpen) {
+  if (mate && laneOpen && leadLaneClear(me, mate, opponents, hoop.rimCenter)) {
     const bias = profile.passBias + (memory.favourTeammate ? TEAMMATE_PASS_BIAS : 0);
     if (evaluateShotForAi(state, mate, court).quality >= mine.quality + bias) return PASS;
   }
   // 6–7. Drive, side-step around a blocker, or reset to an open spot.
   const blocker = laneBlocker(me, hoop.rimCenter, opponents);
   memory.laneClosedCount = blocker ? previousClosed + 1 : 0;
+  // Issue #92: the teammate brain kicks the ball out to the human when its drive is cut off
+  // (C.3 "favours the human"), if the led lane is clear.
+  if (
+    blocker &&
+    memory.favourTeammate &&
+    mate &&
+    laneOpen &&
+    leadLaneClear(me, mate, opponents, hoop.rimCenter)
+  ) {
+    memory.laneClosedCount = 0;
+    return PASS;
+  }
   if (
     blocker &&
     memory.laneClosedCount >= RESET_AFTER_CLOSED_DECISIONS &&
@@ -153,5 +336,10 @@ export function planWithBall(
     );
     return { kind: 'moveTo', spot, name };
   }
-  return { kind: 'drive', sideStep: blocker ? sideStepPoint(me, hoop.rimCenter, blocker) : null };
+  if (!blocker) return { kind: 'drive', sideStep: null };
+  const tieSide = deadAheadSide(me, hoop.rimCenter, blocker, opponents);
+  return {
+    kind: 'drive',
+    sideStep: sideStepPoint(me, hoop, blocker, tieSide, court.playArea.width / 2),
+  };
 }

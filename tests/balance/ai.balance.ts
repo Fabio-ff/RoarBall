@@ -6,6 +6,7 @@ import { courts, getCourt } from '../../src/content/courts';
 import { decide } from '../../src/sim/ai/brain';
 import { createAiMemory } from '../../src/sim/ai/memory';
 import { AI_PROFILES } from '../../src/sim/ai/profile';
+import { NO_ABILITIES, type AbilityTable } from '../../src/sim/hooks';
 import { createMatch, type RosterEntry } from '../../src/sim/match';
 import { tick } from '../../src/sim/tick';
 import type { CourtDef, MatchSettings } from '../../src/sim/types';
@@ -94,6 +95,122 @@ function series(
   return { label, homeWins, games: seeds, meanHome: sumHome / seeds, meanAway: sumAway / seeds };
 }
 
+/**
+ * Issue #92: the app's default matchup with the human's teammate brain (home2 favours home1, as
+ * in tests/sim/ai-match.ts). The mirrored duos above never build that brain, so a change that
+ * hurts only the teammate is invisible there. Gym, both with and without abilities.
+ */
+const TEAMMATE_SEEDS = 30;
+/** Issue #92 guards: the no-abilities mean floor (pre-#92 19.2 − 2) and the interception cap. */
+const TEAMMATE_MEAN_FLOOR = 17.2;
+const TEAMMATE_INTERCEPT_CAP = 0.2;
+/** Issue #92 (I-2): share of home2's shot attempts (released + blocked) that are blocked. */
+const TEAMMATE_BLOCKED_CAP = 0.25;
+/** With abilities: a tripwire at the pre-#92 level (47 %); measured 40 % after #92. */
+const TEAMMATE_BLOCKED_CAP_ABILITIES = 0.47;
+interface TeammateRow {
+  label: string;
+  meanHome: number;
+  meanAway: number;
+  homeWins: number;
+  minHome: number;
+  games: number;
+  /** home2's passes, how many were intercepted, how many home1 caught. */
+  passes: number;
+  intercepted: number;
+  completed: number;
+  /** home2's shot attempts (released + blocked; a blocked shot is never released) and blocks. */
+  attempts: number;
+  blocked: number;
+}
+
+interface TeammateGame {
+  score: [number, number];
+  passes: number;
+  intercepted: number;
+  completed: number;
+  attempts: number;
+  blocked: number;
+}
+
+function teammateSeries(label: string, abilities: AbilityTable): TeammateRow {
+  const gym = getCourt('gym');
+  const entries = roster(['rook', 'ace'], ['brick', 'dash']);
+  const row: TeammateRow = {
+    label,
+    meanHome: 0,
+    meanAway: 0,
+    homeWins: 0,
+    minHome: Infinity,
+    games: TEAMMATE_SEEDS,
+    passes: 0,
+    intercepted: 0,
+    completed: 0,
+    attempts: 0,
+    blocked: 0,
+  };
+  for (let seed = 1; seed <= TEAMMATE_SEEDS; seed++) {
+    const g = playWith(seed, entries, gym, abilities);
+    const [h, a] = g.score;
+    row.meanHome += h / TEAMMATE_SEEDS;
+    row.meanAway += a / TEAMMATE_SEEDS;
+    row.minHome = Math.min(row.minHome, h);
+    if (h > a) row.homeWins++;
+    row.passes += g.passes;
+    row.intercepted += g.intercepted;
+    row.completed += g.completed;
+    row.attempts += g.attempts;
+    row.blocked += g.blocked;
+  }
+  return row;
+}
+
+/** `play` with home2 as the teammate brain and a chosen ability table; counts home2's passes. */
+function playWith(
+  seed: number,
+  entries: RosterEntry[],
+  court: CourtDef,
+  abilities: AbilityTable,
+): TeammateGame {
+  let state = createMatch({ ...settings, seed, courtId: court.id }, court, entries);
+  const memories = entries.map((e, i) => createAiMemory(e.id, seed, i % 2, e.id === 'home2'));
+  const game: TeammateGame = {
+    score: [0, 0],
+    passes: 0,
+    intercepted: 0,
+    completed: 0,
+    attempts: 0,
+    blocked: 0,
+  };
+  let inFlight = false;
+  while (state.phase !== 'finished' && state.tick < MAX_TICKS) {
+    const frame = new Map(
+      memories.map((m) => [m.playerId, decide(state, m, AI_PROFILES.fair, court, abilities)]),
+    );
+    const r = tick(state, frame, court, abilities);
+    state = r.state;
+    for (const e of r.events) {
+      if (e.type === 'shotReleased' && e.playerId === 'home2') game.attempts++;
+      if (e.type === 'block' && e.shooter === 'home2') {
+        game.attempts++;
+        game.blocked++;
+      }
+      if (e.type === 'pass') {
+        inFlight = e.from === 'home2';
+        if (inFlight) game.passes++;
+      } else if (inFlight && e.type === 'intercept') {
+        game.intercepted++;
+        inFlight = false;
+      } else if (inFlight && e.type === 'catch') {
+        if (e.playerId === 'home1') game.completed++;
+        inFlight = false;
+      }
+    }
+  }
+  game.score = [state.score[0], state.score[1]];
+  return game;
+}
+
 function summary(rows: Row[]): { games: number; homeRate: number; meanTotal: number } {
   const games = rows.reduce((n, r) => n + r.games, 0);
   const homeWins = rows.reduce((n, r) => n + r.homeWins, 0);
@@ -130,6 +247,10 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
           series(`${a}+rook vs ${c}+rook`, [a, 'rook'], [c, 'rook'], gym, GYM_STRENGTH_SEEDS),
         );
 
+    const teammate = [
+      teammateSeries('rook+ace (home2 teammate brain) vs brick+dash, no abilities', NO_ABILITIES),
+      teammateSeries('rook+ace (home2 teammate brain) vs brick+dash, abilities', ABILITIES),
+    ];
     const perCourt = courts.map((c) => ({ id: c.id, ...summary(mirrored.get(c.id) ?? []) }));
     const all = summary([...mirrored.values()].flat());
     const perCharacter = ids.map((id) => ({ id, perMatch: (uses[id] ?? 0) / (slots[id] ?? 1) }));
@@ -162,6 +283,17 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
         (c) => `| ${c.id} | ${c.perMatch.toFixed(2)} | ${inTarget(c.perMatch)} |`,
       ),
       '',
+      `## Default matchup with the teammate brain (gym, ${TEAMMATE_SEEDS} seeds)`,
+      '',
+      `Home2 favours home1 as the app's teammate does; the human slot is an AI stand-in. Issue #92 guards: team-0 mean ≥ ${TEAMMATE_MEAN_FLOOR} without abilities (pre-#92 19.2 − 2), no seed under 6, home2's passes intercepted ≤ ${100 * TEAMMATE_INTERCEPT_CAP} %, home2's attempts blocked ≤ ${100 * TEAMMATE_BLOCKED_CAP} % without abilities (≤ ${100 * TEAMMATE_BLOCKED_CAP_ABILITIES} % with, the pre-#92 level).`,
+      '',
+      '| matchup | team-0 mean | opponents mean | team-0 wins | team-0 min | home2 passes / match | intercepted | completed to home1 / match | home2 attempts blocked |',
+      '|---|---|---|---|---|---|---|---|---|',
+      ...teammate.map(
+        (r) =>
+          `| ${r.label} | ${r.meanHome.toFixed(1)} | ${r.meanAway.toFixed(1)} | ${r.homeWins}/${r.games} (${((100 * r.homeWins) / r.games).toFixed(0)} %) | ${r.minHome} | ${(r.passes / r.games).toFixed(1)} | ${((100 * r.intercepted) / Math.max(1, r.passes)).toFixed(0)} % | ${(r.completed / r.games).toFixed(1)} | ${r.blocked}/${r.attempts} (${((100 * r.blocked) / Math.max(1, r.attempts)).toFixed(0)} %) |`,
+      ),
+      '',
       '## Gym — mirrored duos',
       '',
       table(mirrored.get('gym') ?? []),
@@ -191,5 +323,23 @@ describe('balance report (spec C.7, D.7; on demand)', () => {
       expect(c.meanTotal, c.id).toBeLessThanOrEqual(ceilingOf(c.id));
     }
     for (const c of perCharacter) expect(c.perMatch, c.id).toBeGreaterThan(0);
+    // Issue #92: the teammate brain must not collapse again (sweep floor ≥ 6 per seed).
+    for (const r of teammate) {
+      expect(r.minHome, r.label).toBeGreaterThanOrEqual(6);
+      expect(r.intercepted / Math.max(1, r.passes), r.label).toBeLessThanOrEqual(
+        TEAMMATE_INTERCEPT_CAP,
+      );
+    }
+    // Blocked attempts: the cap holds without abilities. With abilities the row is reported
+    // and only guarded against falling back to the pre-#92 level (47 %, Hot Hand and Blur).
+    const [plain, withAbilities] = teammate;
+    expect(plain.blocked / Math.max(1, plain.attempts), plain.label).toBeLessThanOrEqual(
+      TEAMMATE_BLOCKED_CAP,
+    );
+    expect(
+      withAbilities.blocked / Math.max(1, withAbilities.attempts),
+      withAbilities.label,
+    ).toBeLessThanOrEqual(TEAMMATE_BLOCKED_CAP_ABILITIES);
+    expect(plain.meanHome, plain.label).toBeGreaterThanOrEqual(TEAMMATE_MEAN_FLOOR);
   });
 });

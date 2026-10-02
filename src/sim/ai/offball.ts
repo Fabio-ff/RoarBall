@@ -3,6 +3,7 @@ import { v3DistanceXZ, type Vec3 } from '../math';
 import { targetHoopIndex } from '../shooting';
 import type { CourtDef, MatchState, PlayerState } from '../types';
 import type { AiGoal, AiMemory } from './memory';
+import { nextFloat } from '../rng';
 import { opponentsOf } from './offense';
 import { pickOpenSpot, type NamedSpot } from './spots';
 
@@ -16,7 +17,12 @@ export const CHASE_RADIUS = 3;
 export const REBOUND_RANGE = 5;
 export const REBOUND_FROM_RIM = 1.2;
 
-/** Pick (or keep) an open named spot around `hoop`, scored against `anchorPos` (the handler or the ball). */
+/**
+ * Pick (or keep) an open named spot around `hoop`, scored against `anchorPos` (the handler or the
+ * ball). RNG: one draw from the brain's private RNG on a fresh pick only (no current spot), none
+ * while a spot is held; the roll picks among near-tied spots (issue #92). Off-ball decision
+ * ticks draw nothing else, so C.2's at-most-one-draw-per-decision-tick rule holds.
+ */
 export function planOffBall(
   state: MatchState,
   me: PlayerState,
@@ -29,7 +35,8 @@ export function planOffBall(
     memory.goal.kind === 'moveTo' && memory.goal.name !== null
       ? { name: memory.goal.name, spot: memory.goal.spot }
       : null;
-  const pick = pickOpenSpot(hoop, anchorPos, opponents, current);
+  const roll = current === null ? nextFloat(memory.rng) : null;
+  const pick = pickOpenSpot(hoop, anchorPos, opponents, current, roll);
   return { kind: 'moveTo', spot: pick.spot, name: pick.name };
 }
 

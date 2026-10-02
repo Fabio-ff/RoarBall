@@ -21,8 +21,10 @@ export interface NamedSpot {
 
 /** Offsets from the rim: `back` towards centre court (−side·X), `side` across the width (Z). */
 const SPOT_OFFSETS: Readonly<Record<SpotName, { back: number; side: number }>> = {
-  leftCorner: { back: 1.0, side: -6.3 },
-  rightCorner: { back: 1.0, side: 6.3 },
+  // Issue #92: 6.3 → 6.1. Tuned with the pursuit-aware pass check: 5.5 freed the near-corner
+  // catch but left the human almost no kick-outs; 6.1 keeps both (fix round 2 report).
+  leftCorner: { back: 1.0, side: -6.1 },
+  rightCorner: { back: 1.0, side: 6.1 },
   leftWing: { back: 5.0, side: -4.5 },
   rightWing: { back: 5.0, side: 4.5 },
   top: { back: 6.5, side: 0 },
@@ -42,6 +44,12 @@ const SPOT_PENALTY = 3;
 /** Openness saturates: a defender 6 m away is as good as one 10 m away. */
 const OPENNESS_CAP = 6;
 export const SPOT_HYSTERESIS = 1.5;
+/**
+ * A fresh pick chooses uniformly among the spots scoring within this of the best (issue #92):
+ * both corners often tie at the openness cap, and a strict-best pick always took the left one.
+ * Keep it small: a wide margin lets clearly worse spots win (1.0 broke the alley-oop invite test).
+ */
+export const SPOT_TIE_MARGIN = 0.25;
 
 export function namedSpot(hoop: HoopGeometry, name: SpotName): Vec3 {
   const o = SPOT_OFFSETS[name];
@@ -84,29 +92,32 @@ export function scoreSpot(
 
 /**
  * The best spot for an off-ball attacker; keeps `current` unless another spot beats it by
- * SPOT_HYSTERESIS. Ties resolve in SPOT_NAMES order, so the choice is deterministic.
+ * SPOT_HYSTERESIS. A fresh pick (`current` null) with a `roll` in [0, 1) chooses uniformly among
+ * the spots within SPOT_TIE_MARGIN of the best, in SPOT_NAMES order; without a roll it takes the
+ * strict best (ties in SPOT_NAMES order). Pure: the caller draws the roll.
  */
 export function pickOpenSpot(
   hoop: HoopGeometry,
   handlerPos: Vec3,
   opponents: readonly Vec3[],
   current: NamedSpot | null,
+  roll: number | null = null,
 ): NamedSpot {
-  let best: NamedSpot | null = null;
-  let bestScore = -Infinity;
-  for (const name of SPOT_NAMES) {
+  const scored = SPOT_NAMES.map((name) => {
     const spot = namedSpot(hoop, name);
-    const score = scoreSpot(spot, handlerPos, hoop.rimCenter, opponents);
-    if (score > bestScore) {
-      best = { name, spot };
-      bestScore = score;
-    }
-  }
+    return { name, spot, score: scoreSpot(spot, handlerPos, hoop.rimCenter, opponents) };
+  });
+  let best = scored[0];
+  for (const c of scored) if (c.score > best.score) best = c;
   if (current) {
     const currentScore = scoreSpot(current.spot, handlerPos, hoop.rimCenter, opponents);
-    if (bestScore - currentScore < SPOT_HYSTERESIS) return current;
+    if (best.score - currentScore < SPOT_HYSTERESIS) return current;
+    return { name: best.name, spot: best.spot };
   }
-  return best as NamedSpot;
+  if (roll === null) return { name: best.name, spot: best.spot };
+  const near = scored.filter((c) => c.score >= best.score - SPOT_TIE_MARGIN);
+  const pick = near[Math.min(near.length - 1, Math.floor(roll * near.length))];
+  return { name: pick.name, spot: pick.spot };
 }
 
 /** For a reset with the ball (C.5 step 7): the named spot farthest from the defenders. */

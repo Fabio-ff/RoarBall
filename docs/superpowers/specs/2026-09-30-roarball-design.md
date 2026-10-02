@@ -692,7 +692,8 @@ decide(state, memory, profile, court) → PlayerIntent
   state. It is reset on the `phaseChange` to `inbound` or `tipoff`.
 - **RNG**: seeded from `hash(settings.seed, playerId)` and kept in the memory; the AI never
   reads or advances `state.rng`, so a match remains replayable from seed + intents (§4.10)
-  and AI-vs-AI runs are deterministic.
+  and AI-vs-AI runs are deterministic. A brain draws at most once per decision tick, in a
+  draw order documented at each draw site (rule recorded with C.8 "AI variety").
 - **Cadence** (§6): re-plan when `tick ≥ memory.nextDecisionTick` (every 6 ticks, offset by
   the player's index in the roster); steer towards the goal every tick. Button presses are
   one tick of `true` followed by a forced `false` (the simulation detects edges).
@@ -707,7 +708,7 @@ One `AiProfile` type, three presets selected with `?ai=` (all three AI players s
 | Field | easy | fair | hard | Meaning |
 |---|---|---|---|---|
 | `reactionTicks` | 24 | 15 | 8 | ticks a mark's shot or drive must be visible before reacting (jump-shot block window ≈ 20 ticks) |
-| `shootThreshold` | 0.65 | 0.55 | 0.45 | minimum perceived quality to shoot |
+| `shootThreshold` | 0.65 | 0.48 | 0.45 | minimum perceived quality to shoot (fair was 0.55; C.8, issue #92) |
 | `passBias` | 0.15 | 0.10 | 0.00 | how much better the teammate's shot must be to pass |
 | `perceptionNoise` | 0.15 | 0.08 | 0.03 | ± seeded jitter on perceived `shotQuality` |
 | `stealRate` | 0.2 | 0.4 | 0.6 | chance per decision tick to press when a steal is on |
@@ -838,6 +839,42 @@ Recorded at the Phase 4 reassessment; they refine C.2 and C.5 and are what the c
 - **Observed at launch** (fair profile, AI vs AI): no jump shots — a marked holder's quality
   is multiplied by 0.65, so even Ace open at 4 m sits at ≈ 0.50 < 0.55; scoring is dunks and
   layups, ≈ 25–30 points a side. Tuning facts for the tablet playtest, not defects.
+- **AI variety** (2026-10-02, issue #92; refines C.2, C.3, C.5): the teammate always ran to
+  the left corner and drove the same line, because both corners tie at the openness cap and
+  ties went to the first spot name.
+  - *Spot pick*: a fresh pick (no spot held) chooses uniformly among the spots scoring within
+    `SPOT_TIE_MARGIN` 0.25 of the best, using one draw from the brain's private RNG. Off-ball
+    decision ticks drew nothing before, so the at-most-one-draw rule (C.2) holds. Hysteresis is
+    unchanged.
+  - *Drive side*: a lane blocker within 0.4 m of the me→rim line has no "away" side; the
+    side-step then goes away from the other (help) defender. That is how C.5 step 6's "on the
+    side of the farther defender" is read: away from the blocker, and for a dead-ahead blocker
+    away from the help. No RNG. (The first cut used a seeded side; it stepped into the help
+    half the time.)
+  - *Dead ends* (fix round 1): a side-step point less than 1 m in front of the rim or within
+    1 m of the sideline is replaced by the other side's point when that has more room.
+  - *Corners* move from 6.3 m to 6.1 m across (fix round 2; round 1 used 5.5). From 6.3 the
+    run to the near corner hugs the sideline and the catch is trapped; 5.5 freed it but, with
+    the pass check below, left the human almost no passes from the teammate.
+  - *Led passes* (fix rounds 1–2): C.5 step 5 also samples the flight from the passer to where
+    the pass is led (receiver position + velocity × flight time, B.3 timing) at ¼, ½, ¾ and
+    the end. At each sample the ball must be 1 m from every opponent projected by its velocity,
+    and from the receiver's marker (the opponent nearest the receiver) chasing its C.5 marking
+    spot at up to its turbo speed. Opponents in the release shield, stunned or getting up are
+    ignored. No RNG. A static 1 m check let the trailing marker take 45 % of the teammate's
+    passes.
+  - *Kick-out* (fix round 2, C.3): the teammate brain (`favourTeammate`) passes to the human
+    when its drive is cut off (a lane blocker) and the led-pass check above is clear.
+  - *Jumper guard* (fix round 3, teammate brain only): no jump shot when an opponent that can
+    block is within its `blockReach` + 0.3 m now, or will be at the jumper's release
+    (`SHOT_TIMING.jumpshot.releaseTick`, 0.45 s) if it keeps its velocity; the ball falls
+    through to step 5–7. It covers Hot Hand sure shots too: a block still beats them (D.2),
+    and exempting them left 46 % of the teammate's attempts blocked with abilities on. The
+    plain brain keeps D.5 (a sure shot inside 9 m is taken even when contested). The closing
+    marker had swatted 46 % of the teammate's attempts without abilities.
+    In the pass check the receiver's marker is now picked among the opponents that can
+    intercept, and its chase reuses the defence's `markPosition`.
+  - *Jumpers*: fair `shootThreshold` 0.55 → 0.48, for the occasional open catch-and-shoot.
 
 ## Appendix D — Phase 5 decisions (2026-10-01)
 

@@ -12,6 +12,7 @@ import {
   SPOT_LANE_PENALTY_RADIUS,
   SPOT_LANE_RIM_CLEARANCE,
   SPOT_NAMES,
+  SPOT_TIE_MARGIN,
   farthestSpot,
   namedSpot,
   pickOpenSpot,
@@ -31,7 +32,7 @@ describe('profiles', () => {
   it('ship easy, fair and hard with the Appendix C numbers', () => {
     expect(AI_PROFILES.fair).toMatchObject({
       reactionTicks: 15,
-      shootThreshold: 0.55,
+      shootThreshold: 0.48, // issue #92: was 0.55 (Appendix C.3)
       passBias: 0.1,
       perceptionNoise: 0.08,
       stealRate: 0.4,
@@ -164,6 +165,35 @@ describe('spots', () => {
     const move = pickOpenSpot(hoop, handler, opponents, { name: 'rightWing', spot: rightWing });
     expect(move.name).not.toBe('rightWing');
     void leftWing;
+  });
+
+  it('a fresh pick chooses among spots within SPOT_TIE_MARGIN of the best, by the roll', () => {
+    // Issue #92: both corners sit past the openness cap and tie; the roll picks between them.
+    const handler = { x: rim.x - 7, y: 0, z: 0 };
+    const opponents = [
+      { x: rim.x - 2, y: 0, z: 0 },
+      { x: rim.x - 6.2, y: 0, z: 0 },
+    ];
+    const best = Math.max(
+      ...SPOT_NAMES.map((n) => scoreSpot(namedSpot(hoop, n), handler, rim, opponents)),
+    );
+    const near = SPOT_NAMES.filter(
+      (n) => scoreSpot(namedSpot(hoop, n), handler, rim, opponents) >= best - SPOT_TIE_MARGIN,
+    );
+    expect(near).toEqual(['leftCorner', 'rightCorner']);
+    const low = pickOpenSpot(hoop, handler, opponents, null, 0);
+    const high = pickOpenSpot(hoop, handler, opponents, null, 0.999);
+    expect(low.name).toBe('leftCorner');
+    expect(high.name).toBe('rightCorner');
+    for (let roll = 0; roll < 1; roll += 0.05)
+      expect(near).toContain(pickOpenSpot(hoop, handler, opponents, null, roll).name);
+    // Without a roll the pick is the strict best in SPOT_NAMES order.
+    expect(pickOpenSpot(hoop, handler, opponents, null).name).toBe('leftCorner');
+    // Hysteresis wins over the roll: a held spot within the margin is kept for any roll.
+    const held = { name: 'rightCorner' as const, spot: namedSpot(hoop, 'rightCorner') };
+    expect(pickOpenSpot(hoop, handler, opponents, held, 0).name).toBe('rightCorner');
+    const leftHeld = { name: 'leftCorner' as const, spot: namedSpot(hoop, 'leftCorner') };
+    expect(pickOpenSpot(hoop, handler, opponents, leftHeld, 0.999).name).toBe('leftCorner');
   });
 
   it('farthestSpot ignores the handler and maximises distance from the defenders', () => {

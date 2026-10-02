@@ -179,11 +179,19 @@ describe('Hot Hand sure shots only count within range for the AI (deviation from
   }
 
   it('shoots a sure shot inside 9 m, where the same contested shot without Hot Hand is not taken', () => {
-    const { s, m } = holder(SURE_SHOT_AI_RANGE - 1);
+    const { s } = holder(SURE_SHOT_AI_RANGE - 1);
+    // Issue #92: the teammate brain's jumper guard holds any jumper a defender can block, so
+    // the D.5 rule is pinned on the plain brain (the teammate case is checked below).
+    const m = createAiMemory('home2', 1, 1, false);
     place(s, 'away1', 12.425 - (SURE_SHOT_AI_RANGE - 1) + 1, 0.3); // a defender in the shooter's face
     expect(planWithBall(s, player(s, 'home2'), m, AI_PROFILES.fair, court).kind).toBe('shoot');
+    // The teammate brain does not shoot into that block (a block beats a sure shot, D.2).
+    const teammate = createAiMemory('home2', 1, 1, true);
+    expect(planWithBall(s, player(s, 'home2'), teammate, AI_PROFILES.fair, court).kind).not.toBe(
+      'shoot',
+    );
     player(s, 'home2').ability = null;
-    const control = createAiMemory('home2', 1, 1, true);
+    const control = createAiMemory('home2', 1, 1, false);
     expect(planWithBall(s, player(s, 'home2'), control, AI_PROFILES.fair, court).kind).not.toBe(
       'shoot',
     );
