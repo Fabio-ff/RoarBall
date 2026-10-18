@@ -1,4 +1,4 @@
-import type { Document } from '@gltf-transform/core';
+import type { Animation, Document } from '@gltf-transform/core';
 import { dedup, prune, resample, textureCompress } from '@gltf-transform/functions';
 import sharp from 'sharp';
 import { bakeHeight } from './bake-height.ts';
@@ -9,6 +9,16 @@ import { dropClips, subclip } from './subclip.ts';
 import { stripRootMotion } from './strip-root-motion.ts';
 
 export const TEXTURE_SIZE = 1024;
+
+/** Length in seconds of a clip: its last keyframe time. */
+function clipDuration(clip: Animation): number {
+  let duration = 0;
+  for (const channel of clip.listChannels()) {
+    const times = channel.getSampler()?.getInput()?.getArray();
+    if (times && times.length > 0) duration = Math.max(duration, times[times.length - 1]);
+  }
+  return duration;
+}
 
 /**
  * Spec F.4.3 in order: strip root motion, subclip and rename (dropping unlisted clips), floor
@@ -24,7 +34,18 @@ export async function transformCharacter(doc: Document, manifest: Manifest): Pro
     const source = sources.find((a) => a.getName() === spec.source);
     if (!source)
       throw new Error(`manifest ${manifest.id}: clip "${spec.source}" not in the source`);
-    subclip(doc, source, name, spec.start, spec.end);
+    const duration = clipDuration(source);
+    if (spec.end > duration + 1e-6) {
+      throw new Error(
+        `manifest ${manifest.id}: clip "${name}" window [${spec.start}, ${spec.end}] exceeds "${spec.source}" (${duration}s)`,
+      );
+    }
+    try {
+      subclip(doc, source, name, spec.start, spec.end);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`manifest ${manifest.id}: clip "${name}": ${reason}`, { cause: error });
+    }
   }
   dropClips(sources);
   for (const name of CANONICAL_CLIPS) {

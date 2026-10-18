@@ -59,11 +59,24 @@ describe('transformCharacter', () => {
   it('writes no orphan keyframe data', async () => {
     const { doc } = buildFixture();
     await transformCharacter(doc, fixtureManifest());
-    const orphans = doc
-      .getRoot()
-      .listAccessors()
-      .filter((a) => a.listParents().every((p) => p.propertyType === 'Root'));
-    expect(orphans).toHaveLength(0);
+    const root = doc.getRoot();
+    // Accessors legitimately in use: keyframes of live animations, mesh data, skin matrices.
+    const live = new Set<unknown>();
+    for (const animation of root.listAnimations()) {
+      for (const sampler of animation.listSamplers()) {
+        live.add(sampler.getInput());
+        live.add(sampler.getOutput());
+      }
+    }
+    for (const mesh of root.listMeshes()) {
+      for (const primitive of mesh.listPrimitives()) {
+        live.add(primitive.getIndices());
+        for (const semantic of primitive.listSemantics())
+          live.add(primitive.getAttribute(semantic));
+      }
+    }
+    for (const skin of root.listSkins()) live.add(skin.getInverseBindMatrices());
+    expect(new Set(root.listAccessors())).toEqual(live);
   });
 
   it('fails clearly when the manifest names a clip the source does not have', async () => {
@@ -71,5 +84,24 @@ describe('transformCharacter', () => {
     const m = fixtureManifest();
     m.clips.hit.source = 'nope';
     await expect(transformCharacter(doc, m)).rejects.toThrow(/clip "nope" not in the source/);
+  });
+
+  it('rejects a window that runs past the end of the source clip, naming manifest and clip', async () => {
+    const { doc } = buildFixture();
+    const m = fixtureManifest();
+    m.clips.shoot.end = 1.5;
+    await expect(transformCharacter(doc, m)).rejects.toThrow(
+      'manifest fixture: clip "shoot" window [0, 1.5] exceeds "take" (1s)',
+    );
+  });
+
+  it('prefixes a subclip error with the manifest id and the canonical clip name', async () => {
+    const { doc } = buildFixture();
+    const m = fixtureManifest();
+    m.clips.hit.start = 0.5;
+    m.clips.hit.end = 0.5;
+    await expect(transformCharacter(doc, m)).rejects.toThrow(
+      /^manifest fixture: clip "hit": clip "take": empty window/,
+    );
   });
 });
