@@ -10,6 +10,7 @@ tablets and phones.
     npm run check      # lint + format + typecheck + build + tests
     npm run build && npm run smoke   # headless-Chromium smoke test of the built app (menus → match → results)
     npm run balance    # AI-vs-AI balance report → docs/balance/<date>.md (minutes)
+    npm run assets     # rebuild public/assets/characters/*.glb from sources/ (needs the raw exports, which are not in git)
 
 Live build (main): https://fabio-ff.github.io/RoarBall/
 
@@ -88,6 +89,11 @@ call for the ball) and lobs an alley-oop when you jump near the rim. The defende
 the key, jumps to block when you come close or shoot near it, picks up rebounds and walks
 them back to its spot, where you can steal the ball or shove it off. After a shot-clock
 violation or a loose-ball timeout the ball comes back to your team.
+
+## Credits
+
+Golden is generated with Tripo (Pro plan, commercial licence), rigged and animated in Tripo Studio, then
+reduced by `npm run assets`.
 
 ## Docs
 
