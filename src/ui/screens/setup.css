@@ -113,11 +113,11 @@
   text-shadow: 0 1px 3px rgb(0 0 0 / 0.8);
 }
 
-.setup-preview {
+#app .setup-preview {
   align-self: center;
   width: 4.5rem;
   height: 6rem;
 }
-.setup-preview[hidden] {
+#app .setup-preview[hidden] {
   display: none;
 }

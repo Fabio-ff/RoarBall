@@ -71,6 +71,18 @@ async function run() {
   await page.waitForSelector('[data-action="play"]');
   await page.keyboard.press('Enter'); // PLAY has focus
   await page.waitForSelector('[data-action="start"]');
+  await page.waitForTimeout(500); // the preview loads the model and draws
+  const oversized = await page.$$eval('canvas.setup-preview:not([hidden])', (canvases) =>
+    canvases
+      .map((c) => c.getBoundingClientRect())
+      .filter((r) => r.width > 120 || r.height > 160)
+      .map((r) => `${Math.round(r.width)}x${Math.round(r.height)}`),
+  );
+  if (oversized.length > 0) {
+    throw new Error(
+      `setup preview canvas is oversized (${oversized.join(', ')}); expected <= 120x160 px`,
+    );
+  }
   await page.keyboard.press('Enter'); // START has focus
   await page.waitForSelector('.hud');
   await page.waitForTimeout(1500);
