@@ -35,10 +35,10 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('previewDistance', () => {
-  it('puts the model at 1/1.1 of the view height', () => {
+  it('puts the model at 1/1.15 of the view height', () => {
     const d = previewDistance(1.8, 30);
     const visible = 2 * d * Math.tan((30 * Math.PI) / 360);
-    expect(1.8 / visible).toBeCloseTo(1 / 1.1, 5);
+    expect(1.8 / visible).toBeCloseTo(1 / 1.15, 5);
   });
 });
 

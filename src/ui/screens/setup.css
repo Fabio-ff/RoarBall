@@ -113,10 +113,22 @@
   text-shadow: 0 1px 3px rgb(0 0 0 / 0.8);
 }
 
+.setup-card.has-preview {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.setup-card-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
 #app .setup-preview {
-  align-self: center;
-  width: 4.5rem;
-  height: 6rem;
+  flex: none;
+  width: 3.75rem;
+  height: 5rem;
 }
 #app .setup-preview[hidden] {
   display: none;

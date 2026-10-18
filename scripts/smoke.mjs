@@ -83,6 +83,23 @@ async function run() {
       `setup preview canvas is oversized (${oversized.join(', ')}); expected <= 120x160 px`,
     );
   }
+  // The TEAMMATE row has no previews, so its cards are the reference height.
+  const withPreview = await page.$eval(
+    '[data-field="characterId"][data-value="ace"]',
+    (c) => c.getBoundingClientRect().height,
+  );
+  const without = await page.$eval(
+    '[data-field="teammateId"][data-value="ace"]',
+    (c) => c.getBoundingClientRect().height,
+  );
+  console.log(
+    `smoke: YOU card height ${Math.round(withPreview)} px with preview, ${Math.round(without)} px without`,
+  );
+  if (withPreview > without + 10) {
+    throw new Error(
+      `setup card with a preview is ${Math.round(withPreview)} px tall, others ${Math.round(without)} px`,
+    );
+  }
   await page.keyboard.press('Enter'); // START has focus
   await page.waitForSelector('.hud');
   await page.waitForTimeout(1500);

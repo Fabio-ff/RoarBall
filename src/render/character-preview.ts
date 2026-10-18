@@ -5,6 +5,7 @@ import {
   DirectionalLight,
   PerspectiveCamera,
   Scene,
+  SkinnedMesh,
   Vector3,
   WebGLRenderer,
 } from 'three';
@@ -27,7 +28,7 @@ export interface PreviewDeps {
 
 const FOV = 30;
 /** The model fills this share of the canvas height. */
-const FILL = 1 / 1.1;
+const FILL = 1 / 1.15;
 
 /** Camera distance at which an object `height` metres tall fills `FILL` of a `fov`-degree view. */
 export function previewDistance(height: number, fov: number = FOV): number {
@@ -80,16 +81,27 @@ export function createCharacterPreview(
     sun.position.set(2, 4, 3);
     scene.add(sun);
 
-    const height = Math.max(new Box3().setFromObject(root).getSize(new Vector3()).y, 0.5);
-    const camera = new PerspectiveCamera(FOV, canvas.width / canvas.height, 0.1, 50);
-    camera.position.set(0, height / 2, previewDistance(height));
-    camera.lookAt(0, height / 2, 0);
-    renderer.setPixelRatio(1);
-    renderer.setSize(canvas.width, canvas.height, false);
-
     mixer = new AnimationMixer(root);
     const idle = instance.clips.find((c) => c.name === 'idle');
     if (idle) mixer.clipAction(idle).play();
+
+    // Measure the posed figure: a fresh clone's skeleton is not posed yet, so its bounds are off.
+    mixer.update(0);
+    root.updateMatrixWorld(true);
+    root.traverse((object) => {
+      if (object instanceof SkinnedMesh) {
+        object.skeleton.update();
+        object.computeBoundingBox();
+      }
+    });
+    const box = new Box3().setFromObject(root);
+    const height = Math.max(box.getSize(new Vector3()).y, 0.5);
+    const middle = box.getCenter(new Vector3()).y;
+    const camera = new PerspectiveCamera(FOV, canvas.width / canvas.height, 0.1, 50);
+    camera.position.set(0, middle, previewDistance(height));
+    camera.lookAt(0, middle, 0);
+    renderer.setPixelRatio(1);
+    renderer.setSize(canvas.width, canvas.height, false);
 
     let last: number | null = null;
     const tick = (now: number): void => {

@@ -174,12 +174,14 @@ export class SetupScreen {
         previews && field === 'characterId' && c.modelFile
           ? `<canvas class="setup-preview" data-model="${esc(c.modelFile)}" width="192" height="256" aria-hidden="true"></canvas>`
           : '';
-      return (
-        `<button class="setup-card" ${attrs(c.id)} style="--card-color:${hex(c.color)}">` +
-        preview +
+      const text =
         `<strong>${esc(c.name)}</strong>` +
         `<span class="setup-ability">${esc(c.abilityIcon)} ${esc(c.abilityName)}</span>` +
-        `<span class="setup-stats">${bars}</span></button>`
+        `<span class="setup-stats">${bars}</span>`;
+      return (
+        `<button class="setup-card${preview ? ' has-preview' : ''}" ${attrs(c.id)} style="--card-color:${hex(c.color)}">` +
+        (preview ? `<span class="setup-card-text">${text}</span>${preview}` : text) +
+        `</button>`
       );
     });
     if (field === 'opponent0' || field === 'opponent1') {
