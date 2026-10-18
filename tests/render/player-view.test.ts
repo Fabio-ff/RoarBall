@@ -50,14 +50,23 @@ describe('brighten', () => {
   });
 });
 
-describe('PlayerView highlight ring', () => {
-  it('adds a ring only when highlighted', () => {
+describe('PlayerView ring (spec F.7.7)', () => {
+  it('every player has a ring, highlighted or not', () => {
     expect(ringOf(new PlayerView(0x2f80ed, { highlighted: true }))).toBeDefined();
-    expect(ringOf(new PlayerView(0x2f80ed))).toBeUndefined();
+    expect(ringOf(new PlayerView(0x2f80ed))).toBeDefined();
+  });
+
+  it('only the highlighted player pulses; the others keep scale 1', () => {
+    const human = new PlayerView(0x2f80ed, { highlighted: true });
+    const other = new PlayerView(0x2f80ed);
+    human.update(state(0), state(0), 1, 15);
+    other.update(state(0), state(0), 1, 15);
+    expect(ringOf(human)!.scale.x).toBeGreaterThan(1);
+    expect(ringOf(other)!.scale.x).toBe(1);
   });
 
   it('keeps the ring on the floor while the player is airborne', () => {
-    const view = new PlayerView(0x2f80ed, { highlighted: true });
+    const view = new PlayerView(0x2f80ed);
     view.update(state(0.8), state(0.8), 1, 5);
     const ring = ringOf(view)!;
     expect(view.group.position.y).toBeCloseTo(0.8);
