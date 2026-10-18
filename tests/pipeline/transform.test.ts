@@ -35,16 +35,22 @@ describe('transformCharacter', () => {
     expect(hipsTimes(idle)[0]).toBe(0);
   });
 
-  it('lifts only the fall clip by the floor offset', async () => {
-    const { doc } = buildFixture();
+  it('lifts only the fall clip, its lowest hips key by the full floor offset', async () => {
+    const { doc, take } = buildFixture();
+    hipsTranslation(take).set([1, 0.5, 2, 2, 0.3, 4, 3, 0.1, 6]);
     await transformCharacter(doc, fixtureManifest());
     const by = (name: string) =>
       doc
         .getRoot()
         .listAnimations()
         .find((c) => c.getName() === name)!;
-    expect(hipsTranslation(by('fall'))[1]).toBeCloseTo(0.69);
-    expect(hipsTranslation(by('idle'))[1]).toBeCloseTo(0.5);
+    const last = (name: string) => {
+      const t = hipsTranslation(by(name));
+      return t[t.length - 2];
+    };
+    expect(hipsTranslation(by('fall'))[1]).toBeCloseTo(0.5);
+    expect(last('fall')).toBeCloseTo(0.29);
+    expect(last('idle')).toBeCloseTo(0.1);
   });
 
   it('bakes the height and writes releaseAt', async () => {
