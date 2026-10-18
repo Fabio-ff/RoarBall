@@ -10,6 +10,9 @@ const server = spawn(
   { stdio: 'pipe' },
 );
 const errors = [];
+const warnings = [];
+/** Every .glb the page fetched, with its status (spec F.10.3). */
+const models = [];
 let browser;
 
 // Whole-run watchdog: nothing may hang CI. unref'd, so it never keeps a finished run alive.
@@ -31,8 +34,20 @@ async function waitForServer() {
   throw new Error('vite preview did not start');
 }
 
+/** vite preview falls back to index.html for unknown paths, so check the bytes, not the status. */
+async function checkModelIsServed() {
+  const response = await fetch(`${BASE}assets/characters/ace.glb`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (!response.ok || bytes.length < 100_000 || bytes.subarray(0, 4).toString() !== 'glTF') {
+    throw new Error(
+      `assets/characters/ace.glb is not served as a GLB (status ${response.status}, ${bytes.length} bytes)`,
+    );
+  }
+}
+
 async function run() {
   await waitForServer();
+  await checkModelIsServed();
   browser = await chromium.launch({
     args: [
       '--use-gl=swiftshader',
@@ -41,7 +56,14 @@ async function run() {
     ],
   });
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text());
+    if (m.type() === 'warning') warnings.push(m.text());
+  });
+  page.on(
+    'response',
+    (r) => r.url().endsWith('.glb') && models.push({ url: r.url(), status: r.status() }),
+  );
   page.on('pageerror', (e) => errors.push(String(e)));
 
   // Menus path: Title → Setup → START by keyboard → match → pause/resume → Results.
@@ -68,6 +90,22 @@ async function run() {
   await page.waitForTimeout(700); // Results ignores confirm/clicks for 600 ms after it mounts
   await page.click('[data-action="rematch"]', { force: true });
   await page.waitForSelector('.hud');
+
+  // Golden (id ace) is a real model: it must load, animate under input (run right, then the action
+  // button: a shot if Golden has the ball, a jump otherwise), and never fall back (spec F.8.2).
+  await page.goto(`${BASE}?character=ace&seed=2`);
+  await page.waitForSelector('.hud');
+  await page.keyboard.down('d');
+  await page.waitForTimeout(800);
+  await page.keyboard.up('d');
+  await page.keyboard.press('Space');
+  await page.waitForTimeout(1500);
+  if (!models.some((m) => m.url.endsWith('/assets/characters/ace.glb') && m.status === 200)) {
+    throw new Error(`Golden's model was not fetched: ${JSON.stringify(models)}`);
+  }
+  const fallbacks = warnings.filter((w) => w.includes('[model] fallback'));
+  if (fallbacks.length)
+    throw new Error(`model fell back to a placeholder:\n${fallbacks.join('\n')}`);
 
   if (errors.length) throw new Error(`console errors:\n${errors.join('\n')}`);
   console.log('smoke: ok');
