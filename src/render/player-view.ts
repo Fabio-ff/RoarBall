@@ -2,35 +2,22 @@ import {
   BoxGeometry,
   CapsuleGeometry,
   ConeGeometry,
-  DoubleSide,
   Group,
   Mesh,
-  MeshBasicMaterial,
   MeshStandardMaterial,
-  RingGeometry,
 } from 'three';
 import type { PlayerState } from '../sim/types';
 import { lerpAngle, lerpVec3 } from './interpolate';
+import type { PlayerRenderable } from './player-renderable';
+import { createRing, updateRing } from './player-ring';
 
 const ARMS_UP = new Set<PlayerState['action']>(['jump', 'block', 'shoot', 'layup', 'dunk']);
 const ARMS_FORWARD = new Set<PlayerState['action']>(['pass', 'steal', 'shove']);
 
-/** Mixes a 0xRRGGBB colour toward white by `amount` (0 = unchanged, 1 = white). */
-export function brighten(color: number, amount: number): number {
-  const mix = (channel: number): number => Math.round(channel + (255 - channel) * amount);
-  const r = mix((color >> 16) & 0xff);
-  const g = mix((color >> 8) & 0xff);
-  const b = mix(color & 0xff);
-  return (r << 16) | (g << 8) | b;
-}
-
-/** Scale of the highlight ring in [1, 1.1], driven by the simulation tick (period about 1 s). */
-export function highlightPulse(tick: number): number {
-  return 1 + 0.05 * (1 + Math.sin(tick / 10));
-}
+export { brighten, highlightPulse } from './player-ring';
 
 export interface PlayerViewOptions {
-  /** Draw a pulsing ring under the feet (used for the human's player). */
+  /** The ring under the feet pulses (the human's player); every player has a ring (spec F.7.7). */
   highlighted?: boolean;
 }
 
@@ -38,12 +25,13 @@ export interface PlayerViewOptions {
  * Placeholder player (spec §5.5): capsule body, box head, and a cone on the front so the facing
  * direction is visible. Position and facing are interpolated between two simulation states.
  */
-export class PlayerView {
+export class PlayerView implements PlayerRenderable {
   readonly group = new Group();
   private readonly arms: Group;
   /** Body, head, nose and arms, pivoted at the feet so the stun tilt lays the whole figure down. */
   private readonly figure = new Group();
-  private readonly ring: Mesh | null;
+  private readonly ring: Mesh;
+  private readonly pulses: boolean;
   private tilt = 0;
 
   constructor(color: number, options: PlayerViewOptions = {}) {
@@ -81,34 +69,18 @@ export class PlayerView {
     this.figure.add(body, head, nose, this.arms);
     this.group.add(this.figure);
 
-    this.ring = null;
-    if (options.highlighted) {
-      const ring = new Mesh(
-        new RingGeometry(0.35, 0.45, 32),
-        new MeshBasicMaterial({
-          color: brighten(color, 0.4),
-          transparent: true,
-          opacity: 0.85,
-          side: DoubleSide,
-          depthWrite: false,
-        }),
-      );
-      ring.rotation.x = -Math.PI / 2;
-      // Child of the group, not the figure, so the stun tilt does not move it.
-      this.group.add(ring);
-      this.ring = ring;
-    }
+    this.pulses = options.highlighted === true;
+    // Child of the group, not the figure, so the stun tilt does not move it.
+    this.ring = createRing(color);
+    this.group.add(this.ring);
   }
 
+  /** `hasBall` and `dt` are part of the shared interface; the placeholder ignores both. */
   update(prev: PlayerState, next: PlayerState, alpha: number, tick = 0): void {
     const p = lerpVec3(prev.pos, next.pos, alpha);
     this.group.position.set(p.x, p.y, p.z);
     this.group.rotation.y = lerpAngle(prev.facing, next.facing, alpha);
-    if (this.ring) {
-      // Stay on the floor while the player jumps.
-      this.ring.position.y = -p.y + 0.01;
-      this.ring.scale.setScalar(highlightPulse(tick));
-    }
+    updateRing(this.ring, p.y, this.pulses, tick);
     // Negative x rotation swings the arms forward (+Z) and up.
     const target = ARMS_UP.has(next.action)
       ? -Math.PI
