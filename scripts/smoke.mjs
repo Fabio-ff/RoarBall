@@ -71,6 +71,35 @@ async function run() {
   await page.waitForSelector('[data-action="play"]');
   await page.keyboard.press('Enter'); // PLAY has focus
   await page.waitForSelector('[data-action="start"]');
+  await page.waitForTimeout(500); // the preview loads the model and draws
+  const oversized = await page.$$eval('canvas.setup-preview:not([hidden])', (canvases) =>
+    canvases
+      .map((c) => c.getBoundingClientRect())
+      .filter((r) => r.width > 120 || r.height > 160)
+      .map((r) => `${Math.round(r.width)}x${Math.round(r.height)}`),
+  );
+  if (oversized.length > 0) {
+    throw new Error(
+      `setup preview canvas is oversized (${oversized.join(', ')}); expected <= 120x160 px`,
+    );
+  }
+  // The TEAMMATE row has no previews, so its cards are the reference height.
+  const withPreview = await page.$eval(
+    '[data-field="characterId"][data-value="ace"]',
+    (c) => c.getBoundingClientRect().height,
+  );
+  const without = await page.$eval(
+    '[data-field="teammateId"][data-value="ace"]',
+    (c) => c.getBoundingClientRect().height,
+  );
+  console.log(
+    `smoke: YOU card height ${Math.round(withPreview)} px with preview, ${Math.round(without)} px without`,
+  );
+  if (withPreview > without + 10) {
+    throw new Error(
+      `setup card with a preview is ${Math.round(withPreview)} px tall, others ${Math.round(without)} px`,
+    );
+  }
   await page.keyboard.press('Enter'); // START has focus
   await page.waitForSelector('.hud');
   await page.waitForTimeout(1500);

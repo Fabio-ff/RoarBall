@@ -19,6 +19,7 @@ import { MenuInput, type MenuCommand, type MenuSource } from './input/menu-input
 import { HUMAN_ID } from './app/session';
 import { HowToPlayScreen } from './ui/screens/how-to-play';
 import { ResultsScreen, resultHeadline } from './ui/screens/results';
+import { createCharacterPreview } from './render/character-preview';
 import { SetupScreen } from './ui/screens/setup';
 import { TitleScreen } from './ui/screens/title';
 
@@ -115,6 +116,7 @@ export class AppShell {
         this.handle = new SetupScreen(this.root, {
           setup: this.setup,
           catalog: buildSetupCatalog(),
+          createPreview: (canvas, file) => createCharacterPreview(canvas, file),
           onStart: (s) => this.startMatch(s),
           onBack: () => this.dispatch({ type: 'back' }),
         });
