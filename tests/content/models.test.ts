@@ -3,8 +3,8 @@ import { join } from 'node:path';
 import { getBounds, NodeIO, type Document } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { beforeAll, describe, expect, it } from 'vitest';
-
-const CANONICAL_CLIPS = ['idle', 'run', 'dribble', 'jump', 'shoot', 'hit', 'fall'] as const;
+import { characters } from '../../src/content/characters';
+import { CANONICAL_CLIPS } from '../../src/render/clip-for';
 
 /** Spec F.6.2: every shipped model has the canonical clips, a releaseAt and a sane height. */
 const MODELS_DIR = join(process.cwd(), 'public/assets/characters');
@@ -85,5 +85,27 @@ describe.each(files)('model %s', (file) => {
         expect(values![i + 2], `${clip} z`).toBeCloseTo(values![2], 5);
       }
     }
+  });
+});
+
+describe('characters with a model (spec F.6.1)', () => {
+  const withModel = characters.filter((c) => c.model);
+
+  it('Golden is the character `ace` and has a model', () => {
+    const ace = characters.find((c) => c.id === 'ace');
+    expect(ace?.name).toBe('Golden');
+    expect(ace?.model).toEqual({ file: 'characters/ace.glb' });
+  });
+
+  it.each(withModel.map((c) => [c.id, c.model!.file] as const))(
+    '%s points at a model that exists and was checked above',
+    (_id, file) => {
+      expect(existsSync(join(process.cwd(), 'public/assets', file))).toBe(true);
+      expect(files).toContain(file.replace('characters/', ''));
+    },
+  );
+
+  it('a character without a model stays a placeholder', () => {
+    expect(characters.filter((c) => !c.model).map((c) => c.id)).toEqual(['brick', 'dash', 'rook']);
   });
 });
