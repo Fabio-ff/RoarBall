@@ -56,7 +56,7 @@ abilities too.
 | Character | Ability     | Effect                                                                  |
 | --------- | ----------- | ----------------------------------------------------------------------- |
 | Brick     | Rocket Dunk | 8 s: dunk from anywhere inside the 3-point line; dunks can't be blocked |
-| Ace       | Hot Hand    | your next three shots can't miss                                        |
+| Golden    | Hot Hand    | your next three shots can't miss                                        |
 | Dash      | Blur        | 6 s: double speed, unlimited turbo, every steal succeeds                |
 | Rook      | Earthquake  | every opponent within 4 m is knocked down                               |
 

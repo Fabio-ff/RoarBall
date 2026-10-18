@@ -95,6 +95,11 @@ export interface CharacterDef {
   /** Signature ability, implemented in phase 5. */
   abilityId: string;
   appearance: { primaryColor: number; secondaryColor: number };
+  /**
+   * The character's 3D model, `file` relative to `public/assets` (spec F.6.1). Without it the
+   * character is drawn as a placeholder (spec §5.5).
+   */
+  model?: { file: string };
 }
 
 /** Character stats × court modifier × ability, resolved to simulation units (metres, seconds). */
