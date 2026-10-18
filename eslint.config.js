@@ -82,6 +82,23 @@ export default defineConfig([
     },
   },
   {
+    // Spec F.4: the asset pipeline is a standalone Node tool and never imports the game.
+    files: ['scripts/asset-pipeline/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/src', '**/src/**'],
+              message: 'scripts/asset-pipeline must not import src',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     // Spec §3: content may only import types from sim.
     files: ['src/content/**/*.ts'],
     rules: {
