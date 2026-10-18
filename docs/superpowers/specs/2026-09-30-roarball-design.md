@@ -509,7 +509,7 @@ Each phase ends with something playable.
 4. AI for teammate and opponents; balance harness.
 5. Abilities and the three court modifiers.
 6. Menus, gamepad, audio, effects, polish.
-7. Real models and animations replace placeholders, court by court.
+7. Real models and animations replace placeholders, court by court. (See Appendix F.)
 
 ## 12. Out of scope for the first release
 
@@ -1181,3 +1181,174 @@ Recorded at the Phase 6 final review; they refine E.1–E.7 and are what the cod
   ABL) may need a legend for a child.
 - **Outside Phase 6**: the AI-teammate variety work (#92 / #94) changes `src/sim/ai` and is recorded in
   C.8 by its own PR.
+
+## Appendix F — Phase 7 decisions, part 1: first real character (2026-10-18)
+
+Decisions taken after the asset spike (Tripo Studio, one character end to end). They amend §2,
+§5.1, §5.2, §5.4, §5.5, §9, §10.1, E.5 and the folder layout of §3; each amendment is named where it
+is made. **Part 1 does not change `src/sim/`**: goldens, pinned scores and determinism tests pass
+unchanged.
+
+Spike facts the decisions rest on: source image → Tripo Studio (Pro plan, private/commercial licence)
+→ image-to-model → Auto Rig (biped, Mixamo skeleton spec, 65 `mixamorig:*` joints, A-pose) → 7 preset
+animations retargeted in Studio → one export, `fantasy+girl+3d+model_animate.glb` (12 MB, 19,008
+tris, one material: baseColor 4096 JPEG, normal 2048, metallicRoughness 2048; native height 0.978;
+faces +Z at yaw 0 like the placeholder; no node scale). Clips: dribble 9.29 s, run 1.25 s,
+basketball_shot 6.58 s, hit_to_body_01 1.29 s, jump 2.21 s, idle 15.33 s, fall 3.0 s. Findings:
+run, dribble and shot carry root motion (run travels about 4.7 m in Z); shot and dribble include
+walking before and after the useful part; fall ends with the hem 0.19 m below the floor; hair and dress
+look too metallic; the skirt deforms as a rigid bell but never tears and legs never poke through;
+jump and idle are clean; proportions are chibi. Keeping the mesh as is (about 19k tris) with 1024 px
+WebP textures gives about 0.9 MB per character.
+
+### F.1 Scope
+
+1. Phase 7 is split. Part 1 (this appendix) puts ONE character, Golden, on a real model and
+   animation set and builds the pipeline and renderer the other three will reuse.
+2. Brick, Dash and Rook stay placeholders; courts stay as they are; the Phase 6 deferred effects
+   (Rocket Dunk streak, Earthquake dust, Hot Hand hands) stay deferred to part 2.
+
+### F.2 Cast
+
+1. Golden replaces Ace (the sniper slot). The character id stays `ace` (referenced across src and
+   tests; the display name is provisional); only `name`, `description` and the new `model` field of
+   `src/content/characters/ace.ts` change. Stats, `abilityId` (`hotHand`) and `appearance` are
+   unchanged.
+2. Amends §5.2 (and the Theme row of §2): the cast is stylized chibi characters; "human athletes"
+   no longer binds looks. Future characters are generated with Golden's reference style so the four
+   look like one cast.
+
+### F.3 Sourcing workflow
+
+Documented so it can be repeated:
+
+1. Tripo Studio Pro: image-to-model, Auto Rig biped with the Mixamo spec and the v1 humanoid rig
+   (largest preset library), presets retargeted in Studio, a single "animate" export per character
+   into `sources/raw/` (any file name; the manifest names it).
+2. Amends §10.1 and the folder layout of §3: `sources/raw/` is the raw-export folder and replaces
+   `assets-src/`. It is gitignored (tens of MB per file; Fabio keeps the originals). Today
+   `.gitignore` ignores only `sources/raw/env-vars` and `*.env`; replacing that line with
+   `sources/raw/` is a task of the plan. Reason: raw exports are never shipped (§10.1).
+3. Per-character manifests `sources/characters/<id>.json` ARE committed (F.4).
+4. The pipeline output `public/assets/characters/<id>.glb` IS committed, so CI, the smoke test and
+   Pages work without the raw files. Models live there, not under `src/content/characters/`
+   (amends the folder layout of §3).
+5. The Tripo API stays an option, not used now: it has a separate wallet from the Studio
+   subscription, the current key works only on the old v2 host and has 0 credits. A scripted route
+   would cost image to model 30 credits, rig 25, retarget 10 per clip.
+
+### F.4 Asset pipeline
+
+1. `scripts/asset-pipeline/` (Node ES modules, `.mjs` like `scripts/smoke.mjs`), with
+   `@gltf-transform/core`, `@gltf-transform/functions` and `sharp` (WebP encoding) as new dev
+   dependencies; run with `npm run assets` (new script), which processes every manifest.
+2. Manifest `sources/characters/<id>.json`: `source` (file name in `sources/raw/`), `height` in
+   metres, material overrides (Golden: metalness 0.1, roughness 0.7), `releaseAt` (F.5) and a clip table mapping each
+   canonical clip name to `{ source, start, end, loop }` (source clip name, seconds, boolean).
+3. Operations, in order: load; strip root motion (set every `mixamorig:Hips` translation keyframe's
+   X and Z to the bind-pose X and Z, keep Y); subclip and rename per the table, dropping unlisted
+   clips; offset the fall clip vertically so the lowest vertex stays at or above y = 0; apply material
+   overrides; resize textures to at most 1024 px and encode WebP; prune and dedup; wrap the scene in
+   a root node scaled by `height / bindHeight` (manifest `height`, Golden 1.8 m; bindHeight = the
+   bind-pose bounding-box height of the source) whose glTF `extras` hold `{ releaseAt }`; write
+   `public/assets/characters/<id>.glb`.
+4. The committed GLB is therefore in metres like everything else in the scene; the renderer never
+   scales a model. Reason: one place defines the height, and any viewer shows the asset right.
+5. Amends §2 (Stack, Assets row), §9 (Loading) and §10.1: no Draco or KTX2, so no decoders are
+   shipped in part 1. Reason: at about 1 MB per character they are not worth the decoders; revisit
+   for courts.
+
+### F.5 Canonical clips
+
+Amends §5.4: part 1 ships 7 canonical clips, `idle, run, dribble, jump, shoot, hit, fall`. The
+16-clip list of §5.4 stays the long-term target.
+
+1. Golden's table: idle = idle [0, 4] loop; run = full run, loop; dribble = a loop of about 1.5 s cut
+   from dribble; jump = full jump, once; shoot = a window of about 1.2 s of basketball_shot around the
+   release, once; hit = full hit_to_body_01, once; fall = full fall, once, hold the last frame.
+2. `releaseAt` is the time, in seconds into the canonical `shoot` clip, at which the ball leaves the
+   hands. Windows and `releaseAt` are numbers in the manifest, tuned by eye with the preview tool
+   (`npm run dev` on a match with Golden; no separate tool).
+3. Release sync. The sim's release ticks (60 ticks per second) are `SHOT_TIMING` in
+   `src/sim/shooting.ts` (jumpshot totalTicks 48 / releaseTick 27; layup 36 / 15; dunk 42 / 24) and
+   `PASS_TIMING` in `src/sim/passing.ts` (`ACTION_TIMING.pass`: totalTicks 12 / releaseTick 4).
+   `CharacterView` plays `shoot` with `timeScale = releaseAt / (releaseTick / 60)` for the shot in
+   progress (`shoot`, `layup`, `dunk` use the matching `SHOT_TIMING` entry), so the visible release
+   coincides with the sim's release tick, then clamps at the clip end. A `pass` releases after only
+   4 ticks, so stretching would play the clip about 9x too fast: instead it plays `shoot` at
+   `timeScale` 1 starting at `releaseAt - PASS_TIMING.releaseTick / 60`, skipping the wind-up, and
+   clamps at the end.
+
+### F.6 Model field and content check
+
+1. Amends §5.1: `CharacterDef` (in `src/sim/types.ts`) gains optional `model?: { file: string }`.
+   `file` is relative to `public/assets` (Golden: `characters/ace.glb`) and is fetched at
+   `import.meta.env.BASE_URL + 'assets/' + file` so Pages works under its sub-path. There is no
+   `scale` (the pipeline bakes the height, F.4) and no `animationSet`: clip names are canonical
+   (F.5), so the game never needs per-character clip maps. A character without `model` keeps the
+   placeholder (§5.5).
+2. A content check in Vitest (`tests/content/`) verifies, for every character with `model`, that the
+   file exists, contains every canonical clip, carries `releaseAt`, and has a bind-pose bounding-box
+   height between 1.6 and 2.0 m. It reads the committed GLB with `@gltf-transform/core`.
+
+### F.7 Renderer
+
+1. New `CharacterView` in `src/render/character-view.ts`. `PlayerView` and `CharacterView` share
+   one interface: `group` and `update(prev, next, alpha, tick, hasBall)`, where `MatchScreen` passes
+   `hasBall = next.ball.holder === id`; `PlayerView` ignores it. `MatchScreen` builds a
+   `CharacterView` when the player's character (`PlayerState.characterId`) has a model that loaded,
+   else a `PlayerView`.
+2. One `AnimationMixer` per view; crossfade 0.15 s.
+3. Clip choice is a pure function `clipFor(action, moving, hasBall)` in `src/render/clip-for.ts`,
+   tested. `moving` is horizontal `|next.vel| > 0.5` m/s.
+   - `idle` and `run` actions: dribble when holding the ball and not moving; run when moving (holding
+     or not); idle otherwise;
+   - jump and block map to jump; shoot, layup, dunk and pass map to shoot (timing per F.5.3); steal
+     and shove map to hit; stunned maps to fall (clamped at the end); getup maps to idle.
+4. A clip missing from the model falls back to idle; if idle is missing too the view shows the bind
+   pose. It never throws.
+5. One-shot clips use `LoopOnce` with `clampWhenFinished`. The run clip's `timeScale` is horizontal
+   speed over `next.stats.runSpeed`.
+6. In `CharacterView` the fall clip replaces the stun tilt of `PlayerView`; `PlayerView` keeps its tilt.
+7. Amends §5.5 and E.5 ring behaviour: the highlight ring is drawn for EVERY player, in both views,
+   in team colour (`TEAM_COLORS` of `MatchScreen`); it pulses (`highlightPulse`) only for the human
+   and is static for the others. Reason: real models no longer carry the team colour, and a 2v2 with
+   mixed models must stay readable.
+
+### F.8 Loading
+
+1. `GLTFLoader` from `three/examples/jsm/loaders/GLTFLoader.js` (ships with three). The
+   `MatchScreen` constructor stays synchronous: it shows a "Loading" line in its container, loads the
+   models of the selected characters (`options.characterId`, `teammateId`, `opponentIds`, deduped),
+   then builds the player views and starts the loop.
+2. A failed load, or one slower than 10 s, falls back to the placeholder for that character and logs
+   one `console.warn`, so the game can never fail to start.
+3. Loaded models are cached per session by character id; the same character can appear up to 4
+   times, so each view gets an instance from `SkeletonUtils.clone`
+   (`three/examples/jsm/utils/SkeletonUtils.js`).
+4. The skinned mesh casts shadows. Amends §9 (Views): the mixer and clip selection live in
+   `CharacterView`, not `PlayerView`.
+
+### F.9 Setup preview
+
+A small canvas on the character card playing idle (§9). It is the last task of the phase; if the
+phase runs long the lead may move it to part 2, and the cards stay DOM-only until then.
+
+### F.10 Validation
+
+1. Vitest for `clipFor`, the release `timeScale`, the root-motion strip and the subclip helpers: the
+   pipeline helpers are pure functions over gltf-transform documents, tested on a tiny fixture built
+   in the test, not the real asset.
+2. The content check of F.6.
+3. The smoke test (`scripts/smoke.mjs`, Playwright) keeps booting a match, which now loads Golden;
+   it asserts no console errors and no model-fallback warning (F.8.2).
+4. Manual: tablet frame-rate check by Fabio.
+
+### F.11 Licensing and credits
+
+Golden is generated with Tripo (Pro plan, commercial licence); add a credits line to `README.md`.
+
+### F.12 Deferred to part 2
+
+Brick, Dash and Rook models; courts; the Phase 6 effects; renaming id `ace` to `golden` if the name
+sticks; emissive neon hair; extra clips (pass, block, steal, celebrate, getup) from Tripo presets.

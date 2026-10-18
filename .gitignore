@@ -6,3 +6,7 @@ dist/
 .env.*
 .superpowers/
 .claude/worktrees/
+
+# Secrets and raw asset exports (never shipped; see docs)
+sources/raw/env-vars
+*.env
