@@ -108,4 +108,7 @@ reduced by `npm run assets`.
 - `src/render/` — Three.js presentation
 - `src/ui/` — DOM screens and HUD
 - `src/content/` — characters, courts, abilities (data)
+- `scripts/asset-pipeline/` — the model pipeline (`npm run assets`): raw export + manifest → game-ready GLB
+- `sources/` — `characters/*.json` manifests (committed); `raw/` source exports (gitignored)
+- `public/assets/characters/` — the committed, pipeline-built character GLBs
 - `tests/` — Vitest

@@ -5,6 +5,8 @@ import { MatchRunner } from '../../src/app/match-runner';
 import { readGameOptions } from '../../src/app/url-options';
 import type { LoadedModel } from '../../src/render/model-cache';
 import { findPlayer } from '../../src/sim/match';
+import { CharacterView } from '../../src/render/character-view';
+import { MAX_FRAME_DT } from '../../src/app/frame-time';
 import { fakeGltf } from '../render/model-fixtures';
 
 /** The loop callbacks the MatchScreen registered, so a test can drive ticks by hand. */
@@ -121,6 +123,27 @@ describe('MatchScreen', () => {
     expect(heldBeforeFirstStep).toBe(true);
     screen.dispose();
     vi.unstubAllGlobals();
+  });
+
+  it('hands the player views at most what the sim catches up in a frame, however long the stall', async () => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe(): void {}
+        disconnect(): void {}
+      },
+    );
+    const update = vi.spyOn(CharacterView.prototype, 'update');
+    const { screen, loop } = await mount(readGameOptions('?seed=5', 0), {
+      loadModel: async () => fakeModel(),
+    });
+    loop.onRender(0.5, 60_000);
+    expect(update).toHaveBeenCalled();
+    for (const call of update.mock.calls) expect(call[5]).toBeCloseTo(MAX_FRAME_DT, 10);
+    update.mockClear();
+    loop.onRender(0.5, 8);
+    for (const call of update.mock.calls) expect(call[5]).toBeCloseTo(0.008, 10);
+    screen.dispose();
   });
 
   it('after Pause → Restart the finished result carries the restarted seed (M1)', async () => {

@@ -77,6 +77,24 @@ describe.each(files)('model %s', (file) => {
     expect(max[1] - min[1]).toBeLessThanOrEqual(2.0);
   });
 
+  it('starts every clip but jump standing on the floor: the first hips Y key is not lifted above the bind pose', () => {
+    const scene = doc.getRoot().listScenes()[0]!;
+    const scale = scene.listChildren()[0]!.getScale()[1];
+    const hips = doc
+      .getRoot()
+      .listNodes()
+      .find((n) => n.getName() === 'mixamorig:Hips')!;
+    const bindY = hips.getTranslation()[1];
+    for (const { clip, values } of hipsTranslations(doc)) {
+      if (clip === 'jump') continue;
+      const lift = (values![1] - bindY) * scale;
+      expect(
+        lift,
+        `${clip} first hips key sits ${lift.toFixed(3)} m above the bind pose`,
+      ).toBeLessThan(0.05);
+    }
+  });
+
   it('has no root motion: the hips stay at their X and Z in every clip', () => {
     for (const { clip, values } of hipsTranslations(doc)) {
       expect(values, `${clip} animates the hips`).toBeDefined();

@@ -1250,7 +1250,7 @@ Documented so it can be repeated:
    canonical clip name to `{ source, start, end, loop }` (source clip name, seconds, boolean).
 3. Operations, in order: load; strip root motion (set every `mixamorig:Hips` translation keyframe's
    X and Z to the bind-pose X and Z, keep Y); subclip and rename per the table, dropping unlisted
-   clips; offset the fall clip vertically so the lowest vertex stays at or above y = 0; apply material
+   clips; offset the fall clip vertically, scaled by how far the hips have descended from the bind pose, so the lowest vertex of the lying pose stays at or above y = 0 while the standing start stays on the floor; apply material
    overrides; resize textures to at most 1024 px and encode WebP; prune and dedup; wrap the scene in
    a root node scaled by `height / bindHeight` (manifest `height`, Golden 1.8 m; bindHeight = the
    bind-pose bounding-box height of the source) whose glTF `extras` hold `{ releaseAt }`; write
