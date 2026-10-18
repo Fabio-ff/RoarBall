@@ -94,3 +94,17 @@ describe('src/content boundary', () => {
     ).not.toHaveLength(0);
   });
 });
+
+describe('scripts/asset-pipeline boundary', () => {
+  it.each([
+    ['sim', "import { lerp } from '../../src/sim/math'; export const f = lerp;"],
+    ['render', "import { clipFor } from '../../src/render/clip-for'; export const f = clipFor;"],
+  ])('rejects an import from src/%s', async (_name, code) => {
+    expect(await errorsFor('scripts/asset-pipeline/probe.ts', code)).not.toHaveLength(0);
+  });
+
+  it('allows node and package imports', async () => {
+    const code = "import { join } from 'node:path'; export const f = join;";
+    expect(await errorsFor('scripts/asset-pipeline/probe.ts', code)).toHaveLength(0);
+  });
+});

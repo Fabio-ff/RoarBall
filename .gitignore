@@ -8,5 +8,5 @@ dist/
 .claude/worktrees/
 
 # Secrets and raw asset exports (never shipped; see docs)
-sources/raw/env-vars
+sources/raw/
 *.env
