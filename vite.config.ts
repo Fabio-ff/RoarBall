@@ -6,8 +6,8 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: 'hidden',
-    // Three.js alone is ~540 kB minified; the app chunk stays far below this.
-    chunkSizeWarningLimit: 600,
+    // Three.js with GLTFLoader and SkeletonUtils is ~630 kB minified; the app chunk stays far below this.
+    chunkSizeWarningLimit: 700,
     rolldownOptions: {
       output: {
         // Vite 8 bundles with Rolldown: Three.js gets its own long-cacheable chunk.
