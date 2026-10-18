@@ -1,4 +1,5 @@
 import { TICK_MS } from '../sim/constants';
+import { MAX_STEPS_PER_FRAME } from './frame-time';
 
 /** Accumulator for a fixed-timestep loop (spec §9 "Game loop"). Plain data so it is testable. */
 export interface FixedStepClock {
@@ -7,7 +8,10 @@ export interface FixedStepClock {
   accumulatorMs: number;
 }
 
-export function createFixedStepClock(stepMs = TICK_MS, maxStepsPerFrame = 5): FixedStepClock {
+export function createFixedStepClock(
+  stepMs = TICK_MS,
+  maxStepsPerFrame = MAX_STEPS_PER_FRAME,
+): FixedStepClock {
   return { stepMs, maxStepsPerFrame, accumulatorMs: 0 };
 }
 

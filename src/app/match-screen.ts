@@ -1,6 +1,7 @@
 import type { Object3D } from 'three';
 import type { Controller } from './controller';
 import { disposeObject3D } from './dispose';
+import { MAX_FRAME_DT } from './frame-time';
 import { GameLoop } from './game-loop';
 import { BoxScore, type MatchResult } from './box-score';
 import { buildRoster, buildSession, HUMAN_ID, PendingPrime } from './session';
@@ -313,13 +314,15 @@ export class MatchScreen {
       },
       (alpha, frameMs) => {
         const dt = frameMs / 1000;
+        // The mixer must not outrun the sim after a stall: the sim catches up at most MAX_FRAME_DT.
+        const playerDt = Math.min(dt, MAX_FRAME_DT);
         const prev = session.runner.previous;
         const next = session.runner.current;
         for (const [id, view] of playerViews) {
           const a = findPlayer(prev, id);
           const b = findPlayer(next, id);
           if (a && b) {
-            view.update(a, b, alpha, next.tick, next.ball.holder === id, dt);
+            view.update(a, b, alpha, next.tick, next.ball.holder === id, playerDt);
             fxPos.x = a.pos.x + (b.pos.x - a.pos.x) * alpha;
             fxPos.y = a.pos.y + (b.pos.y - a.pos.y) * alpha;
             fxPos.z = a.pos.z + (b.pos.z - a.pos.z) * alpha;
