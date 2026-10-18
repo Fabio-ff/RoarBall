@@ -25,6 +25,8 @@ export interface SetupCatalog {
     color: number;
     abilityName: string;
     abilityIcon: string;
+    /** `file` of the character's model, relative to public/assets; set when the card can show a preview. */
+    modelFile?: string;
     stats: Record<(typeof STAT_ORDER)[number], number>;
   }[];
   courts: {
@@ -38,9 +40,15 @@ export interface SetupCatalog {
   profiles: { id: AiProfileId; label: string }[];
 }
 
+export interface PreviewHandle {
+  dispose(): void;
+}
+
 export interface SetupOptions {
   setup: SetupChoice;
   catalog: SetupCatalog;
+  /** Draws a model on a card's canvas (spec F.9). Absent: the cards stay DOM-only. */
+  createPreview?: (canvas: HTMLCanvasElement, modelFile: string) => PreviewHandle;
   onStart(setup: SetupChoice): void;
   onBack(): void;
 }
@@ -63,6 +71,7 @@ export class SetupScreen {
   private readonly el: HTMLDivElement;
   private readonly nav: MenuNav;
   private readonly choice: SetupChoice;
+  private readonly previews: PreviewHandle[] = [];
 
   constructor(parent: HTMLElement, options: SetupOptions) {
     this.choice = { ...options.setup, opponentIds: [...options.setup.opponentIds] };
@@ -72,8 +81,14 @@ export class SetupScreen {
     ROWS.forEach(([label, field], navRow) => {
       const section = document.createElement('section');
       section.className = 'setup-row';
-      section.innerHTML = `<h3 data-row-label>${label}</h3><div class="setup-cards">${this.cards(field, navRow, options.catalog)}</div>`;
+      section.innerHTML = `<h3 data-row-label>${label}</h3><div class="setup-cards">${this.cards(field, navRow, options.catalog, options.createPreview !== undefined)}</div>`;
       this.el.appendChild(section);
+      // Only the YOU row: each preview owns a WebGL context, and browsers cap how many may live.
+      if (field === 'characterId' && options.createPreview) {
+        for (const canvas of section.querySelectorAll<HTMLCanvasElement>('canvas[data-model]')) {
+          this.previews.push(options.createPreview(canvas, canvas.dataset.model ?? ''));
+        }
+      }
     });
 
     const actions = document.createElement('div');
@@ -128,7 +143,7 @@ export class SetupScreen {
     }
   }
 
-  private cards(field: Field, navRow: number, catalog: SetupCatalog): string {
+  private cards(field: Field, navRow: number, catalog: SetupCatalog, previews: boolean): string {
     const current = this.value(field);
     const attrs = (id: string): string =>
       `data-field="${field}" data-value="${esc(id)}" aria-pressed="${id === current}" data-nav-row="${navRow}"`;
@@ -155,8 +170,13 @@ export class SetupScreen {
         (s) =>
           `<span class="stat-col" title="${s} ${c.stats[s]}"><span class="stat-bar"><span style="height:${c.stats[s] * 10}%"></span></span><span class="stat-label">${STAT_LABELS[s]}</span></span>`,
       ).join('');
+      const preview =
+        previews && field === 'characterId' && c.modelFile
+          ? `<canvas class="setup-preview" data-model="${esc(c.modelFile)}" width="192" height="256" aria-hidden="true"></canvas>`
+          : '';
       return (
         `<button class="setup-card" ${attrs(c.id)} style="--card-color:${hex(c.color)}">` +
+        preview +
         `<strong>${esc(c.name)}</strong>` +
         `<span class="setup-ability">${esc(c.abilityIcon)} ${esc(c.abilityName)}</span>` +
         `<span class="setup-stats">${bars}</span></button>`
@@ -175,6 +195,8 @@ export class SetupScreen {
   }
 
   dispose(): void {
+    for (const preview of this.previews) preview.dispose();
+    this.previews.length = 0;
     this.el.remove();
   }
 }

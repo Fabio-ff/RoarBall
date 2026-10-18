@@ -108,3 +108,43 @@ describe('SetupScreen (spec E.1)', () => {
     expect(onStart).toHaveBeenCalledOnce();
   });
 });
+
+describe('SetupScreen character previews (spec F.9)', () => {
+  function makeWithPreview() {
+    const root = document.createElement('div');
+    document.body.appendChild(root);
+    const handle = { dispose: vi.fn() };
+    const createPreview = vi.fn(() => handle);
+    const screen = new SetupScreen(root, {
+      setup: { ...DEFAULT_SETUP },
+      catalog: buildSetupCatalog(),
+      createPreview,
+      onStart: vi.fn(),
+      onBack: vi.fn(),
+    });
+    return { root, screen, createPreview, handle };
+  }
+
+  it('gives a canvas to the YOU card of a character with a model, and to no other card', () => {
+    const { root, createPreview } = makeWithPreview();
+    const canvases = root.querySelectorAll('canvas.setup-preview');
+    expect(canvases).toHaveLength(1);
+    expect(root.querySelector('[data-field="characterId"][data-value="ace"] canvas')).toBe(
+      canvases[0],
+    );
+    expect(root.querySelector('[data-field="teammateId"] canvas')).toBeNull();
+    expect(createPreview).toHaveBeenCalledOnce();
+    expect(createPreview).toHaveBeenCalledWith(canvases[0], 'characters/ace.glb');
+  });
+
+  it('disposes the previews with the screen', () => {
+    const { screen, handle } = makeWithPreview();
+    screen.dispose();
+    expect(handle.dispose).toHaveBeenCalledOnce();
+  });
+
+  it('stays DOM-only without a createPreview option', () => {
+    const { root } = make();
+    expect(root.querySelector('canvas')).toBeNull();
+  });
+});

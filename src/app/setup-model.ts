@@ -90,6 +90,7 @@ export function buildSetupCatalog(): SetupCatalog {
       color: c.appearance.primaryColor,
       abilityName: ABILITIES[c.abilityId]?.name ?? c.abilityId,
       abilityIcon: ABILITIES[c.abilityId]?.icon ?? '',
+      modelFile: c.model?.file,
       stats: { ...c.stats },
     })),
     courts: courts.map((c) => ({
