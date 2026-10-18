@@ -1239,9 +1239,12 @@ Documented so it can be repeated:
 
 ### F.4 Asset pipeline
 
-1. `scripts/asset-pipeline/` (Node ES modules, `.mjs` like `scripts/smoke.mjs`), with
-   `@gltf-transform/core`, `@gltf-transform/functions` and `sharp` (WebP encoding) as new dev
-   dependencies; run with `npm run assets` (new script), which processes every manifest.
+1. `scripts/asset-pipeline/` in TypeScript run by Node's type stripping
+   (`node --experimental-strip-types`; type-checked by the main `tsconfig.json` and unit-tested like
+   `src`), with `@gltf-transform/core`, `@gltf-transform/functions`, `@gltf-transform/extensions`
+   (WebP needs `EXT_texture_webp`) and `sharp` (WebP encoding) as new dev dependencies; run with
+   `npm run assets` (new script), which processes every manifest. (Amended at planning: the draft
+   said `.mjs`.)
 2. Manifest `sources/characters/<id>.json`: `source` (file name in `sources/raw/`), `height` in
    metres, material overrides (Golden: metalness 0.1, roughness 0.7), `releaseAt` (F.5) and a clip table mapping each
    canonical clip name to `{ source, start, end, loop }` (source clip name, seconds, boolean).
@@ -1255,8 +1258,10 @@ Documented so it can be repeated:
 4. The committed GLB is therefore in metres like everything else in the scene; the renderer never
    scales a model. Reason: one place defines the height, and any viewer shows the asset right.
 5. Amends §2 (Stack, Assets row), §9 (Loading) and §10.1: no Draco or KTX2, so no decoders are
-   shipped in part 1. Reason: at about 1 MB per character they are not worth the decoders; revisit
-   for courts.
+   shipped in part 1. Reason: at about 2.6 MB per character (measured at planning: geometry with
+   skin weights 1.45 MB, textures 0.67 MB, clips 0.23 MB; the spike's 0.9 MB counted textures
+   only) they are not worth the decoders; the plan asserts < 3 MB. Quantization and decoders are
+   revisited with the courts.
 
 ### F.5 Canonical clips
 
@@ -1294,8 +1299,10 @@ Amends §5.4: part 1 ships 7 canonical clips, `idle, run, dribble, jump, shoot, 
 ### F.7 Renderer
 
 1. New `CharacterView` in `src/render/character-view.ts`. `PlayerView` and `CharacterView` share
-   one interface: `group` and `update(prev, next, alpha, tick, hasBall)`, where `MatchScreen` passes
-   `hasBall = next.ball.holder === id`; `PlayerView` ignores it. `MatchScreen` builds a
+   one interface: `group` and `update(prev, next, alpha, tick, hasBall, dt)`, where `MatchScreen`
+   passes `hasBall = next.ball.holder === id` and `dt` is the frame time in seconds it already
+   gives its other views (the mixer advances by it, so pausing stops the animation); `PlayerView`
+   ignores both. `MatchScreen` builds a
    `CharacterView` when the player's character (`PlayerState.characterId`) has a model that loaded,
    else a `PlayerView`.
 2. One `AnimationMixer` per view; crossfade 0.15 s.
@@ -1308,7 +1315,8 @@ Amends §5.4: part 1 ships 7 canonical clips, `idle, run, dribble, jump, shoot, 
 4. A clip missing from the model falls back to idle; if idle is missing too the view shows the bind
    pose. It never throws.
 5. One-shot clips use `LoopOnce` with `clampWhenFinished`. The run clip's `timeScale` is horizontal
-   speed over `next.stats.runSpeed`.
+   speed over the character's run speed, clamped to [0.4, 2] so Blur and slow courts never look
+   broken.
 6. In `CharacterView` the fall clip replaces the stun tilt of `PlayerView`; `PlayerView` keeps its tilt.
 7. Amends §5.5 and E.5 ring behaviour: the highlight ring is drawn for EVERY player, in both views,
    in team colour (`TEAM_COLORS` of `MatchScreen`); it pulses (`highlightPulse`) only for the human
@@ -1323,7 +1331,7 @@ Amends §5.4: part 1 ships 7 canonical clips, `idle, run, dribble, jump, shoot, 
    then builds the player views and starts the loop.
 2. A failed load, or one slower than 10 s, falls back to the placeholder for that character and logs
    one `console.warn`, so the game can never fail to start.
-3. Loaded models are cached per session by character id; the same character can appear up to 4
+3. Loaded models are cached per session by model file; the same character can appear up to 4
    times, so each view gets an instance from `SkeletonUtils.clone`
    (`three/examples/jsm/utils/SkeletonUtils.js`).
 4. The skinned mesh casts shadows. Amends §9 (Views): the mixer and clip selection live in
