@@ -36,7 +36,7 @@ Keyboard:
 | Shift (hold)      | turbo                            | turbo                                   |
 | Q                 | special ability (full bar)       | special ability (full bar)              |
 
-Your player has a pulsing ring under its feet in your team colour.
+Every player has a ring under the feet in their team colour; yours pulses.
 
 Gamepad (standard mapping; plug in and press any button): left stick or D-pad moves,
 **A** shoots, **X** passes, **Y** uses the special ability, **RT** or **B** is turbo and

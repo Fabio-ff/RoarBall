@@ -25,6 +25,9 @@ import { buildCourtView } from '../render/court-view';
 import { effectsFor, type EffectCommand } from '../render/effects-map';
 import { EffectsView } from '../render/effects-view';
 import { lerpVec3 } from '../render/interpolate';
+import { CharacterView } from '../render/character-view';
+import { instantiate, loadCharacterModel, type LoadedModel } from '../render/model-cache';
+import type { PlayerRenderable } from '../render/player-renderable';
 import { PlayerView } from '../render/player-view';
 import { GameScene } from '../render/scene';
 import { WeatherView } from '../render/weather-view';
@@ -50,6 +53,8 @@ export interface MatchScreenDeps {
   onSettingsChange(settings: Settings): void;
   /** The shell's current sink; it may swap from null to the real engine after the first gesture. */
   sink: () => AudioSink;
+  /** Loads a character model; the default is the cached GLTF loader. Tests pass a fake (spec F.8). */
+  loadModel?: (file: string) => Promise<LoadedModel | null>;
 }
 
 /**
@@ -63,28 +68,77 @@ export function shouldPause(command: MenuCommand, source: MenuSource): boolean {
 /** One match on screen: sim, views, HUD, input and the pause overlay (spec E.1). */
 export class MatchScreen {
   private readonly container: HTMLDivElement;
-  private readonly scene: GameScene;
-  private readonly input: InputManager;
-  private readonly hud: Hud;
-  private readonly overlay: DebugOverlay | null;
-  private readonly loop: GameLoop;
-  private readonly observer: ResizeObserver;
-  private readonly onFirstTouch: (e: PointerEvent) => void;
-  private readonly onVisibilityChange: () => void;
-  private readonly broadcastCamera: BroadcastCamera;
+  private readonly loadingLine: HTMLDivElement;
+  // Everything below is created by build() once the models are in; `built` guards the public methods.
+  private scene!: GameScene;
+  private input!: InputManager;
+  private hud!: Hud;
+  private overlay: DebugOverlay | null = null;
+  private loop!: GameLoop;
+  private observer!: ResizeObserver;
+  private onFirstTouch!: (e: PointerEvent) => void;
+  private onVisibilityChange!: () => void;
+  private broadcastCamera!: BroadcastCamera;
+  private views = new Map<PlayerId, PlayerRenderable>();
+  private built = false;
+  /** Resolves when the match is on screen (models loaded, loop started) or the screen was disposed first. */
+  readonly ready: Promise<void>;
   private pauseOverlay: PauseOverlay | null = null;
   private settings: Settings;
   private finishedAt: number | null = null;
   private done = false;
   private disposed = false;
 
+  /** Synchronous (spec F.8.1): shows a Loading line, then `build()` runs when the models are in. */
   constructor(private readonly deps: MatchScreenDeps) {
-    const { options } = deps;
     this.settings = deps.settings;
     this.container = document.createElement('div');
     this.container.className = 'match-screen';
     this.container.style.cssText = 'position:fixed;inset:0;';
     deps.root.appendChild(this.container);
+    this.loadingLine = document.createElement('div');
+    this.loadingLine.className = 'match-loading';
+    this.loadingLine.textContent = 'Loading…';
+    this.loadingLine.style.cssText =
+      'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;' +
+      'background:#0b1020;color:#fff;font:600 20px system-ui,sans-serif;letter-spacing:0.1em;';
+    this.container.appendChild(this.loadingLine);
+    this.ready = this.start();
+    // The shell does not await `ready`: report a failed start instead of losing it.
+    this.ready.catch((error: unknown) => console.error('[match] failed to start', error));
+  }
+
+  private async start(): Promise<void> {
+    const models = await this.loadModels();
+    this.loadingLine.remove();
+    if (!this.disposed) this.build(models);
+  }
+
+  /** One load per distinct character with a model (spec F.8.1); a failed load is a missing entry. */
+  private async loadModels(): Promise<Map<string, LoadedModel>> {
+    const load = this.deps.loadModel ?? ((file: string) => loadCharacterModel(file));
+    const ids = new Set(buildRoster(this.deps.options).map((entry) => entry.characterId));
+    const loaded = await Promise.all(
+      [...ids].map(async (id) => {
+        const file = getCharacter(id).model?.file;
+        if (!file) return [id, null] as const;
+        // loadCharacterModel never rejects, but an injected loader may: the match must still start.
+        const model = await load(file).catch((error: unknown) => {
+          console.warn('[model] fallback to placeholder for', file, error);
+          return null;
+        });
+        return [id, model] as const;
+      }),
+    );
+    const models = new Map<string, LoadedModel>();
+    for (const [id, model] of loaded) if (model) models.set(id, model);
+    return models;
+  }
+
+  /** The old constructor body: scene, views, HUD, input and loop. */
+  private build(models: ReadonlyMap<string, LoadedModel>): void {
+    const { deps } = this;
+    const { options } = deps;
     const container = this.container;
 
     const canvas = document.createElement('canvas');
@@ -113,13 +167,15 @@ export class MatchScreen {
     let session = buildSession(options, court, seed, human);
 
     // Views are keyed by player id; the roster is the same on every restart, so they are built once.
-    const playerViews = new Map<PlayerId, PlayerView>();
+    const playerViews = this.views;
     const abilityFxViews = new Map<PlayerId, AbilityFxView>();
     for (const team of session.runner.current.teams) {
       for (const player of team.players) {
-        const view = new PlayerView(TEAM_COLORS[player.team], {
-          highlighted: player.id === HUMAN_ID,
-        });
+        const isHuman = player.id === HUMAN_ID;
+        const model = models.get(player.characterId);
+        const view: PlayerRenderable = model
+          ? new CharacterView(instantiate(model), TEAM_COLORS[player.team], isHuman)
+          : new PlayerView(TEAM_COLORS[player.team], { highlighted: isHuman });
         scene.scene.add(view.group);
         playerViews.set(player.id, view);
         const abilityFx = new AbilityFxView();
@@ -263,7 +319,7 @@ export class MatchScreen {
           const a = findPlayer(prev, id);
           const b = findPlayer(next, id);
           if (a && b) {
-            view.update(a, b, alpha, next.tick);
+            view.update(a, b, alpha, next.tick, next.ball.holder === id, dt);
             fxPos.x = a.pos.x + (b.pos.x - a.pos.x) * alpha;
             fxPos.y = a.pos.y + (b.pos.y - a.pos.y) * alpha;
             fxPos.z = a.pos.z + (b.pos.z - a.pos.z) * alpha;
@@ -344,11 +400,12 @@ export class MatchScreen {
     document.addEventListener('visibilitychange', this.onVisibilityChange);
     // Buttons held at tip-off (A on START/REMATCH, a repeating Space) are not presses (spec D.6).
     this.prime.request();
+    this.built = true;
     this.loop.start();
   }
 
-  private restartMatch: () => void;
-  private primeHuman: () => void;
+  private restartMatch!: () => void;
+  private primeHuman!: () => void;
   private readonly prime = new PendingPrime();
 
   get paused(): boolean {
@@ -356,7 +413,7 @@ export class MatchScreen {
   }
 
   pause(): void {
-    if (this.disposed || this.done || this.pauseOverlay) return;
+    if (!this.built || this.disposed || this.done || this.pauseOverlay) return;
     this.loop.stop();
     this.deps.sink().setMusic(null);
     this.pauseOverlay = new PauseOverlay(this.container, {
@@ -393,6 +450,10 @@ export class MatchScreen {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    if (!this.built) {
+      this.container.remove();
+      return;
+    }
     this.loop.stop();
     document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.container.removeEventListener('pointerdown', this.onFirstTouch);
@@ -402,6 +463,7 @@ export class MatchScreen {
     this.hud.dispose();
     this.overlay?.dispose();
     this.input.dispose();
+    for (const view of this.views.values()) view.dispose?.();
     disposeObject3D(this.scene.scene);
     this.scene.dispose();
     this.container.remove();
