@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DirectionalLight, Mesh, type Object3D, type MeshBasicMaterial, type MeshStandardMaterial } from 'three';
+import {
+  DirectionalLight,
+  Mesh,
+  type Object3D,
+  type MeshBasicMaterial,
+  type MeshStandardMaterial,
+} from 'three';
 import { getCourt } from '../../src/content/courts';
 import { buildCourtView } from '../../src/render/court-view';
 
