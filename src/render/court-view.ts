@@ -19,6 +19,10 @@ const LINE_WIDTH = 0.05;
 const GLOW_COLOR = 0xff4500;
 const GLOW_BEYOND_BASELINE = 2;
 const GLOW_DEPTH = 1.2;
+/** Camera-side fill (spec §7.3): the sun is near-vertical, so faces turned to the camera need it. */
+const FILL_INTENSITY = 0.8;
+/** Direction the fill shines from, in court space: the +Z sideline camera, slightly above. */
+const FILL_FROM = { x: 0, y: 0.5, z: 1 };
 
 /**
  * Placeholder court (spec §7.3 "Presentation"): the play surface, lines, hoops and lights are
@@ -87,6 +91,7 @@ export function buildCourtView(court: CourtDef): Group {
     -lighting.sunDirection.y * 30,
     -lighting.sunDirection.z * 30,
   );
+  sun.name = 'sun-light';
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   // The light is oblique, so light-space axes are rotated relative to the court: use a
@@ -98,6 +103,11 @@ export function buildCourtView(court: CourtDef): Group {
   sun.shadow.camera.bottom = -shadowRadius;
   sun.shadow.camera.near = 1;
   sun.shadow.camera.far = 80;
+  const fill = new DirectionalLight(lighting.sunColor, FILL_INTENSITY);
+  fill.name = 'fill-light';
+  fill.position.set(FILL_FROM.x * 30, FILL_FROM.y * 30, FILL_FROM.z * 30);
+  fill.castShadow = false;
+  group.add(fill, fill.target);
   group.add(sun, sun.target, new HemisphereLight(lighting.skyColor, 0x30302a, lighting.ambient));
 
   return group;

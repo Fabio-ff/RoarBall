@@ -391,7 +391,9 @@ collision.
 ### 7.3 Performance budget (per court, mid-range tablet, 60 fps)
 
 < 100 k triangles in view, < 30 environment draw calls, KTX2 textures, one
-directional shadow light limited to the play area, pixel ratio ≤ 2, render
+directional shadow light limited to the play area plus one shadowless
+camera-side fill (intensity 0.8, sun colour, from +Z slightly above: faces are
+unreadable under the near-vertical sun without it), pixel ratio ≤ 2, render
 scale adjustable independently of DOM size.
 
 ## 8. Input
